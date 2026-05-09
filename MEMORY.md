@@ -9,7 +9,7 @@
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Piece in progress:** None
-**Next piece:** Piece 4 — Multi-Business Switching (Phase 2 begins)
+**Next piece:** Piece 5 — Customers + Products + Stock
 
 ---
 
@@ -32,10 +32,10 @@
 ## Last Session
 
 **Date:** 2026-05-09
-**Worked on:** Piece 3 — Scaffold + Shared UI + PWA
-**Completed:** Login, app shell, sidebar, dashboard, money/date libs, 19 unit tests
+**Worked on:** Piece 4 — Multi-Business Switching
+**Completed:** BusinessSwitcher, Zustand store, TanStack Query provider, server action
 **Blocked by:** Nothing
-**Next:** Piece 4 — Multi-Business Switching
+**Next:** Piece 5 — Customers + Products + Stock
 
 ---
 
@@ -69,7 +69,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 - [x] **Piece 3** — Next.js Scaffold + Shared UI
 
 ### Phase 2: Core Modules
-- [ ] **Piece 4** — Multi-Business Switching
+- [x] **Piece 4** — Multi-Business Switching
 - [ ] **Piece 5** — Customers + Products + Stock
 - [ ] **Piece 6** — Invoicing + Returns
 - [ ] **Piece 7** — Payments + Ledger
@@ -127,6 +127,22 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 4 — 2026-05-09
+- **Worked on:** Piece 4 — Multi-Business Switching
+- **Done:**
+  - `lib/business.ts`: `listAccessibleBusinesses()`, `getActiveBusinessId()` (cookie-based; layouts don't receive searchParams in Next.js App Router)
+  - `lib/store/business.ts`: Zustand store with `hydrate()`, `setActive()`, `useActiveBusiness()`
+  - `lib/actions/business.ts`: `switchBusiness()` server action — validates access, writes cookie, calls `revalidatePath`
+  - `components/providers/QueryProvider.tsx`: TanStack Query client provider
+  - `components/providers/BusinessProvider.tsx`: Hydrates Zustand store from server-resolved values
+  - `components/layout/BusinessSwitcher.tsx`: Dropdown (multi), name-only (single), "Contact admin" badge (zero)
+  - `Header.tsx` + `AppShell.tsx` updated to mount switcher and providers
+  - `app/(auth)/no-access/page.tsx`: shown when user has no business access
+- **Notes:**
+  - `searchParams` not available in layouts — business switching uses cookies only on server side
+  - Client-side URL `?b=` update handled in BusinessSwitcher after server action confirms access
+  - `queryClient.clear()` on switch nukes all cached queries (data is business-scoped)
 
 ### Session 3 — 2026-05-09
 - **Worked on:** Piece 3 — Scaffold + Shared UI + PWA
