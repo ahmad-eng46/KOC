@@ -8,8 +8,9 @@
 ## Current Phase
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
+**Phase 2 — Core Modules** 🔨 IN PROGRESS
 **Piece in progress:** None
-**Next piece:** Piece 5 — Customers + Products + Stock
+**Next piece:** Piece 6 — Invoicing + Returns
 
 ---
 
@@ -32,10 +33,10 @@
 ## Last Session
 
 **Date:** 2026-05-09
-**Worked on:** Piece 4 — Multi-Business Switching
-**Completed:** BusinessSwitcher, Zustand store, TanStack Query provider, server action
+**Worked on:** Piece 5 — Customers + Products + Stock
+**Completed:** All 3 sub-sections verified
 **Blocked by:** Nothing
-**Next:** Piece 5 — Customers + Products + Stock
+**Next:** Piece 6 — Invoicing + Returns
 
 ---
 
@@ -70,7 +71,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 
 ### Phase 2: Core Modules
 - [x] **Piece 4** — Multi-Business Switching
-- [ ] **Piece 5** — Customers + Products + Stock
+- [x] **Piece 5** — Customers + Products + Stock
 - [ ] **Piece 6** — Invoicing + Returns
 - [ ] **Piece 7** — Payments + Ledger
 - [ ] **Piece 8** — Expenses + Investments + Loans
@@ -127,6 +128,20 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 5 — 2026-05-09
+- **Worked on:** Piece 5 — Customers + Products + Stock
+- **Done:**
+  - Sub-section A (Customers): `lib/validators/customer.ts`, `lib/actions/customer.ts`, `lib/queries/customers.ts`, `components/customers/{CustomerForm,CustomerTable}.tsx`, `app/(app)/customers/{page,new/page,[id]/page}.tsx`
+  - Sub-section B (Products): `0018_view_grants.sql` (fixed `products_for_role` + `current_stock` views with business-isolation WHERE clauses + GRANT to authenticated), `lib/validators/product.ts`, `lib/actions/product.ts`, `lib/queries/products.ts`, `components/products/{ProductForm,ProductTable}.tsx`, product pages
+  - Sub-section C (Stock): `0019_realtime.sql` (stock_movements in supabase_realtime publication), `lib/validators/stock.ts`, `lib/actions/stock.ts`, `components/stock/{AddStockModal,StockList}.tsx`, `app/(app)/stock/page.tsx`
+- **Notes:**
+  - Zod v4 API: `invalid_type_error` → removed, `.errors` → `.issues`
+  - `products_for_role` and `current_stock` views needed WHERE clause added — both views previously lacked business isolation and GRANTs for authenticated role
+  - purchase_price_paisa: NULL enforced at DB view level; staff/viewer confirmed absent from network response
+  - Realtime: `postgres_changes` subscription on stock_movements invalidates products query cache; subscription filtered by business_id
+  - Stock movements are immutable (no UPDATE/DELETE via RLS); adjustments use new rows
+  - `canUpdate` (stock.update permission) and `canAdjust` (admin only) passed as server-resolved props
 
 ### Session 4 — 2026-05-09
 - **Worked on:** Piece 4 — Multi-Business Switching
