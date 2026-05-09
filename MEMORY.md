@@ -7,9 +7,9 @@
 
 ## Current Phase
 
-**Phase 1 — Foundation & Database**
+**Phase 1 — Foundation & Database** ✅ COMPLETE
 **Piece in progress:** None
-**Next piece:** Piece 3 — Next.js Scaffold + Shared UI
+**Next piece:** Piece 4 — Multi-Business Switching (Phase 2 begins)
 
 ---
 
@@ -23,18 +23,19 @@
 - [x] First commit
 - [x] Database schema deployed (15 migrations applied)
 - [x] RLS policies live (0017_rls_policies.sql)
-- [x] Auth working
-- [ ] First feature shipped
+- [x] Auth working (login page + session + proxy)
+- [x] First feature shipped (dashboard placeholder)
+- [x] PWA configured (manifest + icons)
 
 ---
 
 ## Last Session
 
 **Date:** 2026-05-09
-**Worked on:** Piece 2 — Auth + RLS
-**Completed:** RLS on all tables, permission helpers, Supabase SSR clients, smoke tests
+**Worked on:** Piece 3 — Scaffold + Shared UI + PWA
+**Completed:** Login, app shell, sidebar, dashboard, money/date libs, 19 unit tests
 **Blocked by:** Nothing
-**Next:** Piece 3 — Next.js Scaffold + Shared UI
+**Next:** Piece 4 — Multi-Business Switching
 
 ---
 
@@ -65,7 +66,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 ### Phase 1: Foundation
 - [x] **Piece 1** — Database Schema + Seed Data
 - [x] **Piece 2** — Auth + Row Level Security
-- [ ] **Piece 3** — Next.js Scaffold + Shared UI
+- [x] **Piece 3** — Next.js Scaffold + Shared UI
 
 ### Phase 2: Core Modules
 - [ ] **Piece 4** — Multi-Business Switching
@@ -126,6 +127,25 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 3 — 2026-05-09
+- **Worked on:** Piece 3 — Scaffold + Shared UI + PWA
+- **Done:**
+  - `lib/money.ts` + 19 passing unit tests (vitest)
+  - `lib/date.ts` (Karachi timezone helpers using date-fns-tz)
+  - `lib/auth/session.ts` (getSession server helper)
+  - `lib/supabase/middleware.ts` + `proxy.ts` (Next.js 16 renamed middleware→proxy)
+  - `app/(auth)/layout.tsx` + `app/(auth)/login/page.tsx` (react-hook-form + zod)
+  - `app/(app)/layout.tsx` + AppShell client wrapper
+  - `components/layout/{Header,Sidebar,UserMenu,AppShell}.tsx`
+  - Sidebar filters items via `can(role, permission)`; mobile collapsible
+  - `app/(app)/dashboard/page.tsx` — 4 stat card placeholders
+  - PWA: `next.config.ts` + `public/manifest.json` + placeholder icons 192/512
+  - Root `app/layout.tsx` updated with manifest + viewport metadata
+- **Notes:**
+  - Next.js 16: `middleware.ts` renamed to `proxy.ts`, export renamed to `proxy`
+  - Turbopack `root: __dirname` needed due to multiple lockfiles in parent dirs
+  - `parsePKR` bug found + fixed in tests ("Rs. 500.50" was parsing as 0.50)
 
 ### Session 2 — 2026-05-09
 - **Worked on:** Piece 2 — Auth + RLS
