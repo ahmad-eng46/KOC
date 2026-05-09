@@ -2,6 +2,7 @@
 
 import { Menu } from 'lucide-react';
 import { UserMenu } from '@/components/layout/UserMenu';
+import { BusinessSwitcher } from '@/components/layout/BusinessSwitcher';
 import { type SessionUser } from '@/lib/auth/session';
 
 type Props = {
@@ -20,9 +21,7 @@ export function Header({ user, onMenuClick }: Props) {
         >
           <Menu size={20} />
         </button>
-        <span className="text-sm font-medium text-gray-500 hidden md:block">
-          Khaliq Oil Company
-        </span>
+        <BusinessSwitcher />
       </div>
       <UserMenu user={user} />
     </header>

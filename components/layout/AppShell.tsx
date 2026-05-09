@@ -3,27 +3,36 @@
 import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { QueryProvider } from '@/components/providers/QueryProvider';
+import { BusinessProvider } from '@/components/providers/BusinessProvider';
 import { type SessionUser } from '@/lib/auth/session';
+import { type Business } from '@/lib/business';
 
 type Props = {
   session: SessionUser;
+  businesses: Business[];
+  activeId: string;
   children: React.ReactNode;
 };
 
-export function AppShell({ session, children }: Props) {
+export function AppShell({ session, businesses, activeId, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-full min-h-screen bg-gray-50">
-      <Sidebar
-        role={session.role}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <div className="flex flex-col flex-1 min-w-0">
-        <Header user={session} onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
-      </div>
-    </div>
+    <QueryProvider>
+      <BusinessProvider businesses={businesses} activeId={activeId}>
+        <div className="flex h-full min-h-screen bg-gray-50">
+          <Sidebar
+            role={session.role}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <div className="flex flex-col flex-1 min-w-0">
+            <Header user={session} onMenuClick={() => setSidebarOpen(true)} />
+            <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+          </div>
+        </div>
+      </BusinessProvider>
+    </QueryProvider>
   );
 }
