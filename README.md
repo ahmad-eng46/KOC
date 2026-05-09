@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Khaliq Oil Company
 
-## Getting Started
+> Multi-business management web application — a modern replacement for the legacy Windows desktop billing system.
 
-First, run the development server:
+## What This Is
+
+A web application that runs on any browser (phone, tablet, desktop) to manage:
+
+- Customers, products, stock
+- Invoicing and returns
+- Cash receipts and ledgers
+- Expenses (business + home, separately)
+- Investments and loans
+- Reports including Profit & Loss with date filters
+- Multiple business categories (Oil, Cigarettes, Zameen, etc.)
+- Defaulter customer tracking
+- Customer bill delivery via SMS / WhatsApp
+- Automated and manual backups (Excel + database)
+
+Replaces a legacy single-PC C# WinForms app with a multi-user web app installable as a PWA on phones.
+
+## Tech Stack
+
+- **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui
+- **Backend:** Supabase (Postgres + Auth + Realtime + Storage + Edge Functions)
+- **Hosting:** Vercel (frontend) + Supabase (backend)
+- **Other:** Twilio (SMS), Meta WhatsApp Cloud API, Resend (email)
+
+## Quick Links for Developers
+
+- **[CLAUDE.md](./CLAUDE.md)** — Instructions for Claude Code (read first)
+- **[MEMORY.md](./MEMORY.md)** — Current project state and progress tracker
+- **[DECISIONS.md](./DECISIONS.md)** — Architectural decision log
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Technical deep dive
+- **[SETUP.md](./SETUP.md)** — Zero-to-running guide
+- **[PROMPTS.md](./PROMPTS.md)** — Prompts for each build piece
+
+## Project Status
+
+🏗️ **In progress** — Phase 1 (Foundation)
+
+Track progress in [MEMORY.md](./MEMORY.md).
+
+## Running Locally
+
+See [SETUP.md](./SETUP.md) for detailed instructions.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App runs at http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Building / Deploying
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project deploys automatically to Vercel from the `main` branch.
 
-## Learn More
+## License
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Private — Khaliq Oil Company internal use only.
