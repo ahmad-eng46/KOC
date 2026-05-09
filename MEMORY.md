@@ -9,7 +9,7 @@
 
 **Phase 1 — Foundation & Database**
 **Piece in progress:** None
-**Next piece:** Piece 2 — Auth + Row Level Security
+**Next piece:** Piece 3 — Next.js Scaffold + Shared UI
 
 ---
 
@@ -22,7 +22,8 @@
 - [ ] GitHub repo created and pushed
 - [x] First commit
 - [x] Database schema deployed (15 migrations applied)
-- [ ] Auth working
+- [x] RLS policies live (0017_rls_policies.sql)
+- [x] Auth working
 - [ ] First feature shipped
 
 ---
@@ -30,10 +31,10 @@
 ## Last Session
 
 **Date:** 2026-05-09
-**Worked on:** Piece 1 — Database Schema + Seed Data
-**Completed:** All 15 migrations + seed data deployed to Supabase cloud
+**Worked on:** Piece 2 — Auth + RLS
+**Completed:** RLS on all tables, permission helpers, Supabase SSR clients, smoke tests
 **Blocked by:** Nothing
-**Next:** Piece 2 — Auth + RLS policies
+**Next:** Piece 3 — Next.js Scaffold + Shared UI
 
 ---
 
@@ -63,7 +64,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 
 ### Phase 1: Foundation
 - [x] **Piece 1** — Database Schema + Seed Data
-- [ ] **Piece 2** — Auth + Row Level Security
+- [x] **Piece 2** — Auth + Row Level Security
 - [ ] **Piece 3** — Next.js Scaffold + Shared UI
 
 ### Phase 2: Core Modules
@@ -125,6 +126,21 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 2 — 2026-05-09
+- **Worked on:** Piece 2 — Auth + RLS
+- **Done:**
+  - `0017_rls_policies.sql`: RLS enabled on all 20 tables; 80 policies covering select/insert/update/delete; `public.user_has_business()` helper
+  - `products` base table: staff/viewer see 0 rows; must use `products_for_role` VIEW
+  - `lib/auth/permissions.ts`: PERMISSIONS map + `can(role, permission)`
+  - `lib/auth/guards.ts`: `requireAuth()`, `requireRole(...roles)`
+  - `lib/supabase/server.ts`: SSR server client (@supabase/ssr)
+  - `lib/supabase/client.ts`: browser client
+  - `lib/supabase/admin.ts`: service role client with browser-import guard
+  - `supabase/tests/rls_smoke.sql`: 7 smoke test cases
+  - All smoke tests passed; TypeScript clean
+- **Notes:**
+  - `purchase_price_paisa` NULL via service key without JWT is expected (no auth.uid() context)
 
 ### Session 1 — 2026-05-09
 - **Worked on:** Piece 1 — Database Schema + Seed Data
