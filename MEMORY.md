@@ -10,7 +10,7 @@
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Phase 2 — Core Modules** 🔨 IN PROGRESS
 **Piece in progress:** None
-**Next piece:** Piece 7 — Payments + Ledger
+**Next piece:** Piece 8 — Expenses + Investments + Loans
 
 ---
 
@@ -33,10 +33,10 @@
 ## Last Session
 
 **Date:** 2026-05-10
-**Worked on:** Piece 6 — Invoicing + Returns
-**Completed:** All 5 steps (server action + tests + RPC, list, form, detail+PDF, returns)
+**Worked on:** Piece 7 — Payments + Ledger
+**Completed:** Payment CRUD, customer ledger tab with live running balance via window function, statement PDF
 **Blocked by:** Nothing
-**Next:** Piece 7 — Payments + Ledger
+**Next:** Piece 8 — Expenses + Investments + Loans
 
 ---
 
@@ -73,7 +73,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 - [x] **Piece 4** — Multi-Business Switching
 - [x] **Piece 5** — Customers + Products + Stock
 - [x] **Piece 6** — Invoicing + Returns
-- [ ] **Piece 7** — Payments + Ledger
+- [x] **Piece 7** — Payments + Ledger
 - [ ] **Piece 8** — Expenses + Investments + Loans
 
 ### Phase 3: Reports & Communication
@@ -129,6 +129,27 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 7 — 2026-05-10
+- **Worked on:** Piece 7 — Payments + Ledger
+- **Done:**
+  - `0031_customer_ledger_rpc.sql` — `customer_ledger(p_customer_id)` RETURNS TABLE with `running_balance` computed via `SUM(debit−credit) OVER (ORDER BY ...)`. Includes synthetic Opening Balance row first. SECURITY DEFINER + explicit `user_has_business()` check.
+  - `lib/validators/payment.ts` (zod, paymentMethods enum), `lib/actions/payment.ts` (`createPayment` — auth, business scope, customer verify, insert → trigger fires ledger credit, optional invoice paid/status update; `softDeletePayment` admin-only with reason)
+  - `lib/queries/payments.ts` (`usePayments(filters)` + `useDeletePayment`), `lib/queries/customer-ledger.ts` (`useCustomerLedger`)
+  - `components/payments/PaymentForm.tsx` (customer combobox reused from invoices, amount Rs.→paisa, Karachi-today date default, 4-method picker, reference + notes, new-balance preview). Pre-selects customer when navigated with `?customer=<id>`.
+  - `components/payments/PaymentTable.tsx` (TanStack Table v8: date range default 30d, search by customer/ref/invoice, method pill multi-select, total-in-range footer, soft-delete dialog with reason for admin)
+  - `components/customers/CustomerLedger.tsx` (tab on customer detail). Date range default = this month. Computes Brought Forward client-side from window-balance of last hidden row. "Print Statement" → PDF via `next/dynamic`-loaded `PDFDownloadLink`.
+  - `components/customers/CustomerStatementPDF.tsx` (react-pdf statement layout with rows + closing balance, supports negative/credit)
+  - `components/customers/CustomerDetailTabs.tsx` (Details / Ledger toggle)
+  - Refactored `app/(app)/customers/[id]/page.tsx` to fetch business name and pass to tabs
+  - `app/(app)/payments/page.tsx`, `app/(app)/payments/new/page.tsx`
+- **Notes:**
+  - **Running balance is NEVER stored** for client display. The `ledger_entries.balance_paisa` column captured at trigger time is unused by the UI; the RPC's window function is the single source of truth.
+  - **Invariant verified end-to-end via SQL**: `Σ(opening_balance) + Σ(invoice debits) − Σ(payment credits) − Σ(return credits)` = `Σ(per-customer closing balance from window query)`. **Diff = 0.**
+  - **Soft delete payment does NOT reverse the ledger credit** (matches invoice soft-delete semantics; documented in inline UI warning). Future post-MVP: optional offsetting adjustment flow.
+  - PaymentForm uses `useSearchParams` so the new-payment page is wrapped in `<Suspense>` (Next 16 requirement for searchParams in client components).
+  - `customer_ledger` returns the synthetic Opening row using `customer.created_at::DATE` as `entry_date` so it always sorts first via the `sort_key=0` tiebreaker.
+  - **Customer detail page now has tabs** (Details / Ledger). Edit form moved into the Details tab.
 
 ### Session 6 — 2026-05-10
 - **Worked on:** Piece 6 — Invoicing + Returns (all 5 steps)
