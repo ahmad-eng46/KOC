@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogOut, ChevronDown } from 'lucide-react';
+import { LogOut, ChevronDown, User as UserIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { type SessionUser } from '@/lib/auth/session';
 
@@ -50,9 +51,17 @@ export function UserMenu({ user }: Props) {
               {user.role}
             </span>
           </div>
+          <Link
+            href="/profile"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <UserIcon size={14} />
+            My Profile
+          </Link>
           <button
             onClick={signOut}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-gray-100"
           >
             <LogOut size={14} />
             Sign out
