@@ -4,10 +4,10 @@ import { ChevronLeft } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
-import { CustomerForm } from '@/components/customers/CustomerForm';
+import { CustomerDetailTabs } from '@/components/customers/CustomerDetailTabs';
 import { type Customer } from '@/lib/queries/customers';
 
-export const metadata = { title: 'Edit Customer — KOC' };
+export const metadata = { title: 'Customer — KOC' };
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -19,17 +19,25 @@ export default async function CustomerDetailPage({ params }: Props) {
   if (!businessId) notFound();
 
   const supabase = await createServerClient();
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*, customer_categories(name)')
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null)
-    .single();
+  const [custRes, bizRes] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('*, customer_categories(name)')
+      .eq('id', id)
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .single(),
+    supabase
+      .from('businesses')
+      .select('name')
+      .eq('id', businessId)
+      .single(),
+  ]);
 
-  if (error || !data) notFound();
+  if (custRes.error || !custRes.data) notFound();
 
-  const customer = data as Customer;
+  const customer = custRes.data as Customer;
+  const businessName = bizRes.data?.name ?? '—';
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -42,10 +50,10 @@ export default async function CustomerDetailPage({ params }: Props) {
         </Link>
         <div>
           <h1 className="text-xl font-semibold text-gray-900">{customer.name}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Edit customer details</p>
+          <p className="text-sm text-gray-500 mt-0.5">{customer.phone ?? '—'}</p>
         </div>
       </div>
-      <CustomerForm customer={customer} />
+      <CustomerDetailTabs customer={customer} businessName={businessName} />
     </div>
   );
 }
