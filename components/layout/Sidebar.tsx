@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Users, Package, Warehouse,
   FileText, CreditCard, Receipt, TrendingUp,
-  Banknote, BookOpen, BarChart3, UserCog, HardDrive, X,
+  Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, X,
 } from 'lucide-react';
 import { can, type Role } from '@/lib/auth/permissions';
 
@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Loans',       href: '/loans',       icon: Banknote,    adminOnly: true },
   { label: 'Ledger',      href: '/ledger',      icon: BookOpen,    permission: 'ledger.view' },
   { label: 'Reports',     href: '/reports',     icon: BarChart3,   permission: 'reports.view_basic' },
+  { label: 'Settings',    href: '/settings',         icon: Settings,  adminOnly: true },
   { label: 'Users',       href: '/settings/users',   icon: UserCog,   adminOnly: true },
   { label: 'Backup',      href: '/settings/backup',  icon: HardDrive, adminOnly: true },
 ];

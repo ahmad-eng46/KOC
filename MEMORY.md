@@ -8,9 +8,10 @@
 ## Current Phase
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
-**Phase 2 — Core Modules** 🔨 IN PROGRESS
+**Phase 2 — Core Modules** ✅ COMPLETE
+**Phase 3 — Reports & Communication** 🔨 NEXT
 **Piece in progress:** None
-**Next piece:** Piece 8 — Expenses + Investments + Loans
+**Next piece:** Piece 9 — Reports + P&L
 
 ---
 
@@ -33,10 +34,10 @@
 ## Last Session
 
 **Date:** 2026-05-10
-**Worked on:** Piece 7 — Payments + Ledger
-**Completed:** Payment CRUD, customer ledger tab with live running balance via window function, statement PDF
+**Worked on:** Piece 8 — Expenses + Investments + Loans + Settings
+**Completed:** All four modules built; receipts Storage bucket; settings audit trigger
 **Blocked by:** Nothing
-**Next:** Piece 8 — Expenses + Investments + Loans
+**Next:** Piece 9 — Reports + P&L
 
 ---
 
@@ -74,7 +75,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 - [x] **Piece 5** — Customers + Products + Stock
 - [x] **Piece 6** — Invoicing + Returns
 - [x] **Piece 7** — Payments + Ledger
-- [ ] **Piece 8** — Expenses + Investments + Loans
+- [x] **Piece 8** — Expenses + Investments + Loans
 
 ### Phase 3: Reports & Communication
 - [ ] **Piece 9** — Reports + P&L
@@ -129,6 +130,22 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 8 — 2026-05-10
+- **Worked on:** Piece 8 — Expenses + Investments + Loans + Settings (Phase 2 closeout)
+- **Done:**
+  - `0032_expense_receipts_and_settings_audit.sql` — added `expenses.receipt_url`; created private `receipts` Storage bucket with RLS policies (path convention `receipts/{business_id}/...`, scoped via `user_has_business()`, INSERT/DELETE limited to admin+accountant); added `audit_app_settings` trigger using `log_audit()`
+  - **Expenses**: validators (`expenseTypes`, `expenseCategories`), actions (`createExpense`, `softDeleteExpense`), `useExpenses` query, `ExpenseForm` (type radio Business/Home, category dropdown, file upload to Storage with signed-URL view), `ExpenseTable` (date range, type pills, search, summary cards Total/Business/Home, receipt button opens signed URL), `app/(app)/expenses/{page,new/page}.tsx`. Home expenses default to `include_in_pnl=false` at row level.
+  - **Investments** (admin only): validator, `createInvestment` action, `useInvestments` query, `InvestmentForm` (source/investor, amount, date, note), `InvestmentTable` with running-total card showing total invested + entry count + distinct sources
+  - **Loans** (admin only): validator (`loanDirections=given|taken`), actions (`createLoan`, `markLoanRepaid`), `useLoans`/`useMarkLoanRepaid` queries, `LoanForm` (direction radio, party mode toggle Existing customer/Free text, amount, loan date + due date, note), `LoanTable` with two outstanding-balance cards, type/status filters, overdue indicator on due date, "Mark Repaid" action
+  - **Settings**: `lib/settings.ts` (`getSetting`/`setSetting`, `SETTING_KEYS`/`SETTING_DEFAULTS` constants), `lib/actions/settings.ts` (`saveSettings` admin-only — updates businesses.name + upserts app_settings), `SettingsForm` (General: name+address+phone; P&L: home_expense_in_pnl toggle default OFF; Defaulters: defaulter_days default 20), `app/(app)/settings/page.tsx`
+  - Sidebar: added top-level "Settings" entry (admin only)
+- **Notes:**
+  - **businesses.name is the canonical source** for the switcher / PDFs; address + phone live in `app_settings` since the businesses table doesn't have those columns. Settings form updates both atomically.
+  - **Receipts bucket is private** (Supabase signed URLs only). Path always starts with `business_id/` so the RLS policy can scope by `user_has_business((storage.foldername(name))[1]::uuid)`.
+  - **Loan party** can be either an existing customer (combobox) or free text (e.g. "Brother", "Bank XYZ"). When customer-mode is used, the form passes the customer name to `party_name` and stores `party_customer_id` for future cross-link (column not yet in schema — currently ignored server-side; safe additive change for later).
+  - **Settings audit trigger** logs every UPSERT to `app_settings` via the existing `log_audit()` function (writes to `audit_log`).
+  - **Phase 2 (Core Modules) is now complete** — pieces 4-8 all done.
 
 ### Session 7 — 2026-05-10
 - **Worked on:** Piece 7 — Payments + Ledger
