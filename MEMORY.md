@@ -10,7 +10,7 @@
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Phase 2 — Core Modules** 🔨 IN PROGRESS
 **Piece in progress:** None
-**Next piece:** Piece 6 — Invoicing + Returns
+**Next piece:** Piece 7 — Payments + Ledger
 
 ---
 
@@ -32,11 +32,11 @@
 
 ## Last Session
 
-**Date:** 2026-05-09
-**Worked on:** Piece 5 — Customers + Products + Stock
-**Completed:** All 3 sub-sections verified
+**Date:** 2026-05-10
+**Worked on:** Piece 6 — Invoicing + Returns
+**Completed:** All 5 steps (server action + tests + RPC, list, form, detail+PDF, returns)
 **Blocked by:** Nothing
-**Next:** Piece 6 — Invoicing + Returns
+**Next:** Piece 7 — Payments + Ledger
 
 ---
 
@@ -72,7 +72,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 ### Phase 2: Core Modules
 - [x] **Piece 4** — Multi-Business Switching
 - [x] **Piece 5** — Customers + Products + Stock
-- [ ] **Piece 6** — Invoicing + Returns
+- [x] **Piece 6** — Invoicing + Returns
 - [ ] **Piece 7** — Payments + Ledger
 - [ ] **Piece 8** — Expenses + Investments + Loans
 
@@ -107,6 +107,7 @@ _(Use this section for things you've parked. Move to DECISIONS.md once resolved.
 - `auth.user_role()` could not be created in the `auth` schema on Supabase cloud (permission denied). Function lives in `public.user_role()` instead. All RLS policies must reference `public.user_role()`.
 - Seed users were inserted directly into `auth.users` using a pre-hashed bcrypt password (`KocTest2024!`). In production, use Supabase Auth Admin API to create users properly.
 - `0016_seed.sql` is included in migrations (not a separate seed file) because `supabase db query` only targets local DB. This is fine for dev — do not run on production.
+- **Customer balance query** (`lib/queries/customers-balance.ts`) fetches all `ledger_entries` for the active business and sums `debit - credit` per customer client-side. Acceptable at current scale (~130 entries, 50 customers); replace with a server-side VIEW (e.g. `customer_balances_view`) before production launch — target Piece 7 or Piece 9.
 
 ---
 
@@ -128,6 +129,29 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 6 — 2026-05-10
+- **Worked on:** Piece 6 — Invoicing + Returns (all 5 steps)
+- **Done:**
+  - Step 1 — `lib/validators/invoice.ts`, `lib/invoice.ts` (pure `computeInvoiceTotals`), `lib/actions/invoice.ts` (`createInvoice` server action), `lib/actions/invoice.test.ts` (17 unit tests passing), `0020_invoice_rpc.sql` (`create_invoice_atomic` RPC, SECURITY DEFINER for purchase_price snapshot)
+  - Live RPC test via `scripts/test-create-invoice.mjs` — uncovered + worked around the broken @koc.test users (added 0021/0024/0026/0028/0029 + new auth identities + email rename), root cause for seeded users still unresolved (deferred). Created `owner@khaliqoil.com` as the working test admin.
+  - Step 2 — `lib/queries/invoices.ts` (`useInvoices`), `components/invoices/InvoiceTable.tsx` (TanStack Table v8 — added `@tanstack/react-table`), `app/(app)/invoices/page.tsx`. Filters: date range (default 30d), customer search, status pills, pagination 20/page.
+  - Step 3a — `lib/queries/customers-balance.ts` + `CustomerCombobox.tsx` + `InvoiceForm.tsx` skeleton + `app/(app)/invoices/new/page.tsx`. Customer picker shows live balance per row; selected customer's outstanding balance highlighted in red.
+  - Step 3b — `ProductCombobox.tsx` (search by name/SKU, stock + price per row); single line item row in form (qty, rate auto-fill, amount = qty × rate live).
+  - Step 3c — Dynamic items (Add/Remove with last-row protection), Discount section (None/Fixed/Percent toggle), Totals (Subtotal/Discount/Net Total/Payment/New Balance). All math goes through `computeInvoiceTotals` from `lib/invoice.ts` — no inline arithmetic.
+  - Step 3d — Submit handler wired to `createInvoice`; rate editing role-gated to admin only via `can()`; client-side stock warnings with admin override checkbox; redirect to `/invoices/[id]` on success; full TanStack Query cache invalidation.
+  - Step 4 — `app/(app)/invoices/[id]/page.tsx` + `InvoiceDetail.tsx` + `InvoicePDF.tsx` (`@react-pdf/renderer` added). Actions: Print PDF (all roles), SMS/WhatsApp (placeholder), Mark Paid (admin/accountant — records payment for outstanding), Delete (admin only with required reason, prepended to notes). `lib/actions/invoice-detail.ts` for soft delete + mark paid. `lib/queries/invoice-detail.ts` for full invoice fetch with items/payments/returns.
+  - Step 5 — `0030_return_rpc.sql` (`create_return_atomic` RPC: validates per-item qty against sold − already-returned, atomically inserts returns + return_items + stock_movements type='return'; ledger trigger fires credit). `lib/validators/return.ts`, `lib/actions/return.ts`, `lib/queries/return-form.ts`, `components/invoices/ReturnForm.tsx`, `app/(app)/invoices/[id]/return/page.tsx`.
+- **Notes:**
+  - **CLAUDE.md naming**: `invoice_number` (not `invoice_no`); confirmed via schema check.
+  - **Soft delete invoice does NOT reverse the ledger**. Returns are the proper way to unwind. Documented in inline comments + UI ("file a return if you also need to reverse the customer's balance").
+  - **Stock can go negative** when admin overrides — by design, matches the legacy app's flexibility for back-orders.
+  - **PDF rendered client-side** via `next/dynamic` import of `PDFDownloadLink` to keep `@react-pdf/renderer` (~500KB) out of the initial bundle and skip SSR (it has browser-only APIs).
+  - **Returns RPC is SECURITY DEFINER** because the validation needs to read across `invoice_items` and `return_items` regardless of caller's RLS. Caller must still belong to the business AND be admin/accountant — checked explicitly inside the function.
+  - **invoice_items and return_items are immutable** (no UPDATE/DELETE policies). Corrections happen via new returns or new invoices.
+  - **17 unit tests on computeInvoiceTotals** continue to pass after all UI was built. Form math wired to the same function — single source of truth, no duplication.
+  - **DECISIONS.md ADR-015** added for the `*-shared.ts` pattern (Next 16 / Turbopack tightened tree-shaking on server-only modules; `lib/business-shared.ts` extracted from `lib/business.ts`).
+  - **Build cleanly produces 14 routes**, 0 TS errors, 0 lint errors.
 
 ### Session 5 — 2026-05-09
 - **Worked on:** Piece 5 — Customers + Products + Stock

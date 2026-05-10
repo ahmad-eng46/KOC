@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { type Business } from '@/lib/business';
+import { type Business } from '@/lib/business-shared';
 
 type BusinessStore = {
   activeId: string | null;

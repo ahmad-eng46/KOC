@@ -1,14 +1,9 @@
 import { cookies } from 'next/headers';
 import { createServerClient } from '@/lib/supabase/server';
+import { BUSINESS_COOKIE, type Business } from '@/lib/business-shared';
 
-export const BUSINESS_COOKIE = 'active_business_id';
-
-export type Business = {
-  id: string;
-  name: string;
-  type: string;
-  is_active: boolean;
-};
+export { BUSINESS_COOKIE };
+export type { Business };
 
 // ─────────────────────────────────────────────
 // Server: list every business the current user can access.

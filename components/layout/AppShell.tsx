@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { BusinessProvider } from '@/components/providers/BusinessProvider';
 import { type SessionUser } from '@/lib/auth/session';
-import { type Business } from '@/lib/business';
+import { type Business } from '@/lib/business-shared';
 
 type Props = {
   session: SessionUser;
