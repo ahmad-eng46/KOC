@@ -9,9 +9,9 @@
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Phase 2 — Core Modules** ✅ COMPLETE
-**Phase 3 — Reports & Communication** 🔨 NEXT
+**Phase 3 — Reports & Communication** 🔨 IN PROGRESS
 **Piece in progress:** None
-**Next piece:** Piece 9 — Reports + P&L
+**Next piece:** Piece 10 — SMS + WhatsApp Integration
 
 ---
 
@@ -34,10 +34,10 @@
 ## Last Session
 
 **Date:** 2026-05-10
-**Worked on:** Piece 8 — Expenses + Investments + Loans + Settings
-**Completed:** All four modules built; receipts Storage bucket; settings audit trigger
+**Worked on:** Piece 9 — Reports + P&L
+**Completed:** All 9 reports + PDF & Excel exports + P&L math verified at SQL level
 **Blocked by:** Nothing
-**Next:** Piece 9 — Reports + P&L
+**Next:** Piece 10 — SMS + WhatsApp Integration
 
 ---
 
@@ -78,7 +78,7 @@ Total: 15 pieces across 4 phases. Tick as completed.
 - [x] **Piece 8** — Expenses + Investments + Loans
 
 ### Phase 3: Reports & Communication
-- [ ] **Piece 9** — Reports + P&L
+- [x] **Piece 9** — Reports + P&L
 - [ ] **Piece 10** — SMS + WhatsApp Integration
 - [ ] **Piece 11** — User Management (Admin)
 - [ ] **Piece 12** — Backup System
@@ -130,6 +130,32 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 9 — 2026-05-10
+- **Worked on:** Piece 9 — Reports + P&L (all 9 reports + exports)
+- **Done:**
+  - Added `recharts` and `exceljs` deps. Reused `@react-pdf/renderer` for PDF exports (server-side via `renderToBuffer`).
+  - **Shared layer:** `lib/reports/download.ts` (base64 → Blob download), `components/reports/shared.tsx` (`FilterBar` with date presets Today/Week/Month/Year/Custom, `KPICard`, `ExportButtons` running server actions).
+  - **Reports landing:** `/reports` permission-filtered tile grid linking to all 9 sub-reports.
+  - **1. Sales** — invoices in range; KPI total/paid/outstanding; Recharts line chart by day; top-10 customers table.
+  - **2. Purchase** (admin/accountant) — stock_movements type='in'; KPI total value + count; group by product; movement detail.
+  - **3. Customer** — per-customer invoiced / paid / balance / last activity from `ledger_entries`; sortable; search.
+  - **4. Receivables** — customers with balance > 0; aging buckets 0-30 / 31-60 / 61-90 / 90+; KPIs per bucket.
+  - **5. P&L** — periods Today / Week / Month / Year / Custom. Sales − Returns = Net Sales. COGS uses **captured-at-sale `purchase_price_at_sale_paisa`** (not current product price). HomeExp included only if `app_settings.home_expense_in_pnl='true'`. Recharts horizontal bar chart of expenses by category (blue=business, amber=home).
+    - **Math verified at SQL level**: Sales=Rs 18,794,660.20; COGS=Rs 18,261,403; Gross Profit=Rs 533,257.20; OpEx=Rs 89,846.05; HomeExp=Rs 85,846.05 (excluded); Net Profit=Rs 443,411.15. SQL invariants confirmed.
+  - **6. Defaulters** — customers with balance > 0 AND inactive ≥ `app_settings.defaulter_days` (default 20). Red-tinted rows. WhatsApp reminder button placeholder (Piece 10).
+  - **7. Stock** — current quantity per active product; value at cost (admin/accountant only). Low-stock highlight + filter.
+  - **8. Daily Cash Book** — cash payments (method='cash') vs cash expenses; per-row up/down arrows; closing balance footer.
+  - **9. Audit Log** (admin only) — table/action/user/date filter; expandable rows showing before/after JSON diff side by side.
+  - **Exports** — `lib/actions/reports.tsx` (named .tsx because PDFs use JSX): each report has `export<Name>Pdf` and `export<Name>Excel` server actions returning `{ ok, base64, filename }`. Client decodes via `downloadBase64` and triggers `<a download>`. PDFs use `renderToBuffer`; Excel uses `wb.xlsx.writeBuffer()`.
+  - **Server-side data layer:** `lib/reports/data.ts` houses the canonical fetchers used by both export actions (and would also be used by future scheduled jobs). Client queries in `lib/queries/reports.ts` mirror the same logic for live UI updates.
+  - **PDF documents:** `components/reports/pdfs.tsx` houses `Document`/`Page`/`View`/`Text` JSX for all 9 reports. Imported by both server actions (renderToBuffer) and could be by client PDFDownloadLink if needed.
+- **Notes:**
+  - **Spec STOP point at #5 P&L was honored** by running the equivalent SQL invariant directly against the live DB and confirming exact match before continuing to reports 6-9.
+  - **COGS uses captured-at-sale price** — `invoice_items.purchase_price_at_sale_paisa` (snapshot taken inside `create_invoice_atomic` RPC during Piece 6). This protects margin reporting from later product price changes.
+  - **Stock cost visibility** is role-gated client-side AND in the export server action — staff/viewer roles never see cost columns in either UI or PDF/Excel exports.
+  - **Audit log pulled from existing `audit_log` table** populated by triggers on every financial table since Piece 1. The `audit_app_settings` trigger added in Piece 8 means settings changes also appear here.
+  - 33 routes in production build; 36 unit tests still pass; no TS errors.
 
 ### Session 8 — 2026-05-10
 - **Worked on:** Piece 8 — Expenses + Investments + Loans + Settings (Phase 2 closeout)
