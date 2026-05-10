@@ -7,7 +7,7 @@ import { ChevronDown, Building2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useBusinessStore } from '@/lib/store/business';
 import { switchBusiness } from '@/lib/actions/business';
-import { BUSINESS_COOKIE } from '@/lib/business';
+import { BUSINESS_COOKIE } from '@/lib/business-shared';
 
 export function BusinessSwitcher() {
   const router = useRouter();

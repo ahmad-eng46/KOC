@@ -233,6 +233,24 @@ These need owner input before locking. Move to numbered ADR once decided.
 
 ---
 
+## ADR-015: Split client-safe constants/types into separate `*-shared.ts` files
+**Date:** 2026-05-10
+**Status:** Accepted
+
+**Context:** Next.js 16 + Turbopack tightened tree-shaking rules for server-only modules (those importing `next/headers`). Client components importing even a `const` or `type` from such a module now fail at build time with "You're importing a module that depends on `next/headers`". Previous Next.js versions tolerated type-only / const-only imports in this scenario.
+
+**Decision:** When a constant or type is needed by both server and client code, place it in a `*-shared.ts` file with **zero server-only imports** (no `next/headers`, no `'use server'`, no Node-only APIs). The server-side module imports from the shared file and re-exports the constant/type to preserve existing import paths for server callers. Client components import directly from the shared file.
+
+**Example:** `lib/business-shared.ts` holds `BUSINESS_COOKIE` constant and `Business` type. `lib/business.ts` (server-only, uses `next/headers` `cookies()`) imports and re-exports them. Client components (`BusinessProvider`, `AppShell`, `BusinessSwitcher`, the Zustand store) import directly from `lib/business-shared`.
+
+**Rationale:** Avoids duplicating constants between server and client. Keeps the server vs client boundary explicit and grep-able. Prevents Turbopack errors at build time. Lets server callers keep their existing import paths (no churn outside the original module).
+
+**Trade-offs accepted:** One extra file per shared concern. Minimal cost; the file is usually small (<20 lines).
+
+**Apply proactively** for any future shared constants or types — e.g. permission keys, status enums, format strings, role definitions. If a constant would be useful in a client component but its current home file imports anything server-only, factor it out preemptively rather than waiting for a build error.
+
+---
+
 ## How to Add a New Decision
 
 1. Bump the ADR number.

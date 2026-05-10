@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useBusinessStore } from '@/lib/store/business';
-import { type Business, BUSINESS_COOKIE } from '@/lib/business';
+import { type Business, BUSINESS_COOKIE } from '@/lib/business-shared';
 
 type Props = {
   businesses: Business[];
