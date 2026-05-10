@@ -9,9 +9,9 @@
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Phase 2 — Core Modules** ✅ COMPLETE
-**Phase 3 — Reports & Communication** 🔨 IN PROGRESS
+**Phase 3 — Reports & Communication** 🔨 IN PROGRESS (Piece 10 deferred pending Twilio/WhatsApp creds)
 **Piece in progress:** None
-**Next piece:** Piece 10 — SMS + WhatsApp Integration
+**Next piece:** Piece 10 — SMS + WhatsApp (when creds available) OR Piece 12 — Backup System
 
 ---
 
@@ -33,11 +33,11 @@
 
 ## Last Session
 
-**Date:** 2026-05-10
-**Worked on:** Piece 9 — Reports + P&L
-**Completed:** All 9 reports + PDF & Excel exports + P&L math verified at SQL level
+**Date:** 2026-05-11
+**Worked on:** Piece 11 — User Management (Piece 10 deferred — no Twilio/WhatsApp creds)
+**Completed:** Admin user CRUD, last-admin invariants, login history RPC, profile + password change
 **Blocked by:** Nothing
-**Next:** Piece 10 — SMS + WhatsApp Integration
+**Next:** Piece 12 — Backup System (or Piece 10 once messaging creds are ready)
 
 ---
 
@@ -79,8 +79,8 @@ Total: 15 pieces across 4 phases. Tick as completed.
 
 ### Phase 3: Reports & Communication
 - [x] **Piece 9** — Reports + P&L
-- [ ] **Piece 10** — SMS + WhatsApp Integration
-- [ ] **Piece 11** — User Management (Admin)
+- [~] **Piece 10** — SMS + WhatsApp Integration _(deferred until Twilio + WhatsApp Meta Business credentials provisioned)_
+- [x] **Piece 11** — User Management (Admin)
 - [ ] **Piece 12** — Backup System
 
 ### Phase 4: Launch
@@ -130,6 +130,46 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 10 — 2026-05-11
+- **Worked on:** Piece 11 — User Management. (Piece 10 SMS/WhatsApp deferred — `.env.local` had Twilio/WhatsApp keys commented out with no values.)
+- **Files added:**
+  - `lib/auth/admin-checks.ts` — `countActiveAdmins()` + 3 pure invariant helpers
+  - `lib/validators/user.ts` — Zod schemas for create/update/passwords/profile
+  - `lib/actions/user.ts` — 9 server actions (createUser, updateUser, resetUserPassword, softDeleteUser, restoreUser, listUsersWithBusinesses, getUserLoginHistory, changeOwnPassword, updateOwnProfile)
+  - `lib/actions/user.test.ts` — 12 unit tests for last-admin invariants
+  - `lib/queries/users.ts` — TanStack Query hooks
+  - `components/settings/UserForm.tsx` — shared create/edit form
+  - `components/settings/UserTable.tsx` — TanStack table + 5 inline modals (Create/Edit/Reset/Delete/LoginHistory) + kebab menu + password reveal dialog
+  - `components/profile/ProfileForm.tsx`
+  - `components/profile/ChangePasswordForm.tsx`
+  - `app/(app)/settings/users/page.tsx` (admin only)
+  - `app/(app)/profile/page.tsx` (all roles)
+  - `scripts/test-user-actions.mjs` — live end-to-end smoke test
+- **Files modified:** `components/layout/UserMenu.tsx` adds /profile link
+- **Migrations:**
+  - `0033_user_management.sql` — adds phone copy to `handle_new_auth_user`; adds `handle_new_session` trigger to populate `public.users.last_login_at` from `auth.sessions` INSERT
+  - `0034_login_history_rpc.sql` — `user_login_history(p_user_id, p_limit)` SECURITY DEFINER RPC reading `auth.sessions`, admin-only
+  - `0035_fix_login_history_rpc.sql` — explicit type casts (auth.sessions.user_agent is varchar, ip is inet) to fix RETURNS TABLE mismatch
+- **Audit findings (all resolved):**
+  - Service-role key not in client bundle: 4 grep scans of `.next/static` returned 0 matches for `service_role`, `SUPABASE_SERVICE_ROLE_KEY`, and the actual key prefix
+  - Runtime guard in `lib/supabase/admin.ts:5-10` throws on browser import (verified)
+  - `UserTable.tsx` has zero direct imports of admin client and zero raw service-role references
+  - **Bug fixed during audit:** kebab-menu Disable/Enable/Restore mutations resolve `{ok:false, error:...}` (not throw), so React Query stored the error in `mutation.data.error` not `mutation.error`. The status footer in `UserTable.tsx` only checked `.error.message`, so last-admin disable attempts were silently swallowed. Updated to check `.data.error` first, then fall back to thrown errors.
+- **Verifications:**
+  - `pnpm tsc --noEmit` clean
+  - `pnpm vitest run` → 48/48 tests pass (12 new for user invariants)
+  - `pnpm build` → 35 routes (added `/settings/users`, `/profile`)
+  - Live `scripts/test-user-actions.mjs` end-to-end: create staff → sign in → disable+ban → "User is banned" on retry → reset password → old fails / new works → soft delete + audit row → cleanup
+  - `user_login_history` RPC verified live, returning real session rows with IP + user_agent for `owner@khaliqoil.com`
+- **Login history status:** Working. RPC reads `auth.sessions` directly via SECURITY DEFINER. No fallback table needed. Trigger on `auth.sessions` INSERT also stamps `public.users.last_login_at` on every fresh sign-in.
+- **Notes:**
+  - Admin actions return `{ok, error?}` rather than throwing. Modals consume this via `serverError` props; the table-level error footer was patched to consume `mutation.data.error` for kebab-only actions.
+  - `softDeleteUser` bans for ~100 years (876000h) AND force-signs-out globally — disabled users see "User is banned" within milliseconds.
+  - `changeOwnPassword` verifies current password via fresh `fetch` to `/auth/v1/token` (no session pollution) before calling the admin API to update.
+  - Email is immutable in `updateUser` — schema doesn't allow it, action doesn't write it.
+  - `setUserBusinesses` is delete-then-insert (not atomic). Acceptable at this concurrency; revisit if multi-admin edits become common.
+  - The dual audit log (trigger on `public.users` + manual `auth.users` row) creates 2 audit entries per role change. Intentional for traceability.
 
 ### Session 9 — 2026-05-10
 - **Worked on:** Piece 9 — Reports + P&L (all 9 reports + exports)
