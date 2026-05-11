@@ -1,5 +1,4 @@
 import type { NextConfig } from 'next';
-// @ts-expect-error — next-pwa has no types
 import withPWA from 'next-pwa';
 
 const nextConfig: NextConfig = {
@@ -14,4 +13,5 @@ export default withPWA({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  // @ts-expect-error next-pwa ships types compiled against an older Next NextConfig
 })(nextConfig);

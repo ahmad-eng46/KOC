@@ -339,3 +339,109 @@ From this point on, each session looks like this:
 | Everything used today | Rs. 0 |
 
 Domain costs come at deployment time (Phase 4). Until then, you build for free.
+
+---
+
+## Backup System (Piece 12) — Edge Functions + pg_cron
+
+The in-app "Backup Now" button works without any of this setup. The
+sections below configure **scheduled** backups and the **daily DB dump**.
+
+### Required env (Edge Function secrets)
+
+```bash
+supabase secrets set \
+  RESEND_API_KEY=re_xxxxx \
+  RESEND_FROM='KOC Backup <backup@yourdomain.com>'
+```
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-injected for
+Edge Functions; you do NOT need to set them.
+
+### Deploy the Edge Functions
+
+```bash
+# from the repo root
+supabase functions deploy scheduled-backup --no-verify-jwt
+supabase functions deploy daily-db-dump --no-verify-jwt
+```
+
+`--no-verify-jwt` is required because pg_cron calls them via service-role
+auth, not user JWT.
+
+### Enable pg_cron + pg_net (Supabase dashboard)
+
+Database → Extensions → enable both `pg_cron` and `pg_net`.
+
+### Schedule the cron jobs (run as service role in SQL editor)
+
+The scheduled-backup function checks each business's
+`backup_schedule.frequency_days` and runs only when due. It's safe to
+poll hourly:
+
+```sql
+SELECT cron.schedule(
+  'koc-scheduled-backup',
+  '0 * * * *',                 -- every hour at :00
+  $$
+  SELECT net.http_post(
+    url := 'https://drqpqjsamguffwkxiilp.supabase.co/functions/v1/scheduled-backup',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key')
+    )
+  );
+  $$
+);
+```
+
+Daily DB dump at **03:00 Asia/Karachi** = **22:00 UTC**:
+
+```sql
+SELECT cron.schedule(
+  'koc-daily-db-dump',
+  '0 22 * * *',                -- 22:00 UTC daily
+  $$
+  SELECT net.http_post(
+    url := 'https://drqpqjsamguffwkxiilp.supabase.co/functions/v1/daily-db-dump',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key')
+    )
+  );
+  $$
+);
+```
+
+> **Note on the service-role key in pg_cron:** the recommended pattern is
+> to store it in Supabase Vault under the name `service_role_key`. If
+> you'd rather paste it inline, you can hardcode the bearer string — but
+> rotate it carefully because any DB superuser can read pg_cron job SQL.
+
+### Verify
+
+```sql
+-- Active cron jobs
+SELECT jobid, jobname, schedule, command FROM cron.job;
+
+-- Recent runs (last 10)
+SELECT jobname, status, return_message, start_time, end_time
+FROM cron.job_run_details
+ORDER BY start_time DESC LIMIT 10;
+```
+
+### Disable / remove
+
+```sql
+SELECT cron.unschedule('koc-scheduled-backup');
+SELECT cron.unschedule('koc-daily-db-dump');
+```
+
+### pg_cron expressions cheat sheet
+
+| Frequency      | Expression       |
+|----------------|------------------|
+| every hour     | `0 * * * *`      |
+| every 3 hours  | `0 */3 * * *`    |
+| daily 03:00 PKT | `0 22 * * *`    |
+| weekly Sunday  | `0 22 * * 0`     |
