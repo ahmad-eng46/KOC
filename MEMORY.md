@@ -9,9 +9,10 @@
 
 **Phase 1 — Foundation & Database** ✅ COMPLETE
 **Phase 2 — Core Modules** ✅ COMPLETE
-**Phase 3 — Reports & Communication** 🔨 IN PROGRESS (Piece 10 deferred pending Twilio/WhatsApp creds)
+**Phase 3 — Reports & Communication** ✅ COMPLETE (Piece 10 deferred pending Twilio/WhatsApp creds)
+**Phase 4 — Launch** 🔨 IN PROGRESS (Piece 14 prep package built; execution blocked on external prereqs)
 **Piece in progress:** None
-**Next piece:** Piece 10 — SMS + WhatsApp (when creds available) OR Piece 12 — Backup System
+**Next piece:** Piece 14 — Production Deployment (blocked on 5 external prereqs — see `docs/deployment/runbook.md` Section 1)
 
 ---
 
@@ -34,10 +35,10 @@
 ## Last Session
 
 **Date:** 2026-05-11
-**Worked on:** Piece 11 — User Management (Piece 10 deferred — no Twilio/WhatsApp creds)
-**Completed:** Admin user CRUD, last-admin invariants, login history RPC, profile + password change
-**Blocked by:** Nothing
-**Next:** Piece 12 — Backup System (or Piece 10 once messaging creds are ready)
+**Worked on:** Piece 14 — Production Deployment **(prep only)**
+**Completed:** 4-doc deployment prep package — env-var inventory, launch runbook, security-checks bash script (PASS 8 / FAIL 0 / WARN 2 on this repo), DNS cheat sheet
+**Blocked by:** 5 external prereqs not provisioned (domain, koc-prod Supabase project, Resend, Twilio, WhatsApp Meta) — see `docs/deployment/runbook.md` Section 1
+**Next:** Piece 14 execution (resumes once prereqs are in place) → Piece 15 (training + handover)
 
 ---
 
@@ -81,12 +82,24 @@ Total: 15 pieces across 4 phases. Tick as completed.
 - [x] **Piece 9** — Reports + P&L
 - [~] **Piece 10** — SMS + WhatsApp Integration _(deferred until Twilio + WhatsApp Meta Business credentials provisioned)_
 - [x] **Piece 11** — User Management (Admin)
-- [ ] **Piece 12** — Backup System
+- [x] **Piece 12** — Backup System _(in-app + Edge Functions written, pg_cron deployment pending)_
 
 ### Phase 4: Launch
-- [ ] **Piece 13** — Data Migration from .mdf
+- [x] **Piece 13** — Data Migration from .mdf _(migrator built + dry-run validated against sample CSVs; awaits real .mdf export for confirmed run)_
 - [ ] **Piece 14** — Production Deployment
 - [ ] **Piece 15** — Training + Handover
+
+---
+
+## Known Blockers
+
+- **Piece 14 (Production Deployment):** blocked on 5 external prereqs — see `docs/deployment/runbook.md` Section 1.
+  1. Domain not purchased (open question: `khaliqoil.com` or alternative?)
+  2. `koc-prod` Supabase project not created (dev project `drqpqjsamguffwkxiilp` exists; prod must be a separate project)
+  3. Resend account + API key not provisioned (also blocks email backups in Piece 12)
+  4. Twilio account + production credentials not provisioned (also blocks SMS in Piece 10)
+  5. Meta WhatsApp Business verification not started (2–5 business day wait once submitted; also blocks WhatsApp in Piece 10)
+- **Piece 10 (SMS + WhatsApp):** blocked on prereqs 3 and 5 above.
 
 ---
 
@@ -130,6 +143,97 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 14 — 2026-05-11
+- **Worked on:** Codebase audit fix — added role gates to `createCustomer` / `updateCustomer` / `createProduct` / `updateProduct` per Check #5 of the post-Piece-14-prep audit. Defense in depth restored. RLS still in place as second layer.
+- **Files modified:**
+  - [lib/actions/customer.ts](lib/actions/customer.ts) — `createCustomer`, `updateCustomer` now call `requireAuth()` then `can(profile.role, 'customers.create' | 'customers.update')` and throw `Permission denied: …` on failure. Existing zod + business-scope checks unchanged.
+  - [lib/actions/product.ts](lib/actions/product.ts) — `createProduct`, `updateProduct` got the same treatment with `'products.create'` / `'products.update'`.
+- **Pattern:** auth gate (redirects on no session) → role gate (throws) → schema validation → business scope → DB write. All four functions follow the same fail-fast order.
+- **Verifications:** `pnpm tsc --noEmit` clean, `pnpm vitest run` 48/48 pass. Live browser viewer-fetch test deferred (requires running session). `can()` matrix manually traced from `lib/auth/permissions.ts:35-82` against all 16 (role × permission) combinations: admin ✅ all, accountant ✅ customers/❌ products, staff ✅ customers.create only/❌ rest, viewer ❌ all four — matches intended denial behavior.
+- **Call sites:** Only `components/customers/CustomerForm.tsx` and `components/products/ProductForm.tsx` invoke these actions. Both forms are reached via routes already restricted to admin/accountant, so the throw path is unreachable in normal UI — gates are pure defense in depth against direct API construction.
+- **Note:** The new `throw` deviates from the existing `{ ok: false, error: '…' }` return shape for permission failures only. This is per spec (fail-fast). Authenticated-user/business-scope failures still use the soft-return shape. Forms don't currently render specific UI for the thrown error — it'll bubble as an unhandled server-action error to the client. Acceptable since legitimate UI flow can't reach the throw.
+
+### Session 13 — 2026-05-11
+- **Worked on:** Piece 14 — Production Deployment (prep package only, no production touch)
+- **Files added:**
+  - `docs/deployment/vercel-env-vars.md` — env-var inventory grepped from `process.env.*` (Next.js) and `Deno.env.get(*)` (Edge Functions) references in the codebase. Splits into Required-today (3 vars), Recommended (3), Forward-looking (8 — Twilio/WhatsApp/Backblaze; gated until corresponding piece is wired), and Edge-Function-secrets (set via `supabase secrets`, not Vercel). Each row: example shape, source dashboard, what breaks if missing.
+  - `docs/deployment/runbook.md` — 13-section launch runbook with per-step commands, click paths, time estimates, and "If this fails" troubleshooting. Sections: external prereqs → migrations → admin user → Resend → Twilio → WhatsApp → Vercel deploy → custom domain → UptimeRobot → Backblaze (optional) → security checks → smoke test (12 numbered checks for owner-on-iPhone) → rollback procedure.
+  - `docs/deployment/security-checklist.sh` — executable bash. Six check sections: (1) service_role not in committed source outside `lib/supabase/admin.ts` and not in `.next/static`; (2) no hard-coded supabase.co URLs or JWT-shaped tokens in source; (3) `.gitignore` contains `.env` rule + no `.env` files tracked; (4) RLS enabled on every public table (via `supabase db query`, gracefully WARNs if CLI not linked); (5) `.next` build current vs newest source file; (6) optional Lighthouse audit (≥90 perf/accessibility/best-practices) when `--staging-url` provided. Coloured PASS/FAIL/WARN output, exits 0 only when zero FAILs. **Verified locally: 8 PASS / 0 FAIL / 2 WARN (legitimate skips: Supabase not linked here, no staging URL).**
+  - `docs/deployment/dns-cheat-sheet.md` — every DNS record needed at the registrar. Sections: Vercel (A + CNAME), Resend (SPF + DKIM + return-path MX), DMARC (recommended), optional Workspace MX, CAA. Per row: type, host, placeholder value, TTL, dashboard source. Includes apply-order recommendation and `dig` verification commands.
+- **Files modified:** `MEMORY.md` (this entry + Known Blockers section + Last Session block + phase header)
+- **Verifications:** `docs/deployment/security-checklist.sh` ran cleanly against current repo (exit 0, 8 PASS / 0 FAIL / 2 WARN). 4 docs all renderable.
+- **NOT done (intentional — blocked on external prereqs):**
+  - No Supabase project named `koc-prod` was created (would cost the user free-tier slot + requires their explicit account-level provisioning)
+  - No domain registered, no DNS records added, no Vercel project linked, no API keys generated
+  - The `git push` at end of this session pushes the prep docs only; no production resource was touched
+- **Notes:**
+  - **Env-var inventory is grep-derived, not hand-written.** Used `grep -rEn "process\.env\.[A-Z_]+"` across `app/`, `components/`, `lib/`, `scripts/` to find every actual reference, then cross-referenced against the spec's expected list. Of the 14 vars the spec listed, **3 are required today** (Supabase URL/anon/service-role), **1 is partially used** (Resend, gates UI in `lib/backup/schedule.ts:47`), and **10 are forward-looking** (Twilio/WhatsApp not used until Piece 10 wires them; Backblaze not used until the destination is added to `scheduled-backup` Edge Function). The doc clearly distinguishes Required vs Forward-looking so the user doesn't waste time provisioning Twilio creds before Piece 10 is built.
+  - **Runbook accounts for the `0016_seed.sql` gotcha** — that file contains the dev test users with a known password (`KocTest2024!`) and `0017_rls_policies.sql` references those users. Section 2 explicitly tells the user to rename `0016_seed.sql` to `.skip` before pushing to prod, then create the bootstrap admin manually in Section 3.
+  - **Security script is conservative on RLS check** — uses `supabase db query` to compare `pg_tables` against `pg_class.relrowsecurity`. If `supabase` isn't linked, it WARNs (not FAILs) so the script stays runnable in any environment.
+  - **DNS cheat sheet flags the single-SPF-record gotcha** — many users add Resend's SPF, then later add Workspace's SPF, and silently break delivery because only one TXT SPF record can exist at the apex. The doc shows the merged form: `v=spf1 include:_spf.google.com include:amazonses.com ~all`.
+  - **Lighthouse check uses `npx lighthouse` directly** (no permanent dev dep added) — only runs when user passes `--staging-url`, so no impact on CI/local.
+
+### Session 12 — 2026-05-11
+- **Worked on:** Piece 13 — Data Migration from legacy SQL Server `.mdf`
+- **Files added:**
+  - `migration_data/README.md` — drop-folder docs: filenames, expected columns per CSV, conventions (money × 100 → paisa, Karachi → UTC, single auto-created `Legacy` business, skipped tables `Ladger_Table` + `Profit_Table`)
+  - `migration_data/Customer_Table.csv`, `Product.csv`, `Stock_Table.csv`, `Invoice_Table.csv`, `Invoice_Table1.csv`, `Cash_Table.csv`, `Expense_Table.csv`, `Investment_Table.csv`, `Loan_Table.csv`, `Login.csv` — sample CSVs mirroring legacy WinForms schema; include edge cases (negative opening balance, missing purchase price, orphan invoice with bad customer FK, payment with no invoice, user with no password)
+  - `scripts/migrate.ts` — single-file migrator (~750 LOC). Phases: load → plan → optional write → report. Default mode is `--dry-run`; explicit `--confirm` writes via service-role Supabase client. Mappings:
+    - `Customer_Table` → `customers` (with auto-created `Legacy` business)
+    - `Product` → `products` (purchase_price NULL → 0 + anomaly flag)
+    - `Stock_Table` → `stock_movements` type='in'
+    - `Invoice_Table` + `Invoice_Table1` → `invoices` + `invoice_items` (joined by `InvoiceID`); also generates type='out' stock_movements per line item; status derived from paid vs total
+    - `Cash_Table` → `payments` (PayMethod normalized to enum; orphan invoice ref → on-account payment + anomaly)
+    - `Expense_Table` → `expenses` type='business'
+    - `Investment_Table` → `investments`
+    - `Loan_Table` → `loans` (Direction Given/Taken validated; Status → is_settled)
+    - `Login` → auth.admin.createUser (re-hashes password via bcrypt; null passwords get generated `Tmp-<hex>!` and are surfaced in report)
+    - **Skipped intentionally:** `Ladger_Table` (regenerated by ledger trigger), `Profit_Table` (computed by P&L report)
+- **Files modified:**
+  - `package.json` — added `csv-parse` + `tsx` devDeps; added `migrate` script (`tsx --env-file=.env.local scripts/migrate.ts`)
+- **Outputs:**
+  - `migration_report.md` (regenerated each run) — row counts source→target, sum receivables (legacy vs imported with diff), top-10 customers by balance side-by-side, skipped rows + reasons, anomalies, generated-password table, write errors (confirmed mode only)
+- **Dry-run on sample CSVs:**
+  - Loaded: 10 customers, 10 products, 12 stock movements, 10 invoices, 18 invoice items, 10 cash entries, 8 expenses, 3 investments, 3 loans, 4 logins
+  - Planned: 10 / 10 / 12 / 9 / 16 / 10 / 8 / 3 / 3 / 4
+  - **Sum receivables: legacy Rs. 68,445.50 ↔ imported Rs. 68,445.50, diff = 0.00 ✅**
+  - **Top-10 customer balances: 10/10 ✅ exact match**
+  - 3 skipped (orphan invoice with `CustomerID=99` and its 2 line items + 1 line item referencing missing invoice)
+  - 2 anomalies (negative opening balance for Chaudhry Khan & Sons, missing purchase price on product 7)
+  - 1 generated password (staff2 had no legacy password)
+- **Verifications:** `pnpm tsc --noEmit` clean, `pnpm vitest run` 48/48 pass, `pnpm build` clean (36 routes — no UI route added)
+- **Notes:**
+  - **Default is dry-run** — `pnpm migrate` alone never writes. `--confirm` is required and additionally validates env vars before connecting.
+  - **Run on a fresh Supabase project FIRST.** Sample-data `--confirm` was NOT executed against the cloud DB (already has Piece-1 seed data; would conflict on businesses/users). Real-data `--confirm` should target an empty project.
+  - **Idempotency is intentionally NOT implemented.** Re-running `--confirm` will create a second `Legacy` business and duplicate everything. Production runbook: empty project → confirmed run → if it fails, drop project and retry. Mapping-table approach can be added later if needed.
+  - **`process.cwd()` is used for path resolution** instead of `import.meta.dirname` because tsx loads the script as CJS where `import.meta.dirname` is undefined. `pnpm` always invokes from the package root, so cwd is reliable.
+  - **Karachi → UTC** is applied only to TIMESTAMPTZ columns (`stock_movements.created_at`, etc.). `DATE` columns (`issue_date`, `payment_date`, `expense_date`) keep the legacy `YYYY-MM-DD` as-is — date-only values have no timezone.
+  - **Receivables math invariant**: `Σ(opening) + Σ(invoice.total) − Σ(cash.amount)` per customer, computed identically from legacy CSVs and from the planned in-memory rows. The 0.00 diff confirms the transformation is lossless.
+  - **Stock-out movements are auto-created** for each invoice line item so `current_stock` view reflects post-import balances correctly. Stock_Table provides the type='in' inflows; the migrator adds the type='out' outflows the legacy app stored implicitly.
+
+### Session 11 — 2026-05-11
+- **Worked on:** Piece 12 — Backup System (Excel + DB + scheduled).
+- **Files added:**
+  - `supabase/migrations/0036_backups_bucket.sql` — private `backups` Storage bucket + RLS scoped to `user_has_business` AND admin role; RLS on `public.backups` table (admin-only)
+  - `lib/backup/generate-excel.ts` — server-only Excel builder. 14 sheets (customers, products, invoices, invoice_items, returns, return_items, payments, expenses, investments, loans, stock_movements, ledger_entries, sms_log, audit_log) + Meta sheet. Money columns formatted as `"Rs. "#,##0.00`. Date columns formatted. Service-role queries to capture deleted rows + audit_log. **invoice_items / return_items scope via parent** (no business_id column).
+  - `lib/backup/schedule.ts` — frequencies (Off/1/3/5/7/15/30 days), destination types (email/gdrive/backblaze/whatsapp), `DESTINATION_AVAILABLE` map (only `email` is wired, gated by `RESEND_API_KEY` presence)
+  - `lib/actions/backup.ts` — `runBackupNow` (creates row → builds → uploads → updates row), `getBackupSchedule`/`saveBackupSchedule`, `listRecentBackups` (last 10), `getBackupSignedUrl` (1h signed URL for download)
+  - `components/settings/BackupPanel.tsx` — Backup Now button (downloads + uploads), Schedule UI, Recent Backups history
+  - `app/(app)/settings/backup/page.tsx`
+  - `supabase/functions/scheduled-backup/index.ts` — Deno Edge Function. Iterates app_settings rows, checks per-business cadence, generates Excel, uploads, optionally emails via Resend.
+  - `supabase/functions/daily-db-dump/index.ts` — Deno Edge Function. Dumps every table as JSONL, tar+gzip, upload to `backups/db-dumps/`, prune > 30 days.
+  - `scripts/test-excel-backup.mjs` — live smoke test
+- **Files modified:** `tsconfig.json` (excluded `supabase/functions` so Deno-only files don't break Next's `tsc`)
+- **Files modified:** `SETUP.md` appended with Edge Function deployment + pg_cron schedule snippets + cron expression cheat sheet
+- **Live verification:** `scripts/test-excel-backup.mjs` ran against the cloud DB → built a 116 KB workbook with **1218 rows across 14 tables**: 50 customers, 30 products, 102 invoices, 204 invoice_items, 32 payments, 20 expenses, 234 stock_movements, 134 ledger_entries, 412 audit_log. Empty parent → empty child sheet handled cleanly.
+- **Bug found and fixed during live test:** `invoice_items` and `return_items` have no `business_id` column. Initial generator naively `.eq('business_id', ...)` which 400'd. Fixed by pre-fetching parent IDs and scoping with `.in('invoice_id', [...])` / `.in('return_id', [...])`. Same fix applied to the Edge Function (which is Deno but mirrors the same logic).
+- **Verifications:** `tsc --noEmit` clean, `vitest run` 48/48 pass, `pnpm build` clean (36 routes — `/settings/backup` added).
+- **NOT done (deferred until explicit user authorization):**
+  - `supabase functions deploy scheduled-backup` and `... daily-db-dump`
+  - pg_cron schedule SQL (documented in SETUP.md, not executed)
+  - Resend API key not in `.env.local` so email destination shows "Coming soon" until provisioned
+- **Push rule still in effect:** user said `5675` is the only authorization for `git add/commit/push`. This piece is fully built locally but not committed. Status: `M MEMORY.md, M tsconfig.json, M SETUP.md, ?? lib/backup/, ?? lib/actions/backup.ts, ?? components/settings/BackupPanel.tsx, ?? app/(app)/settings/backup/, ?? supabase/migrations/0036…, ?? supabase/functions/, ?? scripts/test-excel-backup.mjs`.
 
 ### Session 10 — 2026-05-11
 - **Worked on:** Piece 11 — User Management. (Piece 10 SMS/WhatsApp deferred — `.env.local` had Twilio/WhatsApp keys commented out with no values.)
