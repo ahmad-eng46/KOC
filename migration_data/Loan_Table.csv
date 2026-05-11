@@ -1,0 +1,4 @@
+LoanID,PartyName,Direction,Amount,LoanDate,DueDate,Status,Notes
+1,Friend Tariq,Given,20000.00,2024-01-10 10:00:00,2024-04-10,Open,
+2,Bank UBL,Taken,300000.00,2023-08-01 14:00:00,2024-08-01,Open,Working capital loan
+3,Cousin Imran,Given,15000.00,2023-12-05 11:00:00,2024-03-05,Repaid,Settled in cash

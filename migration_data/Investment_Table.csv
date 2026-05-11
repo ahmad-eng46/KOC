@@ -1,0 +1,4 @@
+InvestmentID,InvestorName,Amount,InvestmentDate,Notes
+1,Owner Initial Capital,500000.00,2023-01-01 09:00:00,Founding capital
+2,Brother Khaliq,150000.00,2023-06-15 14:00:00,Working capital injection
+3,Owner,75000.00,2024-02-01 10:00:00,Stock purchase

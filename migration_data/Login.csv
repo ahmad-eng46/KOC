@@ -1,0 +1,5 @@
+UserID,Username,Password,Role,FullName,Email
+1,owner,admin123,admin,Khaliq Khan,owner@legacy.local
+2,accountant1,acc456,accountant,Asif Mahmood,asif@legacy.local
+3,staff1,staff789,staff,Rashid Ali,rashid@legacy.local
+4,staff2,,staff,Junaid Khan,

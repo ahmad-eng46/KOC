@@ -1,0 +1,11 @@
+ProductID,ProductName,SKU,SalePrice,PurchasePrice,Stock,Unit
+1,Engine Oil 1L,EO-1L,850.00,650.00,120,litre
+2,Engine Oil 4L,EO-4L,3200.00,2500.00,45,litre
+3,Brake Fluid 500ml,BF-500,450.00,320.00,80,bottle
+4,Gold Leaf Pack of 20,GL-20,420.00,360.00,500,pack
+5,Marlboro Pack of 20,MB-20,520.00,440.00,300,pack
+6,Coolant 1L,CO-1L,650.00,500.00,60,litre
+7,Grease 500g,GR-500,380.00,,40,jar
+8,Spark Plug,SP-01,150.00,90.00,200,unit
+9,Air Filter,AF-01,520.00,380.00,75,unit
+10,Capstan Pack of 20,CP-20,180.00,140.00,800,pack

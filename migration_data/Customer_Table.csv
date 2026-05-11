@@ -1,0 +1,11 @@
+CustomerID,CustomerName,Phone,Address,OpeningBalance,City,CreatedDate
+1,Ahmad Traders,03001234567,Main Bazaar Lahore,15000.00,Lahore,2023-01-15 10:30:00
+2,Bilal Brothers,03217654321,Shahrah-e-Faisal Karachi,0.00,Karachi,2023-02-01 09:00:00
+3,Chaudhry Khan & Sons,03339876543,Anarkali Lahore,-2500.50,Lahore,2023-03-10 14:15:00
+4,Dawood Cigarette Shop,03451112222,Saddar Rawalpindi,5000.00,Rawalpindi,2023-04-05 11:20:00
+5,Eastern Oil Mart,03159998888,Jail Road Lahore,12345.75,Lahore,2023-05-20 16:00:00
+6,Faisal General Store,03007776666,Liaqatabad Karachi,0.00,Karachi,2023-06-01 08:30:00
+7,Gulshan Petroleum,03334445555,Gulshan-e-Iqbal Karachi,8500.00,Karachi,2023-07-12 13:45:00
+8,Habib Khan Trading,,Mall Road Murree,2200.00,Murree,2023-08-03 10:00:00
+9,Imran & Co,03228889999,,750.00,Lahore,2023-09-18 15:30:00
+10,Jan Mohammad,03166665555,Cantt Peshawar,18900.25,Peshawar,2023-10-25 09:15:00
