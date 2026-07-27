@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uuidLike } from '@/lib/validators/uuid';
 
 export const customerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200),
@@ -8,7 +9,7 @@ export const customerSchema = z.object({
     .optional()
     .or(z.literal('')),
   address: z.string().max(500).optional().or(z.literal('')),
-  category_id: z.string().uuid().nullable().optional(),
+  category_id: uuidLike().nullable().optional(),
   opening_balance_paisa: z
     .number()
     .int('Must be a whole number in paisa')

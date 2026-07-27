@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { uuidLike } from '@/lib/validators/uuid';
 
 export const invoiceItemSchema = z.object({
-  product_id: z.string().uuid('Invalid product'),
+  product_id: uuidLike('Invalid product'),
   quantity: z
     .number({ error: 'Quantity must be a number' })
     .positive('Quantity must be greater than 0'),
@@ -13,7 +14,7 @@ export const invoiceItemSchema = z.object({
 });
 
 export const invoiceCreateSchema = z.object({
-  customer_id: z.string().uuid('Select a customer'),
+  customer_id: uuidLike('Select a customer'),
   issue_date: z.string().optional().or(z.literal('')),
   due_date: z.string().optional().or(z.literal('')),
   items: z.array(invoiceItemSchema).min(1, 'Add at least one item'),

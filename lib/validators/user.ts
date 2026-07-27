@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uuidLike } from '@/lib/validators/uuid';
 
 export const userRoles = ['admin', 'accountant', 'staff', 'viewer'] as const;
 export type UserRole = (typeof userRoles)[number];
@@ -11,7 +12,7 @@ export const userCreateSchema = z.object({
   phone: z.string().regex(phoneRegex, 'Enter a valid Pakistani phone').optional().or(z.literal('')),
   role: z.enum(userRoles),
   password: z.string().min(8, 'Password must be at least 8 characters').max(128),
-  businessIds: z.array(z.string().uuid()).default([]),
+  businessIds: z.array(uuidLike()).default([]),
 });
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 
@@ -20,7 +21,7 @@ export const userUpdateSchema = z.object({
   phone: z.string().regex(phoneRegex, 'Enter a valid Pakistani phone').optional().or(z.literal('')),
   role: z.enum(userRoles).optional(),
   isActive: z.boolean().optional(),
-  businessIds: z.array(z.string().uuid()).optional(),
+  businessIds: z.array(uuidLike()).optional(),
 });
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
 
