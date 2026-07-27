@@ -48,9 +48,9 @@ export function PurchaseReport() {
             <KPICard label="Movements" value={String(rows.length)} sub={`${byProduct.length} unique products`} />
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
             <h3 className="text-sm font-semibold text-gray-900 p-4 border-b border-gray-200">By Product</h3>
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600">Product</th>
@@ -71,9 +71,9 @@ export function PurchaseReport() {
             </table>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
             <h3 className="text-sm font-semibold text-gray-900 p-4 border-b border-gray-200">Movements</h3>
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600">Date</th>

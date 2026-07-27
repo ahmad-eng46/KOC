@@ -81,8 +81,8 @@ export function AuditLogReport() {
       ) : (
         <>
           <p className="text-xs text-gray-500">Showing {filtered.length} of latest 500 events.</p>
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-3 py-3" />

@@ -62,8 +62,8 @@ export function StockReport({ role }: Props) {
             {canSeeCost && <KPICard label="Value at Cost" value={formatPKR(totalValue)} sub={`${lowCount} low stock`} />}
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Product</th>

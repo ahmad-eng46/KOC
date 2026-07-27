@@ -63,7 +63,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="SKU / Code" error={errors.sku?.message}>
           <input
             className={inputCls(!!errors.sku)}
@@ -84,7 +84,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Sale Price (Rs.) *" error={errors.sale_price_paisa?.message}>
           <input
             className={inputCls(!!errors.sale_price_paisa)}

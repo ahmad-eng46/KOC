@@ -82,9 +82,9 @@ export function SalesReport() {
             </div>
           )}
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
             <h3 className="text-sm font-semibold text-gray-900 p-4 border-b border-gray-200">Top 10 Customers</h3>
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-600">Customer</th>

@@ -70,8 +70,8 @@ export function CustomerReport() {
             <KPICard label="Outstanding" value={formatPKR(totalBalance)} accent={totalBalance > 0 ? 'text-red-600' : 'text-gray-700'} sub={`${filtered.length} customers`} />
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <SortHead field="name"     current={sortField} dir={sortDir} onToggle={toggleSort}>Customer</SortHead>

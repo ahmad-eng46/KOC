@@ -35,8 +35,8 @@ export function PLReport() {
             <KPICard label="Net Profit" value={formatPKR(data.net_profit_paisa)} accent={data.net_profit_paisa >= 0 ? 'text-green-700' : 'text-red-600'} />
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
+            <table className="w-full text-sm min-w-[34rem]">
               <tbody>
                 <SectionHeader>Revenue</SectionHeader>
                 <Row label="Sales" value={data.sales_paisa} />

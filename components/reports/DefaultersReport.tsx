@@ -51,8 +51,8 @@ export function DefaultersReport() {
             <KPICard label="Total Outstanding" value={formatPKR(total)} accent="text-red-600" />
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
+            <table className="w-full text-sm min-w-[34rem]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
