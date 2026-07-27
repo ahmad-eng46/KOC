@@ -5,12 +5,41 @@ import Link from 'next/link';
 import { Search, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useCustomers, useDeleteCustomer } from '@/lib/queries/customers';
+import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { formatPKR } from '@/lib/money';
+
+/**
+ * Customer-facing balance display.
+ *
+ * The ledger stores balance in accounting sign (positive = the customer owes
+ * us). The owner wants the customer's-eye view instead:
+ *   - owes us money  -> negative, red    (e.g. unpaid oil)
+ *   - paid in advance -> positive, green (credit, can pay less next time)
+ * So we flip the sign for display: shown = -current_balance.
+ */
+function BalanceCell({ accountingPaisa, muted }: { accountingPaisa: number; muted?: boolean }) {
+  const shown = -accountingPaisa;
+  if (shown === 0) {
+    return <span className={muted ? 'text-gray-400' : 'text-gray-500'}>Rs. 0.00</span>;
+  }
+  const owes = shown < 0;
+  return (
+    <span className={owes ? 'text-red-600' : 'text-green-600'}>
+      {owes ? '−' : '+'}
+      {formatPKR(Math.abs(shown), { showSymbol: true })}
+    </span>
+  );
+}
 
 export function CustomerTable() {
   const { data: customers = [], isLoading } = useCustomers();
+  const { data: withBalance = [] } = useCustomersWithBalance();
   const deleteMutation = useDeleteCustomer();
   const [search, setSearch] = useState('');
+
+  const balanceById = new Map(
+    withBalance.map((c) => [c.id, c.current_balance_paisa]),
+  );
 
   const filtered = customers.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -80,7 +109,9 @@ export function CustomerTable() {
                 </td>
                 <td className="px-4 py-3 text-gray-500">{c.phone ?? '—'}</td>
                 <td className="px-4 py-3 text-right font-mono">
-                  {formatPKR(c.opening_balance_paisa)}
+                  <BalanceCell
+                    accountingPaisa={balanceById.get(c.id) ?? c.opening_balance_paisa}
+                  />
                 </td>
                 <td className="px-4 py-3">
                   {c.is_defaulter ? (
@@ -132,8 +163,11 @@ export function CustomerTable() {
               </p>
             </div>
             <div className="text-right shrink-0 ml-3">
-              <p className="text-sm font-mono text-gray-700">
-                {formatPKR(c.opening_balance_paisa)}
+              <p className="text-sm font-mono">
+                <BalanceCell
+                  accountingPaisa={balanceById.get(c.id) ?? c.opening_balance_paisa}
+                  muted
+                />
               </p>
               {c.is_defaulter && (
                 <span className="text-[10px] font-semibold text-red-600">DEFAULTER</span>
