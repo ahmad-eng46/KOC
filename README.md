@@ -29,6 +29,7 @@ Replaces a legacy single-PC C# WinForms app with a multi-user web app installabl
 ## Quick Links for Developers
 
 - **[CLAUDE.md](./CLAUDE.md)** — Instructions for Claude Code (read first)
+- **[STATUS.md](./STATUS.md)** — What's done and what's remaining
 - **[MEMORY.md](./MEMORY.md)** — Current project state and progress tracker
 - **[DECISIONS.md](./DECISIONS.md)** — Architectural decision log
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Technical deep dive
@@ -37,9 +38,10 @@ Replaces a legacy single-PC C# WinForms app with a multi-user web app installabl
 
 ## Project Status
 
-🏗️ **In progress** — Phase 1 (Foundation)
+🔨 **~90% built** — Phases 1–3 complete (Foundation, Core Modules, Reports); Phase 4 (Launch) in progress, blocked on external provisioning + SMS/WhatsApp wiring.
 
-Track progress in [MEMORY.md](./MEMORY.md).
+- **[STATUS.md](./STATUS.md)** — full what's-done / what's-remaining breakdown (start here)
+- **[MEMORY.md](./MEMORY.md)** — session-by-session live progress
 
 ## Running Locally
 
