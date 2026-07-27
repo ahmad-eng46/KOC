@@ -3,8 +3,8 @@
 import { useState, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
 import { CheckCircle2 } from 'lucide-react';
+import { todayKarachiISO } from '@/lib/date';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { useBusinessStore } from '@/lib/store/business';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
@@ -18,13 +18,6 @@ const METHOD_LABELS: Record<PaymentMethod, string> = {
   cheque: 'Cheque',
   online: 'Online',
 };
-
-function todayKarachiISO(): string {
-  // Karachi is UTC+5 with no DST; produce a YYYY-MM-DD as seen in Karachi today.
-  const now = new Date();
-  const karachi = new Date(now.getTime() + (5 * 60 - now.getTimezoneOffset()) * 60_000);
-  return format(karachi, 'yyyy-MM-dd');
-}
 
 export function PaymentForm() {
   const router = useRouter();

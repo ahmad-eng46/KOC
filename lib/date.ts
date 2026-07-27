@@ -7,6 +7,10 @@ export function nowKarachi(): Date {
   return toZonedTime(new Date(), KARACHI);
 }
 
+export function todayKarachiISO(): string {
+  return formatInTimeZone(new Date(), KARACHI, 'yyyy-MM-dd');
+}
+
 export function formatKarachi(d: Date | string, fmt = 'dd MMM yyyy'): string {
   const date = typeof d === 'string' ? new Date(d) : d;
   return formatInTimeZone(date, KARACHI, fmt);
