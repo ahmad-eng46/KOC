@@ -21,8 +21,8 @@
 - [x] Planning complete
 - [x] CLAUDE.md / MEMORY.md / DECISIONS.md created
 - [x] Supabase project created (ref: drqpqjsamguffwkxiilp, region: Singapore)
-- [ ] Vercel project created
-- [ ] GitHub repo created and pushed
+- [x] Vercel project created (live at https://koc-chi.vercel.app)
+- [x] GitHub repo created and pushed (github.com/ahmad-eng46/KOC)
 - [x] First commit
 - [x] Database schema deployed (15 migrations applied)
 - [x] RLS policies live (0017_rls_policies.sql)
@@ -34,11 +34,11 @@
 
 ## Last Session
 
-**Date:** 2026-05-11
-**Worked on:** Piece 14 — Production Deployment **(prep only)**
-**Completed:** 4-doc deployment prep package — env-var inventory, launch runbook, security-checks bash script (PASS 8 / FAIL 0 / WARN 2 on this repo), DNS cheat sheet
-**Blocked by:** 5 external prereqs not provisioned (domain, koc-prod Supabase project, Resend, Twilio, WhatsApp Meta) — see `docs/deployment/runbook.md` Section 1
-**Next:** Piece 14 execution (resumes once prereqs are in place) → Piece 15 (training + handover)
+**Date:** 2026-07-28
+**Worked on:** Vercel deployment + negative stock fix
+**Completed:** App live at https://koc-chi.vercel.app (points at the dev Supabase project `drqpqjsamguffwkxiilp`, not a separate koc-prod). Stock can no longer go negative — 0037 guards `create_invoice_atomic`, the server action blocks instead of warns, admin override removed. 0038 lifts the two negative products back to zero.
+**Blocked by:** 0037/0038 not yet applied to the database — no `SUPABASE_DB_PASSWORD` or access token available in the session
+**Next:** Apply 0037 + 0038, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
 
 ---
 

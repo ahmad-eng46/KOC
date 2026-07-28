@@ -7,9 +7,10 @@ import { getSession } from '@/lib/auth/session';
 import { can } from '@/lib/auth/permissions';
 import { invoiceCreateSchema, type InvoiceCreateInput } from '@/lib/validators/invoice';
 import { computeInvoiceTotals } from '@/lib/invoice';
+import { findStockShortages, formatShortageError } from '@/lib/stock';
 
 export type CreateInvoiceResult =
-  | { ok: true; id: string; warnings: string[] }
+  | { ok: true; id: string }
   | { ok: false; error: string };
 
 export async function createInvoice(input: InvoiceCreateInput): Promise<CreateInvoiceResult> {
@@ -43,7 +44,8 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
     data.discount_value,
   );
 
-  // 5. Stock pre-check (warn, do not block)
+  // 5. Stock check — blocks the sale; create_invoice_atomic enforces this
+  //    again in-transaction, where concurrent invoices are serialised.
   const supabase = await createServerClient();
   const productIds = Array.from(new Set(data.items.map((it) => it.product_id)));
 
@@ -67,24 +69,9 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
     (productRes.data ?? []).map((p) => [p.id, p.name]),
   );
 
-  // Sum requested quantities per product (in case same product appears twice)
-  const requestedByProduct = new Map<string, number>();
-  for (const it of data.items) {
-    requestedByProduct.set(
-      it.product_id,
-      (requestedByProduct.get(it.product_id) ?? 0) + it.quantity,
-    );
-  }
-
-  const warnings: string[] = [];
-  for (const [pid, requested] of requestedByProduct) {
-    const onHand = stockMap.get(pid) ?? 0;
-    if (onHand < requested) {
-      const name = productNames.get(pid) ?? pid;
-      warnings.push(
-        `${name}: only ${onHand} in stock, selling ${requested} (stock will go negative)`,
-      );
-    }
+  const shortages = findStockShortages(data.items, stockMap, productNames);
+  if (shortages.length > 0) {
+    return { ok: false, error: formatShortageError(shortages) };
   }
 
   // 6. Atomic creation via RPC
@@ -124,5 +111,5 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
   revalidatePath('/stock');
   revalidatePath('/products');
 
-  return { ok: true, id: invoiceId as string, warnings };
+  return { ok: true, id: invoiceId as string };
 }

@@ -29,6 +29,25 @@ export async function addStockMovement(input: StockMovementInput): Promise<Actio
   if (!businessId) return { ok: false, error: 'No active business.' };
 
   const supabase = await createServerClient();
+
+  // A negative adjustment must not take the product below zero.
+  if (quantity < 0) {
+    const { data: onHandRow } = await supabase
+      .from('current_stock')
+      .select('quantity_on_hand')
+      .eq('business_id', businessId)
+      .eq('product_id', parsed.data.product_id)
+      .maybeSingle();
+
+    const onHand = Number(onHandRow?.quantity_on_hand ?? 0);
+    if (onHand + quantity < 0) {
+      return {
+        ok: false,
+        error: `Not enough stock: ${onHand} on hand, cannot reduce by ${Math.abs(quantity)}.`,
+      };
+    }
+  }
+
   const { error } = await supabase.from('stock_movements').insert({
     business_id: businessId,
     product_id: parsed.data.product_id,

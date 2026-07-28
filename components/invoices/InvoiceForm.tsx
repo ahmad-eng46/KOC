@@ -39,7 +39,6 @@ export function InvoiceForm({ role }: Props) {
   const { data: products = [], isLoading: productsLoading } = useProducts();
 
   const canEditRate = role === 'admin';
-  const canOverrideStock = role === 'admin';
 
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([emptyItem('item-1')]);
@@ -51,7 +50,6 @@ export function InvoiceForm({ role }: Props) {
 
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [stockOverride, setStockOverride] = useState(false);
 
   const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;
   const previousBalance = selectedCustomer?.current_balance_paisa ?? 0;
@@ -112,8 +110,7 @@ export function InvoiceForm({ role }: Props) {
         ? 'Each item with a product must have quantity > 0'
         : null;
 
-  const stockBlocks =
-    stockWarnings.length > 0 && !canOverrideStock && !stockOverride;
+  const stockBlocks = stockWarnings.length > 0;
 
   const canSubmit = !submitting && !validationError && !stockBlocks;
 
@@ -360,16 +357,16 @@ export function InvoiceForm({ role }: Props) {
         </div>
       </section>
 
-      {/* Stock warnings */}
+      {/* Stock shortages — hard block */}
       {stockWarnings.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
           <div className="flex items-start gap-2">
-            <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-900">
-                Stock will go negative
+              <p className="text-sm font-medium text-red-900">
+                Not enough stock
               </p>
-              <ul className="mt-1.5 space-y-0.5 text-xs text-amber-800">
+              <ul className="mt-1.5 space-y-0.5 text-xs text-red-800">
                 {stockWarnings.map((w) => (
                   <li key={w.name}>
                     • <span className="font-medium">{w.name}</span>: {w.onHand} on hand,
@@ -377,24 +374,9 @@ export function InvoiceForm({ role }: Props) {
                   </li>
                 ))}
               </ul>
-              {!canOverrideStock && (
-                <p className="text-xs text-amber-700 mt-2">
-                  Only an admin can override and proceed with negative stock.
-                </p>
-              )}
-              {canOverrideStock && (
-                <label className="inline-flex items-center gap-2 mt-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={stockOverride}
-                    onChange={(e) => setStockOverride(e.target.checked)}
-                    className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
-                  />
-                  <span className="text-xs font-medium text-amber-900">
-                    Override and create invoice anyway (admin)
-                  </span>
-                </label>
-              )}
+              <p className="text-xs text-red-700 mt-2">
+                Reduce the quantity, or add stock in Stock → Add movement.
+              </p>
             </div>
           </div>
         </div>
