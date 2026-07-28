@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Building2, AlertCircle } from 'lucide-react';
@@ -14,8 +14,30 @@ export function BusinessSwitcher() {
   const queryClient = useQueryClient();
   const { activeId, businesses, setActive } = useBusinessStore();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const active = businesses.find((b) => b.id === activeId);
+
+  // Dismiss on outside tap / Escape. Same pattern as CustomerCombobox.
+  // 'pointerdown' rather than 'mousedown' so it fires on touch too.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   // 0 businesses
   if (businesses.length === 0) {
@@ -39,6 +61,7 @@ export function BusinessSwitcher() {
 
   // Multiple businesses — dropdown
   async function handleSelect(id: string) {
+    setOpen(false);
     if (id === activeId || pending) return;
 
     // Optimistic update in Zustand
@@ -67,43 +90,59 @@ export function BusinessSwitcher() {
   }
 
   return (
-    <div className="relative group">
+    <div className="relative" ref={wrapperRef}>
       <button
+        type="button"
         disabled={pending}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={clsx(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-[36px]',
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-11',
           'text-gray-700 hover:bg-gray-100 border border-transparent hover:border-gray-200',
+          open && 'bg-gray-100 border-gray-200',
           pending && 'opacity-60 cursor-wait',
         )}
       >
         <Building2 size={15} className="text-gray-400 shrink-0" />
         <span className="max-w-[140px] truncate">{active?.name ?? '…'}</span>
-        <ChevronDown size={14} className="text-gray-400 shrink-0" />
+        <ChevronDown
+          size={14}
+          className={clsx('text-gray-400 shrink-0 transition-transform', open && 'rotate-180')}
+        />
       </button>
 
-      {/* Dropdown */}
-      <div className="absolute left-0 top-full mt-1 w-56 bg-white rounded-xl border border-gray-200 shadow-lg py-1 z-50 hidden group-focus-within:block group-hover:block">
-        {businesses.map((biz) => (
-          <button
-            key={biz.id}
-            onClick={() => handleSelect(biz.id)}
-            className={clsx(
-              'flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-left transition-colors',
-              biz.id === activeId
-                ? 'bg-blue-50 text-blue-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-50',
-            )}
-          >
-            <Building2 size={14} className="shrink-0 opacity-60" />
-            <span className="truncate">{biz.name}</span>
-            {biz.id === activeId && (
-              <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-blue-500">
-                active
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Dropdown — click/tap driven, so it works without hover on touch */}
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full mt-1 w-56 bg-white rounded-xl border border-gray-200 shadow-lg py-1 z-50"
+        >
+          {businesses.map((biz) => (
+            <button
+              key={biz.id}
+              type="button"
+              role="option"
+              aria-selected={biz.id === activeId}
+              onClick={() => handleSelect(biz.id)}
+              className={clsx(
+                'flex items-center gap-2.5 w-full px-3 py-3 min-h-11 text-sm text-left transition-colors',
+                biz.id === activeId
+                  ? 'bg-blue-50 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100',
+              )}
+            >
+              <Building2 size={14} className="shrink-0 opacity-60" />
+              <span className="truncate">{biz.name}</span>
+              {biz.id === activeId && (
+                <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-blue-500">
+                  active
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

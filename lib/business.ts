@@ -16,12 +16,25 @@ export async function listAccessibleBusinesses(): Promise<Business[]> {
     .select('id, name, type, is_active')
     .eq('is_active', true)
     .order('name');
-  return (data as Business[]) ?? [];
+
+  // Oil is the primary trading business, so it leads the switcher and becomes
+  // the fallback in getActiveBusinessId(). Keyed on type rather than name so a
+  // rename does not silently change which business a fresh session opens on.
+  return sortOilFirst((data as Business[]) ?? []);
+}
+
+export function sortOilFirst(businesses: Business[]): Business[] {
+  return [...businesses].sort((a, b) => {
+    const aOil = a.type === 'oil' ? 0 : 1;
+    const bOil = b.type === 'oil' ? 0 : 1;
+    if (aOil !== bOil) return aOil - bOil;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 // ─────────────────────────────────────────────
 // Server: resolve which business is active.
-// Priority: cookie → first accessible.
+// Priority: cookie → the oil business → first accessible.
 // The URL ?b= param is handled client-side by the BusinessSwitcher
 // (it calls the switchBusiness server action which writes the cookie,
 //  then revalidatePath causes this to re-run with the updated cookie).
@@ -40,6 +53,6 @@ export async function getActiveBusinessId(): Promise<string> {
 
   if (fromCookie && ids.includes(fromCookie)) return fromCookie;
 
-  // Fallback: first business in the list
+  // Fallback: first in the list, which sortOilFirst() puts as the oil business
   return ids[0];
 }

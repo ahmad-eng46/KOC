@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* The UI is light-only — every surface is bg-white with explicit gray text
+     and there are no dark: variants. Pinning this keeps native controls
+     (date pickers, dropdowns, autofill, scrollbars) light too, instead of the
+     browser rendering them dark on a dark-mode OS. */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,13 +15,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 html {
