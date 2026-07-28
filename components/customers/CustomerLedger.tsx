@@ -19,6 +19,9 @@ type Props = {
   customerName: string;
   customerPhone: string | null;
   businessName: string;
+  /** Opening date range. Defaults to the current month. */
+  initialFrom?: string;
+  initialTo?: string;
 };
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
@@ -32,9 +35,16 @@ const REF_LABELS: Record<LedgerRow['ref_type'], string> = {
   adjustment: 'Adjustment',
 };
 
-export function CustomerLedger({ customerId, customerName, customerPhone, businessName }: Props) {
-  const [from, setFrom] = useState(monthStartISO());
-  const [to, setTo] = useState(todayISO());
+export function CustomerLedger({
+  customerId,
+  customerName,
+  customerPhone,
+  businessName,
+  initialFrom,
+  initialTo,
+}: Props) {
+  const [from, setFrom] = useState(initialFrom ?? monthStartISO());
+  const [to, setTo] = useState(initialTo ?? todayISO());
 
   const { data: allRows = [], isLoading } = useCustomerLedger(customerId);
 
