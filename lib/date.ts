@@ -31,3 +31,17 @@ export function endOfDayKarachi(d: Date): Date {
 export function karachiToUtc(d: Date): Date {
   return fromZonedTime(d, KARACHI);
 }
+
+/**
+ * A Date whose UTC fields hold the Karachi wall-clock, for writing into Excel.
+ *
+ * Excel has no timezone concept — it renders whatever wall-clock the serial
+ * number encodes, and ExcelJS derives that serial from the Date's UTC fields.
+ * Going via a formatted string keeps the result independent of the server's
+ * own timezone. The returned Date is for display only; it does not represent
+ * the same instant as its input.
+ */
+export function toKarachiExcelDate(d: Date | string): Date {
+  const utc = typeof d === 'string' ? new Date(d) : d;
+  return new Date(`${formatInTimeZone(utc, KARACHI, "yyyy-MM-dd'T'HH:mm:ss")}Z`);
+}

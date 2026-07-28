@@ -8,14 +8,63 @@ import ExcelJS from 'exceljs';
 import { createServerClient } from '@/lib/supabase/server';
 import { adminClient } from '@/lib/supabase/admin';
 import { getActiveBusinessId } from '@/lib/business';
+import { toKarachiExcelDate } from '@/lib/date';
 
 const MONEY_FMT = '"Rs. "#,##0.00';
 const DATE_FMT = 'yyyy-mm-dd';
 const DATETIME_FMT = 'yyyy-mm-dd hh:mm:ss';
+const ROW_LIMIT = 50_000;
+
+const AUTO_WIDTH_MIN = 12;
+const AUTO_WIDTH_MAX = 60;
+
+function autoSizeColumns(ws: ExcelJS.Worksheet): void {
+  ws.columns.forEach((col) => {
+    let widest = 0;
+    col.eachCell?.({ includeEmpty: false }, (cell) => {
+      const v = cell.value;
+      const text =
+        v instanceof Date
+          ? 'yyyy-mm-dd hh:mm:ss'
+          : v === null || v === undefined
+            ? ''
+            : String(v);
+      if (text.length > widest) widest = text.length;
+    });
+    col.width = Math.min(Math.max(widest + 2, AUTO_WIDTH_MIN), AUTO_WIDTH_MAX);
+  });
+}
+
+/**
+ * How a sheet's rows are narrowed to the active business.
+ *
+ *  business   — table has its own business_id column (the common case)
+ *  self       — the businesses table itself; matched on id
+ *  global     — not business-scoped at all (audit_log)
+ *  or-global  — business_id matches, OR is NULL for rows shared across
+ *               businesses (app_settings defaults)
+ *  via-*      — no business_id of its own; scoped through a parent table
+ */
+type SheetScope =
+  | 'business'
+  | 'self'
+  | 'global'
+  | 'or-global'
+  | 'via-invoices'
+  | 'via-returns'
+  | 'via-user-businesses';
 
 type SheetSpec = {
   name: string;
   table: string;
+  /** Defaults to 'business'. */
+  scope?: SheetScope;
+  /** Omit soft-deleted rows. Off by default: a backup normally keeps them. */
+  excludeDeleted?: boolean;
+  /** Render TIMESTAMPTZ as Asia/Karachi wall-clock rather than UTC. */
+  karachiDates?: boolean;
+  /** Size columns to their content instead of the fixed `width`. */
+  autoSize?: boolean;
   columns: Array<{
     header: string;
     key: string;
@@ -78,7 +127,7 @@ const SHEETS: SheetSpec[] = [
     ],
   },
   {
-    name: 'Invoice Items', table: 'invoice_items',
+    name: 'Invoice Items', table: 'invoice_items', scope: 'via-invoices',
     columns: [
       { header: 'ID', key: 'id', width: 38 },
       { header: 'Invoice ID', key: 'invoice_id', width: 38 },
@@ -105,7 +154,7 @@ const SHEETS: SheetSpec[] = [
     ],
   },
   {
-    name: 'Return Items', table: 'return_items',
+    name: 'Return Items', table: 'return_items', scope: 'via-returns',
     columns: [
       { header: 'ID', key: 'id', width: 38 },
       { header: 'Return ID', key: 'return_id', width: 38 },
@@ -217,7 +266,7 @@ const SHEETS: SheetSpec[] = [
     ],
   },
   {
-    name: 'Audit Log', table: 'audit_log',
+    name: 'Audit Log', table: 'audit_log', scope: 'global',
     columns: [
       { header: 'ID', key: 'id', width: 38 },
       { header: 'User ID', key: 'user_id', width: 38 },
@@ -227,6 +276,87 @@ const SHEETS: SheetSpec[] = [
       { header: 'Before', key: 'before_jsonb', width: 50, type: 'json' },
       { header: 'After', key: 'after_jsonb', width: 50, type: 'json' },
       { header: 'At', key: 'at', width: 20, type: 'datetime' },
+    ],
+  },
+
+  // ── Reference / structural tables ────────────────────────────────
+  // Added so the workbook covers all 20 tables in the schema. These use
+  // Karachi-local timestamps and content-sized columns.
+  {
+    name: 'Businesses', table: 'businesses', scope: 'self',
+    karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'ID', key: 'id' },
+      { header: 'Name', key: 'name' },
+      { header: 'Type', key: 'type' },
+      { header: 'Active', key: 'is_active' },
+      { header: 'Created At (PKT)', key: 'created_at', type: 'datetime' },
+      { header: 'Updated At (PKT)', key: 'updated_at', type: 'datetime' },
+    ],
+  },
+  {
+    name: 'Users', table: 'users', scope: 'via-user-businesses',
+    excludeDeleted: true, karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'ID', key: 'id' },
+      { header: 'Email', key: 'email' },
+      { header: 'Full Name', key: 'full_name' },
+      { header: 'Phone', key: 'phone' },
+      { header: 'Role', key: 'role' },
+      { header: 'Active', key: 'is_active' },
+      { header: 'Last Login At (PKT)', key: 'last_login_at', type: 'datetime' },
+      { header: 'Created At (PKT)', key: 'created_at', type: 'datetime' },
+      { header: 'Updated At (PKT)', key: 'updated_at', type: 'datetime' },
+    ],
+  },
+  {
+    name: 'User Businesses', table: 'user_businesses', scope: 'business',
+    karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'User ID', key: 'user_id' },
+      { header: 'Business ID', key: 'business_id' },
+      { header: 'Created At (PKT)', key: 'created_at', type: 'datetime' },
+    ],
+  },
+  {
+    name: 'Customer Categories', table: 'customer_categories', scope: 'business',
+    karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'ID', key: 'id' },
+      { header: 'Business ID', key: 'business_id' },
+      { header: 'Name', key: 'name' },
+      { header: 'Created At (PKT)', key: 'created_at', type: 'datetime' },
+      { header: 'Updated At (PKT)', key: 'updated_at', type: 'datetime' },
+    ],
+  },
+  {
+    name: 'App Settings', table: 'app_settings', scope: 'or-global',
+    karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'ID', key: 'id' },
+      { header: 'Business ID', key: 'business_id' },
+      { header: 'Key', key: 'key' },
+      { header: 'Value', key: 'value' },
+      { header: 'Updated By', key: 'updated_by' },
+      { header: 'Updated At (PKT)', key: 'updated_at', type: 'datetime' },
+    ],
+  },
+  {
+    name: 'Backups', table: 'backups', scope: 'business',
+    karachiDates: true, autoSize: true,
+    columns: [
+      { header: 'ID', key: 'id' },
+      { header: 'Type', key: 'type' },
+      { header: 'Status', key: 'status' },
+      { header: 'Storage Path', key: 'storage_path' },
+      // BIGINT, but bytes — not money. Deliberately untyped so it is
+      // never divided by 100.
+      { header: 'File Size (bytes)', key: 'file_size_bytes' },
+      { header: 'Triggered By', key: 'triggered_by' },
+      { header: 'Started At (PKT)', key: 'started_at', type: 'datetime' },
+      { header: 'Completed At (PKT)', key: 'completed_at', type: 'datetime' },
+      { header: 'Error', key: 'error_message' },
+      { header: 'Created At (PKT)', key: 'created_at', type: 'datetime' },
     ],
   },
 ];
@@ -269,7 +399,17 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
   meta.addRow({ key: 'Business', value: businessName });
   meta.addRow({ key: 'Business ID', value: businessId });
   meta.addRow({ key: 'Generated At', value: new Date().toISOString() });
-  meta.addRow({ key: 'Sheet Count', value: SHEETS.length + 1 });
+  const metaSheetCountRow = meta.addRow({ key: 'Sheet Count', value: 0 });
+  meta.addRow({
+    key: 'Money Columns',
+    value:
+      'Shown in rupees to 2dp. Stored values are integer paisa (1 PKR = 100 paisa).',
+  });
+  meta.addRow({
+    key: 'Timestamps',
+    value:
+      'Columns marked (PKT) are Asia/Karachi wall-clock. All others are UTC, as stored.',
+  });
 
   // Per table
   for (const spec of SHEETS) {
@@ -281,47 +421,64 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
       fgColor: { argb: 'FFEFEFEF' },
     } as ExcelJS.Fill;
 
+    const applyFormats = () => {
+      for (let i = 0; i < spec.columns.length; i++) {
+        const col = ws.getColumn(i + 1);
+        const def = spec.columns[i];
+        if (def.type === 'paisa') col.numFmt = MONEY_FMT;
+        if (def.type === 'date') col.numFmt = DATE_FMT;
+        if (def.type === 'datetime') col.numFmt = DATETIME_FMT;
+      }
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+    };
+
     // Tables with no business_id column must scope via their parent:
-    //   invoice_items → filter by invoice_id ∈ invoices(business_id=...)
-    //   return_items  → filter by return_id  ∈ returns(business_id=...)
+    //   invoice_items → invoice_id ∈ invoices(business_id=...)
+    //   return_items  → return_id  ∈ returns(business_id=...)
+    //   users         → id ∈ user_businesses(business_id=...)
     //   audit_log     → global, admin sees everything
-    let q = adminClient.from(spec.table).select('*').limit(50_000);
-    if (spec.table === 'invoice_items') {
-      const { data: invIds } = await adminClient
-        .from('invoices').select('id').eq('business_id', businessId);
-      const ids = (invIds ?? []).map((r) => r.id);
+    const scope: SheetScope = spec.scope ?? 'business';
+    let q = adminClient.from(spec.table).select('*').limit(ROW_LIMIT);
+
+    if (scope === 'via-invoices' || scope === 'via-returns' || scope === 'via-user-businesses') {
+      const parent =
+        scope === 'via-invoices'
+          ? { table: 'invoices', select: 'id', fk: 'invoice_id' }
+          : scope === 'via-returns'
+            ? { table: 'returns', select: 'id', fk: 'return_id' }
+            : { table: 'user_businesses', select: 'user_id', fk: 'id' };
+
+      const { data: parentRows } = await adminClient
+        .from(parent.table)
+        .select(parent.select)
+        .eq('business_id', businessId);
+
+      const ids = Array.from(
+        new Set(
+          ((parentRows ?? []) as unknown as Array<Record<string, unknown>>)
+            .map((r) => r[parent.select])
+            .filter((v): v is string => typeof v === 'string'),
+        ),
+      );
+
       if (ids.length === 0) {
-        // No parent rows → leave sheet empty
-        for (let i = 0; i < spec.columns.length; i++) {
-          const col = ws.getColumn(i + 1);
-          const def = spec.columns[i];
-          if (def.type === 'paisa') col.numFmt = MONEY_FMT;
-          if (def.type === 'date') col.numFmt = DATE_FMT;
-          if (def.type === 'datetime') col.numFmt = DATETIME_FMT;
-        }
-        ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+        // No parent rows → leave sheet empty but still formatted
+        applyFormats();
+        if (spec.autoSize) autoSizeColumns(ws);
         continue;
       }
-      q = adminClient.from(spec.table).select('*').in('invoice_id', ids).limit(50_000);
-    } else if (spec.table === 'return_items') {
-      const { data: retIds } = await adminClient
-        .from('returns').select('id').eq('business_id', businessId);
-      const ids = (retIds ?? []).map((r) => r.id);
-      if (ids.length === 0) {
-        for (let i = 0; i < spec.columns.length; i++) {
-          const col = ws.getColumn(i + 1);
-          const def = spec.columns[i];
-          if (def.type === 'paisa') col.numFmt = MONEY_FMT;
-          if (def.type === 'date') col.numFmt = DATE_FMT;
-          if (def.type === 'datetime') col.numFmt = DATETIME_FMT;
-        }
-        ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
-        continue;
-      }
-      q = adminClient.from(spec.table).select('*').in('return_id', ids).limit(50_000);
-    } else if (spec.table !== 'audit_log') {
+      q = adminClient.from(spec.table).select('*').in(parent.fk, ids).limit(ROW_LIMIT);
+    } else if (scope === 'self') {
+      q = q.eq('id', businessId);
+    } else if (scope === 'or-global') {
+      // Rows for this business, plus any shared/global rows (business_id IS NULL)
+      q = q.or(`business_id.eq.${businessId},business_id.is.null`);
+    } else if (scope === 'business') {
       q = q.eq('business_id', businessId);
     }
+    // scope === 'global' → no filter
+
+    if (spec.excludeDeleted) q = q.is('deleted_at', null);
 
     const { data, error } = await q;
     if (error) {
@@ -339,7 +496,10 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
           // Store as a number so Excel formula sums work; format applies the Rs. prefix.
           cleaned[col.key] = Number(raw) / 100;
         } else if (col.type === 'date' || col.type === 'datetime') {
-          cleaned[col.key] = new Date(raw as string);
+          const asDate = raw as string;
+          cleaned[col.key] = spec.karachiDates
+            ? toKarachiExcelDate(asDate)
+            : new Date(asDate);
         } else if (col.type === 'json') {
           cleaned[col.key] = raw == null ? '' : JSON.stringify(raw);
         } else {
@@ -349,17 +509,13 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
       ws.addRow(cleaned);
     }
 
-    // Apply column number formats
-    for (let i = 0; i < spec.columns.length; i++) {
-      const col = ws.getColumn(i + 1);
-      const def = spec.columns[i];
-      if (def.type === 'paisa') col.numFmt = MONEY_FMT;
-      if (def.type === 'date') col.numFmt = DATE_FMT;
-      if (def.type === 'datetime') col.numFmt = DATETIME_FMT;
-    }
-
-    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+    applyFormats();
+    if (spec.autoSize) autoSizeColumns(ws);
   }
+
+  // Written now that every sheet exists, so it counts what the workbook
+  // actually contains rather than what SHEETS was expected to produce.
+  metaSheetCountRow.getCell('value').value = wb.worksheets.length;
 
   const ab = await wb.xlsx.writeBuffer();
   const buffer = Buffer.from(ab);
