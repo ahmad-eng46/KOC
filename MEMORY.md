@@ -144,6 +144,21 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 15 — 2026-07-31
+- **Worked on:** Invoice PDF now shows the customer's full account position (previous balance → total due → real balance due), not just the current invoice.
+- **Files added:**
+  - [supabase/migrations/0039_invoice_previous_balance_rpc.sql](supabase/migrations/0039_invoice_previous_balance_rpc.sql) — `invoice_previous_balance(p_invoice_id)` returns BIGINT paisa. `SECURITY DEFINER` + `user_has_business()` check, same shape as `customer_ledger()`. Sums opening balance + all ledger entries sorting strictly before the invoice's own ledger row, using the **same ordering key as `customer_ledger()`** — `(entry_date, created_at)`. Payments against this invoice sort after it and are excluded by construction.
+  - [lib/invoice-totals.ts](lib/invoice-totals.ts) — pure `computeInvoiceTotals()`, all math in integer paisa.
+  - [lib/invoice-totals.test.ts](lib/invoice-totals.test.ts) — 6 tests incl. the spec's worked example (86k/1k/85k + 65k prev → 150k due − 100k paid → 50k).
+  - [scripts/render-invoice-pdf-preview.tsx](scripts/render-invoice-pdf-preview.tsx) — renders InvoicePDF to disk with fixtures; makes PDF layout changes checkable without auth or a browser.
+- **Files modified:**
+  - [lib/queries/invoice-detail.ts](lib/queries/invoice-detail.ts) — `previous_balance_paisa` added to the existing `Promise.all` (no extra round-trip), zod-validated at the boundary since supabase-js may surface BIGINT as string or number.
+  - [components/invoices/InvoicePDF.tsx](components/invoices/InvoicePDF.tsx) — conditional totals block.
+- **Decision:** show/hide threshold is `previousBalance !== 0`, not `> 0` as originally specced. A *credit* balance (customer overpaid) would otherwise fall into the simple view, where "Balance Due" overstates what's owed. Zero case renders byte-identical to the old layout.
+- **Degradation:** a null previous balance (RPC missing/erroring) falls back to the simple view rather than printing a wrong number.
+- **Verifications:** `tsc --noEmit` clean; 80/80 vitest pass; ESLint clean on all touched files (repo-wide `pnpm lint` was already failing beforehand — unescaped entities + `any` in `supabase/functions/`, untouched). PDF rendered to disk and visually checked for all four cases. SQL verified against a throwaway local Postgres 16 DB with 5 assertions: correct previous balance, opening-only for first invoice, draft-invoice fallback, NULL for unknown/deleted, and non-member blocked with `Not authorised`. Scratch DB dropped.
+- **⚠️ Not applied:** migration 0039 is **not** pushed to Supabase (Docker wasn't running, so no local stack). Until applied, the RPC 404s and every invoice renders the simple view — no crash, but the feature is inert.
+
 ### Session 14 — 2026-05-11
 - **Worked on:** Codebase audit fix — added role gates to `createCustomer` / `updateCustomer` / `createProduct` / `updateProduct` per Check #5 of the post-Piece-14-prep audit. Defense in depth restored. RLS still in place as second layer.
 - **Files modified:**

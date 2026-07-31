@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { format, parseISO } from 'date-fns';
 import { formatPKR } from '@/lib/money';
+import { computeInvoiceTotals } from '@/lib/invoice-totals';
 import type { InvoiceDetail } from '@/lib/queries/invoice-detail';
 
 const styles = StyleSheet.create({
@@ -44,6 +45,14 @@ const styles = StyleSheet.create({
   },
   grandLabel: { fontSize: 11, fontWeight: 700 },
   grandValue: { fontSize: 11, fontWeight: 700 },
+  totalsRule: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    marginTop: 2,
+    borderTopWidth: 0.5,
+    borderTopColor: '#999',
+  },
 
   payments: { marginTop: 18 },
   paymentsTitle: { fontSize: 10, fontWeight: 700, marginBottom: 6 },
@@ -52,7 +61,7 @@ const styles = StyleSheet.create({
 });
 
 export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
-  const balance = invoice.total_paisa - invoice.paid_paisa;
+  const totals = computeInvoiceTotals(invoice);
   return (
     <Document title={`Invoice ${invoice.invoice_number}`}>
       <Page size="A4" style={styles.page}>
@@ -117,23 +126,63 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
             {invoice.discount_paisa > 0 && (
               <View style={styles.totalsRow}>
                 <Text style={styles.totalsLabel}>Discount</Text>
-                <Text style={styles.totalsValue}>− {formatPKR(invoice.discount_paisa)}</Text>
+                <Text style={styles.totalsValue}>− {formatPKR(totals.discountPaisa)}</Text>
               </View>
             )}
-            <View style={styles.totalsGrand}>
-              <Text style={styles.grandLabel}>Total</Text>
-              <Text style={styles.grandValue}>{formatPKR(invoice.total_paisa)}</Text>
-            </View>
-            <View style={styles.totalsRow}>
-              <Text style={styles.totalsLabel}>Paid</Text>
-              <Text style={styles.totalsValue}>{formatPKR(invoice.paid_paisa)}</Text>
-            </View>
-            <View style={styles.totalsRow}>
-              <Text style={[styles.totalsLabel, { fontWeight: 700 }]}>Balance Due</Text>
-              <Text style={[styles.totalsValue, { fontWeight: 700, color: balance > 0 ? '#c00' : '#000' }]}>
-                {formatPKR(balance)}
-              </Text>
-            </View>
+
+            {totals.showPreviousBalance ? (
+              <>
+                <View style={styles.totalsRule}>
+                  <Text style={[styles.totalsLabel, { color: '#000' }]}>Invoice Total</Text>
+                  <Text style={styles.totalsValue}>{formatPKR(totals.invoiceTotalPaisa)}</Text>
+                </View>
+                <View style={styles.totalsRow}>
+                  <Text style={styles.totalsLabel}>Previous Balance</Text>
+                  <Text style={styles.totalsValue}>{formatPKR(totals.previousBalancePaisa)}</Text>
+                </View>
+                <View style={styles.totalsGrand}>
+                  <Text style={styles.grandLabel}>Total Due</Text>
+                  <Text style={styles.grandValue}>{formatPKR(totals.totalDuePaisa)}</Text>
+                </View>
+                <View style={styles.totalsRow}>
+                  <Text style={styles.totalsLabel}>Paid (this invoice)</Text>
+                  <Text style={styles.totalsValue}>{formatPKR(totals.paidPaisa)}</Text>
+                </View>
+                <View style={styles.totalsRule}>
+                  <Text style={[styles.totalsLabel, { fontWeight: 700, color: '#000' }]}>Balance Due</Text>
+                  <Text
+                    style={[
+                      styles.totalsValue,
+                      { fontWeight: 700, color: totals.balanceDuePaisa > 0 ? '#c00' : '#000' },
+                    ]}
+                  >
+                    {formatPKR(totals.balanceDuePaisa)}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.totalsGrand}>
+                  <Text style={styles.grandLabel}>Total</Text>
+                  <Text style={styles.grandValue}>{formatPKR(totals.invoiceTotalPaisa)}</Text>
+                </View>
+                <View style={styles.totalsRow}>
+                  <Text style={styles.totalsLabel}>Paid</Text>
+                  <Text style={styles.totalsValue}>{formatPKR(totals.paidPaisa)}</Text>
+                </View>
+                <View style={styles.totalsRow}>
+                  <Text style={[styles.totalsLabel, { fontWeight: 700 }]}>Balance Due</Text>
+                  <Text
+                    style={[
+                      styles.totalsValue,
+                      { fontWeight: 700, color: totals.balanceDuePaisa > 0 ? '#c00' : '#000' },
+                    ]}
+                  >
+                    {formatPKR(totals.balanceDuePaisa)}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 

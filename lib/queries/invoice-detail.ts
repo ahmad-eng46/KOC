@@ -1,9 +1,17 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { z } from 'zod';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
 import type { InvoiceStatus } from '@/lib/queries/invoices';
+
+// The RPC returns a BIGINT, which supabase-js may surface as number or string.
+const previousBalanceSchema = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .transform((v) => (v === null ? null : Number(v)))
+  .refine((v) => v === null || Number.isFinite(v), 'Invalid previous balance');
 
 export type InvoiceDetail = {
   id: string;
@@ -22,6 +30,12 @@ export type InvoiceDetail = {
   customer_phone: string | null;
   customer_address: string | null;
   business_name: string;
+  /**
+   * Customer balance immediately before this invoice was posted, from the
+   * invoice_previous_balance() RPC (SECURITY DEFINER, business-scoped).
+   * null when unavailable — callers must degrade, never guess.
+   */
+  previous_balance_paisa: number | null;
   items: Array<{
     id: string;
     product_id: string;
@@ -58,7 +72,7 @@ export function useInvoiceDetail(id: string) {
     queryFn: async () => {
       const supabase = createClient();
 
-      const [invRes, itemsRes, paysRes, returnsRes] = await Promise.all([
+      const [invRes, itemsRes, paysRes, returnsRes, prevBalRes] = await Promise.all([
         supabase
           .from('invoices')
           .select(
@@ -85,12 +99,19 @@ export function useInvoiceDetail(id: string) {
           .eq('invoice_id', id)
           .is('deleted_at', null)
           .order('created_at'),
+        supabase.rpc('invoice_previous_balance', { p_invoice_id: id }),
       ]);
 
       if (invRes.error) throw invRes.error;
       if (itemsRes.error) throw itemsRes.error;
       if (paysRes.error) throw paysRes.error;
       if (returnsRes.error) throw returnsRes.error;
+
+      // A missing previous balance must not break the invoice view — the PDF
+      // falls back to the simple totals block instead.
+      const prevBalance = prevBalRes.error
+        ? null
+        : (previousBalanceSchema.safeParse(prevBalRes.data).data ?? null);
 
       type RawCustomer = { name: string; phone: string | null; address: string | null };
       type RawBusiness = { name: string };
@@ -158,6 +179,7 @@ export function useInvoiceDetail(id: string) {
         customer_phone: c?.phone ?? null,
         customer_address: c?.address ?? null,
         business_name: b?.name ?? '—',
+        previous_balance_paisa: prevBalance,
         items,
         payments: (paysRes.data ?? []).map((p) => ({
           ...p,
