@@ -114,6 +114,7 @@ async function runForBusiness(businessId: string, sched: Schedule) {
     const tables: Array<[string, string, boolean]> = [
       ['Locations',       'locations',       true],
       ['Customers',       'customers',       true],
+      ['Brands',          'brands',          true],
       ['Products',        'products',        true],
       ['Invoices',        'invoices',        true],
       ['Invoice Items',   'invoice_items',   false],

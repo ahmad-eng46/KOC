@@ -74,8 +74,9 @@ type SheetSpec = {
     /**
      * Denormalised column: `key` doesn't exist on the table; the value is
      * looked up from another table via lookup.via (an FK column on this row).
+     * `fallback` renders when the FK is NULL or unresolvable.
      */
-    lookup?: { table: string; via: string; column: string };
+    lookup?: { table: string; via: string; column: string; fallback?: string };
   }>;
 };
 
@@ -109,9 +110,30 @@ const SHEETS: SheetSpec[] = [
       { header: 'Name', key: 'name', width: 30 },
       { header: 'SKU', key: 'sku', width: 14 },
       { header: 'Unit', key: 'unit', width: 10 },
+      { header: 'Brand ID', key: 'brand_id', width: 38 },
+      {
+        header: 'Brand', key: 'brand_name', width: 20,
+        lookup: { table: 'brands', via: 'brand_id', column: 'name', fallback: '—' },
+      },
       { header: 'Sale Price', key: 'sale_price_paisa', width: 14, type: 'paisa' },
       { header: 'Purchase Price', key: 'purchase_price_paisa', width: 14, type: 'paisa' },
       { header: 'Low Stock Threshold', key: 'low_stock_threshold', width: 16 },
+      { header: 'Active', key: 'is_active', width: 10 },
+      { header: 'Created At', key: 'created_at', width: 20, type: 'datetime' },
+      { header: 'Deleted At', key: 'deleted_at', width: 20, type: 'datetime' },
+    ],
+  },
+  {
+    name: 'Brands', table: 'brands',
+    columns: [
+      { header: 'ID', key: 'id', width: 38 },
+      { header: 'Name', key: 'name', width: 24 },
+      { header: 'Type', key: 'brand_type', width: 14 },
+      { header: 'Contact Person', key: 'contact_person', width: 20 },
+      { header: 'Phone', key: 'phone', width: 16 },
+      { header: 'Address', key: 'address', width: 30 },
+      { header: 'Notes', key: 'notes', width: 30 },
+      { header: 'Sort Order', key: 'sort_order', width: 10 },
       { header: 'Active', key: 'is_active', width: 10 },
       { header: 'Created At', key: 'created_at', width: 20, type: 'datetime' },
       { header: 'Deleted At', key: 'deleted_at', width: 20, type: 'datetime' },
@@ -605,7 +627,9 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
       const cleaned: Record<string, unknown> = {};
       for (const col of spec.columns) {
         const raw = col.lookup
-          ? lookupMaps.get(col.lookup.table)?.get(String(row[col.lookup.via] ?? '')) ?? null
+          ? lookupMaps.get(col.lookup.table)?.get(String(row[col.lookup.via] ?? ''))
+            ?? col.lookup.fallback
+            ?? null
           : row[col.key];
         if (raw === null || raw === undefined) {
           cleaned[col.key] = null;
