@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useInvoiceDetail } from '@/lib/queries/invoice-detail';
 import { useBusinessStore } from '@/lib/store/business';
+import { computeInvoiceTotals } from '@/lib/invoice-totals';
 import { formatPKR } from '@/lib/money';
 import { softDeleteInvoice, markInvoicePaid } from '@/lib/actions/invoice-detail';
 import { can, type Role } from '@/lib/auth/permissions';
@@ -45,15 +46,26 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
   if (error || !invoice) {
     return (
       <div className="rounded-xl bg-red-50 border border-red-200 p-4">
-        <p className="text-sm text-red-700">Invoice not found or you don't have access.</p>
+        <p className="text-sm text-red-700">Invoice not found or you don&apos;t have access.</p>
       </div>
     );
   }
 
+  // Same math as the PDF — the two must never disagree. `balance` stays
+  // invoice-scoped for the Mark Paid action (which settles THIS invoice);
+  // everything displayed as "balance" uses the account-wide totals.
+  const totals = computeInvoiceTotals(invoice);
   const balance = invoice.total_paisa - invoice.paid_paisa;
   const canDelete = role === 'admin';
   const canMarkPaid = can(role, 'payments.create') && balance > 0 && invoice.status !== 'cancelled';
   const canReturn = can(role, 'returns.create');
+
+  const finalLabel = totals.isCreditBalance
+    ? 'Credit Balance'
+    : totals.showPreviousBalance ? 'Remaining Balance' : 'Balance Due';
+  const finalColor = totals.isCreditBalance
+    ? 'text-green-700'
+    : totals.balanceDuePaisa > 0 ? 'text-red-600' : 'text-gray-700';
 
   async function onMarkPaid() {
     if (!confirm(`Mark invoice ${invoice!.invoice_number} as fully paid? This will record a cash payment for ${formatPKR(balance)}.`)) return;
@@ -122,15 +134,22 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
             )}
           </div>
           <div className="sm:text-right">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Balance Due</p>
+            <p className="text-xs uppercase tracking-wide text-gray-500">{finalLabel}</p>
             <p
               className={[
                 'text-2xl font-mono font-semibold mt-0.5 tabular-nums',
-                balance > 0 ? 'text-red-600' : 'text-green-700',
+                totals.isCreditBalance
+                  ? 'text-green-700'
+                  : totals.balanceDuePaisa > 0 ? 'text-red-600' : 'text-green-700',
               ].join(' ')}
             >
-              {formatPKR(balance)}
+              {formatPKR(Math.abs(totals.balanceDuePaisa))}
             </p>
+            {totals.showPreviousBalance && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                incl. previous balance {formatPKR(totals.previousBalancePaisa)}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -205,7 +224,7 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
 
       {/* Items */}
       <div className="rounded-2xl border border-gray-200 bg-white overflow-x-auto">
-        <table className="w-full text-sm min-w-[34rem]">
+        <table className="w-full text-sm min-w-136">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Item</th>
@@ -247,24 +266,60 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
               </tr>
             )}
             <tr className="border-t border-gray-200">
-              <td colSpan={3} className="px-4 py-3 text-right font-semibold text-gray-900">Total</td>
+              <td colSpan={3} className="px-4 py-3 text-right font-semibold text-gray-900">
+                {totals.showPreviousBalance ? 'Invoice Total' : 'Total'}
+              </td>
               <td className="px-4 py-3 text-right font-mono font-semibold text-gray-900 text-base">
                 {formatPKR(invoice.total_paisa)}
               </td>
             </tr>
+            {totals.showPreviousBalance && (
+              <>
+                <tr>
+                  <td
+                    colSpan={3}
+                    className={[
+                      'px-4 py-2 text-right text-sm',
+                      totals.hasCreditPrevious ? 'text-green-700' : 'text-gray-600',
+                    ].join(' ')}
+                  >
+                    {totals.hasCreditPrevious ? 'Credit from previous' : 'Previous Balance'}
+                  </td>
+                  <td
+                    className={[
+                      'px-4 py-2 text-right font-mono text-sm',
+                      totals.hasCreditPrevious ? 'text-green-700' : '',
+                    ].join(' ')}
+                  >
+                    {totals.hasCreditPrevious
+                      ? `- ${formatPKR(Math.abs(totals.previousBalancePaisa))}`
+                      : formatPKR(totals.previousBalancePaisa)}
+                  </td>
+                </tr>
+                <tr className="border-t border-gray-200">
+                  <td colSpan={3} className="px-4 py-3 text-right font-semibold text-gray-900">
+                    Total Amount Due
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono font-semibold text-gray-900 text-base">
+                    {formatPKR(totals.totalDuePaisa)}
+                  </td>
+                </tr>
+              </>
+            )}
             <tr>
-              <td colSpan={3} className="px-4 py-2 text-right text-sm text-gray-600">Paid</td>
+              <td colSpan={3} className="px-4 py-2 text-right text-sm text-gray-600">
+                {totals.showPreviousBalance ? 'Paid (this invoice)' : 'Paid'}
+              </td>
               <td className="px-4 py-2 text-right font-mono text-sm">{formatPKR(invoice.paid_paisa)}</td>
             </tr>
             <tr>
-              <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-900">Balance</td>
+              <td colSpan={3} className="px-4 py-2 text-right font-semibold text-gray-900">
+                {finalLabel}
+              </td>
               <td
-                className={[
-                  'px-4 py-2 text-right font-mono font-semibold',
-                  balance > 0 ? 'text-red-600' : 'text-gray-700',
-                ].join(' ')}
+                className={['px-4 py-2 text-right font-mono font-semibold', finalColor].join(' ')}
               >
-                {formatPKR(balance)}
+                {formatPKR(Math.abs(totals.balanceDuePaisa))}
               </td>
             </tr>
           </tfoot>
@@ -339,7 +394,7 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
             <div className="p-5 space-y-3">
               <p className="text-sm text-gray-700">
                 Soft-delete <span className="font-mono font-semibold">{invoice.invoice_number}</span>?
-                The ledger debit will remain — file a return if you also need to reverse the customer's balance.
+                The ledger debit will remain — file a return if you also need to reverse the customer&apos;s balance.
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
