@@ -34,11 +34,11 @@
 
 ## Last Session
 
-**Date:** 2026-08-08 (session 17, same day as 16)
-**Worked on:** Smart expense categorization — assets (vehicles/shops) + sub-types under the existing categories, form progressive disclosure, list filters/grouping, analytics report with charts + PDF/Excel, settings management page. Plus the formatPKR lakh-grouping fix (1,50,000).
-**Completed:** 0043 migration (expense_assets, expense_sub_types, nullable expenses columns, denormalising/validating trigger, 29 seeded sub-types per business, expense_asset_summary_view), validators/actions/hooks, all six UI phases, backup sheets. 113 tests green, next build green.
-**Blocked by:** Migrations **0039–0043 are NOT applied to Supabase** — same credential gap as 0037/0038. Until applied, the new expense fields error on missing columns.
-**Next:** Apply 0037–0043 to the cloud DB, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
+**Date:** 2026-08-08 (session 18, same day as 16/17)
+**Worked on:** Product brand/supplier system — brands table + products.brand_id, filter chips + badges + bulk assignment on the products list, brand picker with quick-create on the product form, /settings/brands management, and the owner's key deliverable: per-brand stock report PDF/Excel with the REORDER NEEDED block.
+**Completed:** 0044 migration (brands, products.brand_id, products_for_role replaced to expose it, brand_summary_view over current_stock, narrow assign RPCs), validators/actions/hooks, all UI phases, exports (previews rendered + eyeballed), backup Brands sheet + Products Brand columns. 118 tests green, next build green.
+**Blocked by:** Migrations **0039–0044 are NOT applied to Supabase** — same credential gap as 0037/0038. Until applied, the new brand/expense/location/supplier features error on missing tables/columns.
+**Next:** Apply 0037–0044 to the cloud DB, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
 
 ---
 
@@ -143,6 +143,16 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 18 — 2026-08-08
+- **Worked on:** Product brand/supplier system. Commits `6517978`…`0155c93` (9 commits).
+- **DB (0044):** `brands` (multinational | local_dealer, contact fields, sort_order; case-insensitive unique per business) + nullable `products.brand_id`. **`products_for_role` REPLACED to expose brand_id** — the view enumerates columns, so without this even admin's list (which reads the view) would never see it. `brand_summary_view` joins `current_stock` (the app's one stock computation) — out = on-hand ≤ 0 (incl. no-movement products), low = 0 < on-hand ≤ threshold, non-overlapping. Assignment via narrow SECURITY DEFINER RPCs (`assign_product_brand` admin/accountant/staff; `assign_products_brand` bulk admin/accountant) because products UPDATE RLS is admin-only *to guard price fields* — these touch only brand_id (the 0042 location-assign pattern). 8 assertion groups on scratch PG incl. staff-sees-brand-but-NULL-cost through the view.
+- **Server/hooks:** brands validators (phone refine = customers' PK regex), CRUD actions (deleteBrand soft-deletes + moves products to Unbranded via the bulk RPC, returns count), `useBrands` (summary view + base row merge, one query), `useProducts(brandId?)` enhanced with 'unbranded' sentinel (old no-arg call unchanged), `useProductsByBrand` wrapper.
+- **UI:** ProductForm gains grouped BrandPicker (Multinationals / Local dealers sections, green "+ Add new brand" → 2-field quick-create sheet that auto-selects). Products list: 44px filter chips (All / brands / Unbranded with amber count badge), state in `?brand=` URL param, brand-aware search ("double" finds Double Horse products), purple/coral badges, amber unbranded banner → bulk-assign mode (checkboxes, sticky top bar desktop / bottom bar mobile, stays on page batch after batch). /settings/brands: cards with type badge, tel: links, view-fed stats, full edit sheet, admin delete with "N products will become unbranded".
+- **Exports (the owner's daily tool):** `lib/actions/brand-stock-report.tsx` reads products_for_role **with the caller's auth context** so staff/viewer cost is NULL at the DB and the column is omitted entirely from PDF+Excel. Pure status/sort/summary logic in `lib/brand-stock.ts` (5 tests; at-threshold = low, threshold 0 = never low, negatives clamp). PDF: red REORDER NEEDED block ("OUT OF STOCK" / "only 3 left"), PKT timestamps, lakh prices; all-brands = summary page + page per brand + combined reorder grouped by brand. Excel: Stock Report + Reorder List sheets, status cell fills, all-brands = Summary + sheet per brand. **Two bugs caught only by rendering previews:** U+26A0 (⚠) silently dropped by Helvetica/WinAnsi (→ "!"), and Stock/Unit columns visually merging (→ padding). scripts/render-brand-stock-preview.tsx renders admin/staff/all variants.
+- **Backup:** Brands sheet both generators; Products sheet gains Brand ID + looked-up Brand name with a new `fallback` option on the lookup mechanism ('—' for unbranded). The "Sheet Count column C bug" spec-claimed for the third time — still non-existent (re-confirmed; count is dynamic).
+- **Verified:** 118/118 vitest, tsc clean, ESLint 0/0 on touched files, next build green (all routes), 8 SQL assertion groups, three PDFs eyeballed.
+- **⚠️ Not applied:** 0044 (and 0039–0043) not pushed to Supabase — no DB credentials in session.
 
 ### Session 17 — 2026-08-08
 - **Worked on:** Smart expense categorization with asset tracking. Commits `246ca90`…`818f0af` (8 commits).
