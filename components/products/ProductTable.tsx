@@ -9,6 +9,7 @@ import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/quer
 import { bulkAssignBrand } from '@/lib/actions/brands';
 import { formatPKR } from '@/lib/money';
 import { BrandBadge } from './BrandBadge';
+import { ExportStockButtons } from './ExportStockButtons';
 import { useToast } from '@/components/ui/Toast';
 
 type Props = {
@@ -133,7 +134,7 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
           />
         </div>
         {/* fade hint that more chips exist */}
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-gray-50 to-transparent md:hidden" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-gray-50 to-transparent md:hidden" />
       </div>
 
       {/* Unbranded banner */}
@@ -162,6 +163,7 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
             className="w-full h-10 pl-9 pr-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <ExportStockButtons activeBrand={activeBrand ?? null} isAll={!brandParam} />
         <Link
           href="/products/new"
           className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0 ml-auto"
