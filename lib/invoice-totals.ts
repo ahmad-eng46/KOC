@@ -18,6 +18,18 @@ export type InvoiceTotals = {
    * historical simple view (no Previous Balance / Total Due rows).
    */
   showPreviousBalance: boolean;
+  /**
+   * Customer held a credit before this invoice (previousBalance < 0):
+   * displayed as "Credit from previous" and subtracted from Total Amount
+   * Due rather than shown as a negative "Previous Balance".
+   */
+  hasCreditPrevious: boolean;
+  /**
+   * They overpaid across the whole account (balanceDue < 0): displayed as
+   * a green "Credit Balance" with the absolute amount, never as a negative
+   * number a customer could misread as money owed to them by mistake.
+   */
+  isCreditBalance: boolean;
 };
 
 type Input = {
@@ -38,6 +50,7 @@ type Input = {
 export function computeInvoiceTotals(inv: Input): InvoiceTotals {
   const previousBalancePaisa = inv.previous_balance_paisa ?? 0;
   const totalDuePaisa = inv.total_paisa + previousBalancePaisa;
+  const balanceDuePaisa = totalDuePaisa - inv.paid_paisa;
 
   return {
     subtotalPaisa: inv.subtotal_paisa,
@@ -46,7 +59,9 @@ export function computeInvoiceTotals(inv: Input): InvoiceTotals {
     previousBalancePaisa,
     totalDuePaisa,
     paidPaisa: inv.paid_paisa,
-    balanceDuePaisa: totalDuePaisa - inv.paid_paisa,
+    balanceDuePaisa,
     showPreviousBalance: previousBalancePaisa !== 0,
+    hasCreditPrevious: previousBalancePaisa < 0,
+    isCreditBalance: balanceDuePaisa < 0,
   };
 }

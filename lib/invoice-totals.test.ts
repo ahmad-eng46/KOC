@@ -60,11 +60,26 @@ describe('computeInvoiceTotals', () => {
     });
 
     expect(t.showPreviousBalance).toBe(true);
+    expect(t.hasCreditPrevious).toBe(true);
     expect(t.totalDuePaisa).toBe(R(6_000));
     expect(t.balanceDuePaisa).toBe(R(6_000));
+    expect(t.isCreditBalance).toBe(false);
   });
 
-  it('handles overpayment across the account (negative balance due)', () => {
+  it("subtracts a previous credit from Total Amount Due (the spec's Rs -5,000 + Rs 85,000 case)", () => {
+    const t = computeInvoiceTotals({
+      subtotal_paisa: R(85_000),
+      discount_paisa: 0,
+      total_paisa: R(85_000),
+      paid_paisa: 0,
+      previous_balance_paisa: R(-5_000),
+    });
+
+    expect(t.totalDuePaisa).toBe(R(80_000));
+    expect(t.hasCreditPrevious).toBe(true);
+  });
+
+  it('flags overpayment across the account as a credit balance', () => {
     const t = computeInvoiceTotals({
       subtotal_paisa: R(1_000),
       discount_paisa: 0,
@@ -75,6 +90,48 @@ describe('computeInvoiceTotals', () => {
 
     expect(t.totalDuePaisa).toBe(R(1_500));
     expect(t.balanceDuePaisa).toBe(R(-1_500));
+    expect(t.isCreditBalance).toBe(true);
+    expect(t.hasCreditPrevious).toBe(false);
+  });
+
+  it("matches the spec's Credit Balance example: 1,50,000 due, 1,75,000 paid → 25,000 credit", () => {
+    const t = computeInvoiceTotals({
+      subtotal_paisa: R(85_000),
+      discount_paisa: 0,
+      total_paisa: R(85_000),
+      paid_paisa: R(175_000),
+      previous_balance_paisa: R(65_000),
+    });
+
+    expect(t.totalDuePaisa).toBe(R(150_000));
+    expect(t.balanceDuePaisa).toBe(R(-25_000));
+    expect(t.isCreditBalance).toBe(true);
+  });
+
+  it('khata sale: no payment means the balance is the full amount due', () => {
+    const t = computeInvoiceTotals({
+      subtotal_paisa: R(85_000),
+      discount_paisa: 0,
+      total_paisa: R(85_000),
+      paid_paisa: 0,
+      previous_balance_paisa: R(65_000),
+    });
+
+    expect(t.balanceDuePaisa).toBe(t.totalDuePaisa);
+    expect(t.balanceDuePaisa).toBe(R(150_000));
+  });
+
+  it('fully settled account: everything cleared shows exactly zero', () => {
+    const t = computeInvoiceTotals({
+      subtotal_paisa: R(85_000),
+      discount_paisa: 0,
+      total_paisa: R(85_000),
+      paid_paisa: R(150_000),
+      previous_balance_paisa: R(65_000),
+    });
+
+    expect(t.balanceDuePaisa).toBe(0);
+    expect(t.isCreditBalance).toBe(false);
   });
 
   it('stays in integer paisa — no float drift on odd amounts', () => {
