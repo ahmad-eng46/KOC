@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   TrendingUp, ShoppingCart, Users, Wallet, BarChart3,
-  AlertTriangle, Package, BookOpen, ScrollText, MapPin,
+  AlertTriangle, Package, BookOpen, ScrollText, MapPin, Receipt,
 } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
@@ -26,6 +26,7 @@ const TILES: ReportTile[] = [
   { href: '/reports/pl', title: 'Profit & Loss', description: 'Sales − COGS − Expenses', icon: BarChart3, permission: 'reports.pnl' },
   { href: '/reports/defaulters', title: 'Defaulters', description: 'Inactive customers with outstanding balance', icon: AlertTriangle, permission: 'reports.view_basic' },
   { href: '/reports/locations', title: 'Locations', description: 'Sales, collections and outstanding per city', icon: MapPin, permission: 'reports.view' },
+  { href: '/reports/expenses', title: 'Expenses', description: 'Per-vehicle and per-shop cost tracking', icon: Receipt, permission: 'expenses.view' },
   { href: '/reports/stock', title: 'Stock', description: 'Current quantities + value at cost', icon: Package, permission: 'reports.view' },
   { href: '/reports/cash-book', title: 'Daily Cash Book', description: 'Cash in vs cash out, closing balance', icon: BookOpen, permission: 'reports.view' },
   { href: '/reports/audit', title: 'Audit Log', description: 'Every change to financial data', icon: ScrollText, adminOnly: true },
