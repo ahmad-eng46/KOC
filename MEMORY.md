@@ -34,11 +34,11 @@
 
 ## Last Session
 
-**Date:** 2026-07-28
-**Worked on:** Vercel deployment + negative stock fix
-**Completed:** App live at https://koc-chi.vercel.app (points at the dev Supabase project `drqpqjsamguffwkxiilp`, not a separate koc-prod). Stock can no longer go negative — 0037 guards `create_invoice_atomic`, the server action blocks instead of warns, admin override removed. 0038 lifts the two negative products back to zero.
-**Blocked by:** 0037/0038 not yet applied to the database — no `SUPABASE_DB_PASSWORD` or access token available in the session
-**Next:** Apply 0037 + 0038, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
+**Date:** 2026-08-08
+**Worked on:** Two full features — Supplier (vendor) management and Location/city-based customer categorization. Eight commits, DB → server → UI → reports/backup for each.
+**Completed:** Suppliers: 0040/0041 (tables + balance view + atomic purchase RPC + supplier ledger RPC), validators/actions/hooks, /suppliers pages with purchase & payment modals, stock-flow chooser, product purchase history, 3 backup sheets. Locations: 0042 (locations + customers.location_id + customer_balances_view + location_summary_view + assign RPCs), /locations hub + city detail + bulk assign flow, customer list/form/detail integration, /reports/locations with PDF/Excel, backup sheet. All SQL asserted against a scratch Postgres 16 with RLS role-switching.
+**Blocked by:** Migrations **0039–0042 are NOT applied to Supabase** — same credential gap as 0037/0038. Until `supabase db push` (or dashboard SQL editor), the supplier/location pages will error on missing tables and the invoice previous-balance RPC 404s.
+**Next:** Apply 0037–0042 to the cloud DB, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
 
 ---
 
@@ -121,7 +121,7 @@ _(Use this section for things you've parked. Move to DECISIONS.md once resolved.
 - `auth.user_role()` could not be created in the `auth` schema on Supabase cloud (permission denied). Function lives in `public.user_role()` instead. All RLS policies must reference `public.user_role()`.
 - Seed users were inserted directly into `auth.users` using a pre-hashed bcrypt password (`KocTest2024!`). In production, use Supabase Auth Admin API to create users properly.
 - `0016_seed.sql` is included in migrations (not a separate seed file) because `supabase db query` only targets local DB. This is fine for dev — do not run on production.
-- **Customer balance query** (`lib/queries/customers-balance.ts`) fetches all `ledger_entries` for the active business and sums `debit - credit` per customer client-side. Acceptable at current scale (~130 entries, 50 customers); replace with a server-side VIEW (e.g. `customer_balances_view`) before production launch — target Piece 7 or Piece 9.
+- **Customer balance query** (`lib/queries/customers-balance.ts`) fetches all `ledger_entries` for the active business and sums `debit - credit` per customer client-side. The server-side `customer_balances_view` now exists (migration 0042, used by the location pages) — remaining work is just pointing `useCustomersWithBalance` / `useCustomerReport` at it. Note the client-side path silently shows opening-balance-only numbers for staff/viewer (ledger RLS); the view shows true balances to all roles.
 
 ---
 
@@ -143,6 +143,26 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 16 — 2026-08-08
+- **Worked on:** Supplier (vendor) management + Location/city customer categorization, both complete DB→UI. Commits `895b021`…`8fc9feb`.
+- **Suppliers** (0040, 0041):
+  - `suppliers` / `stock_purchases` / `supplier_payments` tables, `supplier_balance_view` (purchased − paid; subquery aggregation to avoid row multiplication), `stock_movements.stock_purchase_id`, `create_stock_purchase_atomic()` (purchase + 'in' movement + `products.purchase_price_paisa` update in one txn; recomputes total server-side), `supplier_ledger()` RPC (window-function running balance, admin/accountant only).
+  - **Iron rule #3 extended to the buy side:** base tables SELECT-able by admin/accountant only; staff read `stock_purchases_for_role` which NULLs money columns. Staff can *create* purchases (delivery in hand) but never browse cost or pay vendors. UI additionally hides price columns / Payments / Ledger tabs / balance card for them.
+  - `stock_purchases.quantity` is NUMERIC(12,3), **deliberately not the spec'd INTEGER** — must round-trip into `stock_movements.quantity` (litres). `total_paisa` CHECK-constrained to `ROUND(qty × unit_price)`.
+  - `purchaseTotalPaisa()` in `lib/supplier-totals.ts` previews the modal total; verified byte-identical with Postgres `ROUND()` across 14 cases (both operands positive ⇒ half-up == half-away-from-zero). 13 unit tests.
+  - Add Stock now interposes "Purchase from supplier / Manual adjustment" chooser for roles with `purchases.create`; old flow untouched otherwise. Product page gains Purchase History. Sidebar: Suppliers (Truck) for admin/accountant/staff (viewer keeps URL access, read-only — NavItem got a `roles` list).
+  - New shared primitives: `ToastProvider`/`useToast` (app had none), `components/ui/form-fields.tsx` (Field/ServerError/inputCls extracted from 3 duplicating forms).
+- **Locations** (0042):
+  - `locations` (case-insensitive unique name per business), `customers.location_id` (nullable, never forced), `assign_customer_location()` (staff allowed — SECURITY DEFINER because `customers_update` RLS is admin/accountant; widening RLS would hand staff every field), `assign_customers_location()` bulk (admin/accountant, single-business enforcement, returns count).
+  - **`customer_balances_view`** — pays down the tech-debt note below: server-side `opening + SUM(debit−credit)` with the exact `reports.ts` semantics; visible to ALL roles (sale-side money ≠ purchase prices; owner-view bypasses ledger RLS deliberately). `location_summary_view` on top; `total_outstanding_paisa` sums **positive balances only** so an overpaid customer can't mask a city's dues.
+  - UI: /locations hub (2-up tappable city cards in route order + amber Unassigned card), /locations/[id] (chips All/Has Dues/Cleared/Overpaid, rupee min/max pushed down to SQL, 4 sorts, tap-to-call, sticky totals footer; reserved id `unassigned`), /locations/assign (multi-select + FAB + bottom-sheet on mobile). Customers list gets location filter + badge column; customer form gets Location select; sidebar Locations (MapPin) above Customers for all roles.
+  - /reports/locations (admin/accountant — ledger RLS would zero it for staff/viewer): summary + per-city breakdown pages in PDF, summary + per-city sheets in Excel (sheet names sanitised, 31-char limit, dedupe).
+  - Backup: Locations/Suppliers/Stock Purchases/Supplier Payments sheets in both generators; Customers sheet gains Location ID + looked-up Location name (new `lookup` mechanism in SheetSpec).
+- **Bugs fixed in passing:** CustomerForm's "— None —" category select submitted `''` which `uuidLike().nullable()` rejects — every customer saved without a category failed validation; both selects now `setValueAs` `'' → null`. Dropped unused `clsx` (CustomerTable) and `can`/`formatPKR` (reports actions) imports.
+- **Spec deviations (deliberate, documented in commits):** purchase quantity NUMERIC not INTEGER; supplier list balance colors (red = we owe — liability, mirror of customer table); previous-balance "Sheet Count column C bug" **does not exist** (verified via xlsx round-trip: `getCell('value')` → B5, count already dynamic); location outstanding uses `GREATEST(balance,0)`; location report gated admin/accountant.
+- **Verifications:** every migration + RLS asserted on scratch Postgres 16 with role-switching harness (13 supplier groups incl. 42501 staff denials; 8 location groups; supplier assertions re-run green after 0042). `tsc --noEmit` clean, ESLint 0/0 on all touched files, 93/93 vitest, `next build` passes with all new routes. Location PDF rendered and eyeballed; totals cross-checked in SQL.
+- **⚠️ Not applied:** 0040–0042 not pushed to Supabase (no DB credentials in session — same as 0037–0039).
 
 ### Session 15 — 2026-07-31
 - **Worked on:** Invoice PDF now shows the customer's full account position (previous balance → total due → real balance due), not just the current invoice.
