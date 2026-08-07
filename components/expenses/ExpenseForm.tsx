@@ -4,17 +4,27 @@ import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { CheckCircle2, Paperclip, X } from 'lucide-react';
+import { CheckCircle2, Paperclip, Plus, X } from 'lucide-react';
 import { useBusinessStore } from '@/lib/store/business';
 import { createClient } from '@/lib/supabase/client';
 import { rupeesToPaisa } from '@/lib/money';
 import { createExpense } from '@/lib/actions/expense';
+import { createExpenseSubType } from '@/lib/actions/expense-assets';
 import {
   expenseCategories,
   expenseTypes,
   type ExpenseType,
   type ExpenseCategory,
 } from '@/lib/validators/expense';
+import { expenseCategoryGroup } from '@/lib/validators/expense-assets';
+import {
+  useExpenseAssets,
+  useExpenseSubTypes,
+  useInvalidateExpenseAssetData,
+} from '@/lib/queries/expense-assets';
+import { AssetPicker } from './AssetPicker';
+import { AddAssetSheet } from './AddAssetSheet';
+import { useToast } from '@/components/ui/Toast';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -31,9 +41,50 @@ export function ExpenseForm() {
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
+  // Optional asset tracking — both prefetched once, filtered client-side per
+  // category so these fields appear instantly with no loading state.
+  const [assetId, setAssetId] = useState<string | null>(null);
+  const [subTypeId, setSubTypeId] = useState<string | null>(null);
+  const [addAssetOpen, setAddAssetOpen] = useState(false);
+  const [newSubTypeName, setNewSubTypeName] = useState<string | null>(null); // null = input hidden
+  const [savingSubType, setSavingSubType] = useState(false);
+  const { assets } = useExpenseAssets(category);
+  const { subTypes } = useExpenseSubTypes(category);
+  const invalidateAssetData = useInvalidateExpenseAssetData();
+  const { showToast } = useToast();
+
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  function changeCategory(next: ExpenseCategory) {
+    // Asset/sub-type are category-scoped: reset them unless the change stays
+    // within the Transport↔Maintenance group (same vehicles, same types).
+    const sameGroup =
+      expenseCategoryGroup(next).join() === expenseCategoryGroup(category).join();
+    if (!sameGroup) {
+      setAssetId(null);
+      setSubTypeId(null);
+      setNewSubTypeName(null);
+    }
+    setCategory(next);
+  }
+
+  async function saveNewSubType() {
+    const name = (newSubTypeName ?? '').trim();
+    if (!name) return;
+    setSavingSubType(true);
+    const result = await createExpenseSubType({ category, name });
+    setSavingSubType(false);
+    if (!result.ok) {
+      setServerError(result.error);
+      return;
+    }
+    invalidateAssetData();
+    setSubTypeId(result.id);
+    setNewSubTypeName(null);
+    showToast(`Type "${name}" added.`);
+  }
 
   const amountPaisa = useMemo(() => {
     const n = parseFloat(amountInput);
@@ -83,6 +134,8 @@ export function ExpenseForm() {
       amount_paisa: amountPaisa,
       expense_date: expenseDate,
       receipt_url: receiptPath,
+      asset_id: assetId,
+      sub_type_id: subTypeId,
     });
 
     if (!r.ok) {
@@ -134,13 +187,88 @@ export function ExpenseForm() {
         </label>
         <select
           value={category}
-          onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+          onChange={(e) => changeCategory(e.target.value as ExpenseCategory)}
           className="w-full h-11 px-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {expenseCategories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+      </div>
+
+      {/* Asset — progressive: only for categories where assets make sense
+          (any category that already has assets, or one with type chips).
+          Always optional; skipping keeps the old flow intact. */}
+      {category !== 'Other' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            {expenseCategoryGroup(category).includes('Transport')
+              ? 'Vehicle'
+              : category === 'Rent'
+                ? 'Property'
+                : 'Item'}{' '}
+            <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <AssetPicker
+            assets={assets}
+            value={assetId}
+            onChange={setAssetId}
+            onAddNew={() => setAddAssetOpen(true)}
+            categoryLabel={category}
+          />
+        </div>
+      )}
+
+      {/* Expense type — progressive, optional */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          Expense Type <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        {newSubTypeName === null ? (
+          <select
+            value={subTypeId ?? ''}
+            onChange={(e) => {
+              if (e.target.value === '__add__') {
+                setNewSubTypeName('');
+                return;
+              }
+              setSubTypeId(e.target.value || null);
+            }}
+            className="w-full h-11 px-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">— None —</option>
+            {subTypes.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+            <option value="__add__">+ Add New Type…</option>
+          </select>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              value={newSubTypeName}
+              onChange={(e) => setNewSubTypeName(e.target.value)}
+              placeholder="e.g. Toll Tax"
+              autoFocus
+              className="flex-1 h-11 px-3 rounded-xl border border-blue-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={saveNewSubType}
+              disabled={savingSubType || !(newSubTypeName ?? '').trim()}
+              className="h-11 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              <Plus size={14} />
+              {savingSubType ? 'Saving…' : 'Add'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewSubTypeName(null)}
+              className="h-11 px-3 rounded-xl border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Amount + Date */}
@@ -258,6 +386,14 @@ export function ExpenseForm() {
           )}
         </button>
       </div>
+
+      {addAssetOpen && (
+        <AddAssetSheet
+          category={category}
+          onClose={() => setAddAssetOpen(false)}
+          onCreated={(id) => setAssetId(id)}
+        />
+      )}
     </form>
   );
 }
