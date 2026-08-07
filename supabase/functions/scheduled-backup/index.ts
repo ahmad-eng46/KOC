@@ -124,6 +124,8 @@ async function runForBusiness(businessId: string, sched: Schedule) {
       ['Stock Purchases', 'stock_purchases', true],
       ['Supplier Payments', 'supplier_payments', true],
       ['Expenses',        'expenses',        true],
+      ['Expense Assets',  'expense_assets',  true],
+      ['Expense Sub-types', 'expense_sub_types', true],
       ['Investments',     'investments',     true],
       ['Loans',           'loans',           true],
       ['Stock Movements', 'stock_movements', true],

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { createExpenseAsset } from '@/lib/actions/expense-assets';
+import { createExpenseAsset, updateExpenseAsset } from '@/lib/actions/expense-assets';
+import type { ExpenseAsset } from '@/lib/queries/expense-assets';
 import {
   ASSET_TYPES_BY_CATEGORY,
   fuelTypes,
@@ -15,8 +16,10 @@ import { useToast } from '@/components/ui/Toast';
 
 type Props = {
   category: ExpenseCategory;
+  /** Present = edit mode: prefill and update instead of create. */
+  asset?: ExpenseAsset;
   onClose: () => void;
-  /** Called with the new asset's id so the caller can auto-select it. */
+  /** Called with the (new or updated) asset's id so the caller can select it. */
   onCreated: (id: string, name: string) => void;
 };
 
@@ -26,16 +29,17 @@ const VEHICLE_TYPES = ['car', 'bike', 'truck', 'rickshaw'];
  * Quick inline "add a car / shop" flow — bottom sheet on mobile, centred
  * card on desktop. Vehicles get plate + fuel type; property gets address.
  */
-export function AddAssetSheet({ category, onClose, onCreated }: Props) {
+export function AddAssetSheet({ category, asset, onClose, onCreated }: Props) {
   const { showToast } = useToast();
   const invalidate = useInvalidateExpenseAssetData();
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [name, setName] = useState('');
-  const [assetType, setAssetType] = useState('');
-  const [plate, setPlate] = useState('');
-  const [fuelType, setFuelType] = useState('');
-  const [address, setAddress] = useState('');
+  const existingDetails = (asset?.details ?? {}) as Record<string, unknown>;
+  const [name, setName] = useState(asset?.name ?? '');
+  const [assetType, setAssetType] = useState(asset?.asset_type ?? '');
+  const [plate, setPlate] = useState(typeof existingDetails.plate === 'string' ? existingDetails.plate : '');
+  const [fuelType, setFuelType] = useState(typeof existingDetails.fuel_type === 'string' ? existingDetails.fuel_type : '');
+  const [address, setAddress] = useState(typeof existingDetails.address === 'string' ? existingDetails.address : '');
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -61,17 +65,26 @@ export function AddAssetSheet({ category, onClose, onCreated }: Props) {
     setServerError(null);
     setSubmitting(true);
 
-    const details: Record<string, string> = {};
-    if (isVehicleType && plate.trim()) details.plate = plate.trim();
-    if (isVehicleType && fuelType) details.fuel_type = fuelType;
-    if (!isVehicleType && address.trim()) details.address = address.trim();
+    // Preserve any metadata keys this form doesn't edit.
+    const details: Record<string, unknown> = { ...existingDetails };
+    if (isVehicleType) {
+      if (plate.trim()) details.plate = plate.trim(); else delete details.plate;
+      if (fuelType) details.fuel_type = fuelType; else delete details.fuel_type;
+    } else if (address.trim()) {
+      details.address = address.trim();
+    } else {
+      delete details.address;
+    }
 
-    const result = await createExpenseAsset({
+    const input = {
       category,
       name: name.trim(),
       asset_type: assetType || '',
       details,
-    });
+    };
+    const result = asset
+      ? await updateExpenseAsset(asset.id, input)
+      : await createExpenseAsset(input);
     setSubmitting(false);
 
     if (!result.ok) {
@@ -80,7 +93,7 @@ export function AddAssetSheet({ category, onClose, onCreated }: Props) {
     }
 
     invalidate();
-    showToast(`"${name.trim()}" added.`);
+    showToast(asset ? `"${name.trim()}" updated.` : `"${name.trim()}" added.`);
     onCreated(result.id, name.trim());
     onClose();
   }
@@ -96,7 +109,7 @@ export function AddAssetSheet({ category, onClose, onCreated }: Props) {
       <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
         <div className="sticky top-0 bg-white flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">
-            Add to {category}
+            {asset ? `Edit ${asset.name}` : `Add to ${category}`}
           </h2>
           <button
             onClick={onClose}
