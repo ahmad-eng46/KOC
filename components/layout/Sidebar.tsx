@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
-  LayoutDashboard, Users, Package, Warehouse,
+  LayoutDashboard, Users, Package, Warehouse, Truck,
   FileText, CreditCard, Receipt, TrendingUp,
   Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, X,
 } from 'lucide-react';
@@ -16,12 +16,15 @@ type NavItem = {
   icon: React.ElementType;
   permission?: Parameters<typeof can>[1];
   adminOnly?: boolean;
+  /** Show only for these roles; checked before `permission`. */
+  roles?: Role[];
 };
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
   { label: 'Customers',   href: '/customers',   icon: Users,       permission: 'customers.view' },
   { label: 'Products',    href: '/products',    icon: Package,     permission: 'products.view' },
+  { label: 'Suppliers',   href: '/suppliers',   icon: Truck,       roles: ['admin', 'accountant', 'staff'] },
   { label: 'Stock',       href: '/stock',       icon: Warehouse,   permission: 'stock.view' },
   { label: 'Invoices',    href: '/invoices',    icon: FileText,    permission: 'invoices.view' },
   { label: 'Payments',    href: '/payments',    icon: CreditCard,  permission: 'payments.view' },
@@ -46,6 +49,7 @@ export function Sidebar({ role, open, onClose }: Props) {
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly) return role === 'admin';
+    if (item.roles) return item.roles.includes(role);
     if (item.permission) return can(role, item.permission);
     return true;
   });

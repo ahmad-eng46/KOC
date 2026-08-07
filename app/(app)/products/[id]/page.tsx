@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth/session';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { ProductForm } from '@/components/products/ProductForm';
+import { ProductPurchaseHistory } from '@/components/products/ProductPurchaseHistory';
 import { type Product } from '@/lib/queries/products';
 
 export const metadata = { title: 'Edit Product — KOC' };
@@ -61,6 +62,10 @@ export default async function ProductDetailPage({ params }: Props) {
       ) : (
         <ProductReadView product={product} canSeePurchasePrice={canSeePurchasePrice} />
       )}
+
+      <div className="pt-2 max-w-3xl">
+        <ProductPurchaseHistory productId={id} canSeeMoney={canSeePurchasePrice} />
+      </div>
     </div>
   );
 }

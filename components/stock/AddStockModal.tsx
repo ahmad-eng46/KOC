@@ -3,21 +3,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X } from 'lucide-react';
+import { X, Truck, PencilLine } from 'lucide-react';
 import { stockMovementSchema, type StockMovementInput } from '@/lib/validators/stock';
 import { addStockMovement } from '@/lib/actions/stock';
 import { type Product } from '@/lib/queries/products';
+import { AddPurchaseModal } from '@/components/suppliers/AddPurchaseModal';
 
 type Props = {
   products: Product[];
   defaultProductId?: string;
   canAdjust: boolean;
+  /** Offer the "record a supplier purchase" path (roles with purchases.create). */
+  canPurchase?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 };
 
-export function AddStockModal({ products, defaultProductId, canAdjust, onClose, onSuccess }: Props) {
+export function AddStockModal({
+  products,
+  defaultProductId,
+  canAdjust,
+  canPurchase = false,
+  onClose,
+  onSuccess,
+}: Props) {
   const [serverError, setServerError] = useState<string | null>(null);
+  // 'choose' interposes only when the purchase path is available; otherwise
+  // this modal behaves exactly as before.
+  const [mode, setMode] = useState<'choose' | 'manual' | 'purchase'>(
+    canPurchase ? 'choose' : 'manual',
+  );
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -53,6 +68,63 @@ export function AddStockModal({ products, defaultProductId, canAdjust, onClose, 
     }
     onSuccess();
     onClose();
+  }
+
+  if (mode === 'purchase') {
+    return (
+      <AddPurchaseModal
+        defaultProductId={defaultProductId}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />
+    );
+  }
+
+  if (mode === 'choose') {
+    return (
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4"
+        onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      >
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="text-base font-semibold text-gray-900">Add Stock</h2>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="p-5 space-y-3">
+            <button
+              type="button"
+              onClick={() => setMode('purchase')}
+              className="w-full flex items-center gap-3 rounded-xl border border-gray-300 px-4 py-3.5 text-left hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+            >
+              <span className="p-2 rounded-lg bg-blue-50 text-blue-600 shrink-0"><Truck size={18} /></span>
+              <span>
+                <span className="block text-sm font-medium text-gray-900">Purchase from supplier</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Records who you bought from and updates their account
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('manual')}
+              className="w-full flex items-center gap-3 rounded-xl border border-gray-300 px-4 py-3.5 text-left hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+            >
+              <span className="p-2 rounded-lg bg-gray-100 text-gray-600 shrink-0"><PencilLine size={18} /></span>
+              <span>
+                <span className="block text-sm font-medium text-gray-900">Manual adjustment</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Quick quantity change with no supplier record
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
