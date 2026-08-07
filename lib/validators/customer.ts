@@ -10,6 +10,7 @@ export const customerSchema = z.object({
     .or(z.literal('')),
   address: z.string().max(500).optional().or(z.literal('')),
   category_id: uuidLike().nullable().optional(),
+  location_id: uuidLike().nullable().optional(),
   opening_balance_paisa: z
     .number()
     .int('Must be a whole number in paisa')

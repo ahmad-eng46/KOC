@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
-  LayoutDashboard, Users, Package, Warehouse, Truck,
+  LayoutDashboard, MapPin, Users, Package, Warehouse, Truck,
   FileText, CreditCard, Receipt, TrendingUp,
   Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, X,
 } from 'lucide-react';
@@ -22,6 +22,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
+  { label: 'Locations',   href: '/locations',   icon: MapPin },
   { label: 'Customers',   href: '/customers',   icon: Users,       permission: 'customers.view' },
   { label: 'Products',    href: '/products',    icon: Package,     permission: 'products.view' },
   { label: 'Suppliers',   href: '/suppliers',   icon: Truck,       roles: ['admin', 'accountant', 'staff'] },

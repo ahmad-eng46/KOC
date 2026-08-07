@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { CustomerDetailTabs } from '@/components/customers/CustomerDetailTabs';
+import { LocationBadge } from '@/components/locations/LocationBadge';
 import { type Customer } from '@/lib/queries/customers';
 
 export const metadata = { title: 'Customer — KOC' };
@@ -22,7 +23,7 @@ export default async function CustomerDetailPage({ params }: Props) {
   const [custRes, bizRes] = await Promise.all([
     supabase
       .from('customers')
-      .select('*, customer_categories(name)')
+      .select('*, customer_categories(name), locations(name)')
       .eq('id', id)
       .eq('business_id', businessId)
       .is('deleted_at', null)
@@ -50,7 +51,10 @@ export default async function CustomerDetailPage({ params }: Props) {
         </Link>
         <div>
           <h1 className="text-xl font-semibold text-gray-900">{customer.name}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{customer.phone ?? '—'}</p>
+          <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-2">
+            {customer.phone ?? '—'}
+            <LocationBadge name={customer.locations?.name} />
+          </p>
         </div>
       </div>
       <CustomerDetailTabs customer={customer} businessName={businessName} />

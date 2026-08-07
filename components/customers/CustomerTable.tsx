@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Search, Plus, Trash2, ChevronRight } from 'lucide-react';
-import { clsx } from 'clsx';
 import { useCustomers, useDeleteCustomer } from '@/lib/queries/customers';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
+import { useLocations } from '@/lib/queries/locations';
+import { LocationBadge } from '@/components/locations/LocationBadge';
 import { formatPKR } from '@/lib/money';
 
 /**
@@ -34,17 +35,26 @@ function BalanceCell({ accountingPaisa, muted }: { accountingPaisa: number; mute
 export function CustomerTable() {
   const { data: customers = [], isLoading } = useCustomers();
   const { data: withBalance = [] } = useCustomersWithBalance();
+  const { data: locations = [] } = useLocations();
   const deleteMutation = useDeleteCustomer();
   const [search, setSearch] = useState('');
+  // '' = all, 'unassigned' = no location, else a location id
+  const [locationFilter, setLocationFilter] = useState('');
 
   const balanceById = new Map(
     withBalance.map((c) => [c.id, c.current_balance_paisa]),
   );
 
-  const filtered = customers.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone ?? '').includes(search),
-  );
+  const filtered = customers
+    .filter((c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone ?? '').includes(search),
+    )
+    .filter((c) => {
+      if (!locationFilter) return true;
+      if (locationFilter === 'unassigned') return c.location_id === null;
+      return c.location_id === locationFilter;
+    });
 
   if (isLoading) {
     return (
@@ -67,6 +77,21 @@ export function CustomerTable() {
             className="w-full h-10 pl-9 pr-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <select
+          value={locationFilter}
+          onChange={(e) => setLocationFilter(e.target.value)}
+          className="h-10 px-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 shrink-0 max-w-40"
+        >
+          <option value="">All Locations</option>
+          {locations
+            .filter((l) => l.is_active)
+            .map((l) => (
+              <option key={l.location_id} value={l.location_id}>
+                {l.location_name}
+              </option>
+            ))}
+          <option value="unassigned">Unassigned</option>
+        </select>
         <Link
           href="/customers/new"
           className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
@@ -82,6 +107,7 @@ export function CustomerTable() {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Location</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Balance</th>
@@ -92,8 +118,8 @@ export function CustomerTable() {
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-gray-400 text-sm">
-                  {search ? 'No customers match your search.' : 'No customers yet.'}
+                <td colSpan={7} className="text-center py-10 text-gray-400 text-sm">
+                  {search || locationFilter ? 'No customers match your filters.' : 'No customers yet.'}
                 </td>
               </tr>
             )}
@@ -103,6 +129,9 @@ export function CustomerTable() {
                   <Link href={`/customers/${c.id}`} className="hover:text-blue-600">
                     {c.name}
                   </Link>
+                </td>
+                <td className="px-4 py-3">
+                  <LocationBadge name={c.locations?.name} />
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {c.customer_categories?.name ?? '—'}
@@ -160,6 +189,9 @@ export function CustomerTable() {
               <p className="font-medium text-gray-900 text-sm">{c.name}</p>
               <p className="text-xs text-gray-500 mt-0.5">
                 {c.phone ?? '—'} · {c.customer_categories?.name ?? 'No category'}
+              </p>
+              <p className="mt-1">
+                <LocationBadge name={c.locations?.name} />
               </p>
             </div>
             <div className="text-right shrink-0 ml-3">

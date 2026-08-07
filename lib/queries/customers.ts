@@ -16,8 +16,10 @@ export type Customer = {
   is_active: boolean;
   notes: string | null;
   category_id: string | null;
+  location_id: string | null;
   created_at: string;
   customer_categories: { name: string } | null;
+  locations: { name: string } | null;
 };
 
 export function useCustomers() {
@@ -30,7 +32,7 @@ export function useCustomers() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('customers')
-        .select('*, customer_categories(name)')
+        .select('*, customer_categories(name), locations(name)')
         .eq('business_id', activeId!)
         .is('deleted_at', null)
         .order('name');
@@ -50,7 +52,7 @@ export function useCustomer(id: string) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('customers')
-        .select('*, customer_categories(name)')
+        .select('*, customer_categories(name), locations(name)')
         .eq('id', id)
         .eq('business_id', activeId!)
         .is('deleted_at', null)

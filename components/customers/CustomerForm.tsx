@@ -7,8 +7,12 @@ import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
 import { useCustomerCategories } from '@/lib/queries/customers';
+import { useLocations } from '@/lib/queries/locations';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
+
+/** A "— None —" select option submits '' — the schema wants null. */
+const emptyToNull = (v: unknown) => (v === '' ? null : v);
 
 type Props = {
   customer?: Customer;
@@ -18,6 +22,7 @@ export function CustomerForm({ customer }: Props) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const { data: categories = [] } = useCustomerCategories();
+  const { data: locations = [] } = useLocations();
 
   const {
     register,
@@ -31,6 +36,7 @@ export function CustomerForm({ customer }: Props) {
           phone: customer.phone ?? '',
           address: customer.address ?? '',
           category_id: customer.category_id ?? null,
+          location_id: customer.location_id ?? null,
           opening_balance_paisa: customer.opening_balance_paisa,
           credit_limit_paisa: customer.credit_limit_paisa ?? null,
           notes: customer.notes ?? '',
@@ -75,13 +81,33 @@ export function CustomerForm({ customer }: Props) {
 
       {/* Category */}
       <Field label="Category" error={errors.category_id?.message}>
-        <select className={inputCls(false)} {...register('category_id')}>
+        <select
+          className={inputCls(false)}
+          {...register('category_id', { setValueAs: emptyToNull })}
+        >
           <option value="">— None —</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
           ))}
+        </select>
+      </Field>
+
+      {/* Location */}
+      <Field label="Location">
+        <select
+          className={inputCls(false)}
+          {...register('location_id', { setValueAs: emptyToNull })}
+        >
+          <option value="">— No location —</option>
+          {locations
+            .filter((l) => l.is_active)
+            .map((l) => (
+              <option key={l.location_id} value={l.location_id}>
+                {l.location_name}
+              </option>
+            ))}
         </select>
       </Field>
 
