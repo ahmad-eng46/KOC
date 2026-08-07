@@ -126,7 +126,9 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
             {invoice.discount_paisa > 0 && (
               <View style={styles.totalsRow}>
                 <Text style={styles.totalsLabel}>Discount</Text>
-                <Text style={styles.totalsValue}>− {formatPKR(totals.discountPaisa)}</Text>
+                {/* ASCII '-': U+2212 is outside Helvetica's WinAnsi set and
+                    react-pdf drops it silently. */}
+                <Text style={styles.totalsValue}>- {formatPKR(totals.discountPaisa)}</Text>
               </View>
             )}
 
@@ -136,12 +138,23 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
                   <Text style={[styles.totalsLabel, { color: '#000' }]}>Invoice Total</Text>
                   <Text style={styles.totalsValue}>{formatPKR(totals.invoiceTotalPaisa)}</Text>
                 </View>
-                <View style={styles.totalsRow}>
-                  <Text style={styles.totalsLabel}>Previous Balance</Text>
-                  <Text style={styles.totalsValue}>{formatPKR(totals.previousBalancePaisa)}</Text>
-                </View>
+                {totals.hasCreditPrevious ? (
+                  // A held credit reduces what's due — shown green with an
+                  // explicit minus, never as a negative "Previous Balance".
+                  <View style={styles.totalsRow}>
+                    <Text style={[styles.totalsLabel, { color: '#166534' }]}>Credit from previous</Text>
+                    <Text style={[styles.totalsValue, { color: '#166534' }]}>
+                      - {formatPKR(Math.abs(totals.previousBalancePaisa))}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.totalsRow}>
+                    <Text style={styles.totalsLabel}>Previous Balance</Text>
+                    <Text style={styles.totalsValue}>{formatPKR(totals.previousBalancePaisa)}</Text>
+                  </View>
+                )}
                 <View style={styles.totalsGrand}>
-                  <Text style={styles.grandLabel}>Total Due</Text>
+                  <Text style={styles.grandLabel}>Total Amount Due</Text>
                   <Text style={styles.grandValue}>{formatPKR(totals.totalDuePaisa)}</Text>
                 </View>
                 <View style={styles.totalsRow}>
@@ -149,14 +162,21 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
                   <Text style={styles.totalsValue}>{formatPKR(totals.paidPaisa)}</Text>
                 </View>
                 <View style={styles.totalsRule}>
-                  <Text style={[styles.totalsLabel, { fontWeight: 700, color: '#000' }]}>Balance Due</Text>
+                  <Text style={[styles.totalsLabel, { fontWeight: 700, color: '#000' }]}>
+                    {totals.isCreditBalance ? 'Credit Balance' : 'Remaining Balance'}
+                  </Text>
                   <Text
                     style={[
                       styles.totalsValue,
-                      { fontWeight: 700, color: totals.balanceDuePaisa > 0 ? '#c00' : '#000' },
+                      {
+                        fontWeight: 700,
+                        color: totals.isCreditBalance
+                          ? '#166534'
+                          : totals.balanceDuePaisa > 0 ? '#c00' : '#000',
+                      },
                     ]}
                   >
-                    {formatPKR(totals.balanceDuePaisa)}
+                    {formatPKR(Math.abs(totals.balanceDuePaisa))}
                   </Text>
                 </View>
               </>
@@ -171,14 +191,21 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
                   <Text style={styles.totalsValue}>{formatPKR(totals.paidPaisa)}</Text>
                 </View>
                 <View style={styles.totalsRow}>
-                  <Text style={[styles.totalsLabel, { fontWeight: 700 }]}>Balance Due</Text>
+                  <Text style={[styles.totalsLabel, { fontWeight: 700 }]}>
+                    {totals.isCreditBalance ? 'Credit Balance' : 'Balance Due'}
+                  </Text>
                   <Text
                     style={[
                       styles.totalsValue,
-                      { fontWeight: 700, color: totals.balanceDuePaisa > 0 ? '#c00' : '#000' },
+                      {
+                        fontWeight: 700,
+                        color: totals.isCreditBalance
+                          ? '#166534'
+                          : totals.balanceDuePaisa > 0 ? '#c00' : '#000',
+                      },
                     ]}
                   >
-                    {formatPKR(totals.balanceDuePaisa)}
+                    {formatPKR(Math.abs(totals.balanceDuePaisa))}
                   </Text>
                 </View>
               </>

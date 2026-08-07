@@ -66,6 +66,22 @@ const credit: InvoiceDetail = {
   payments: [],
 };
 
+// Overpaid across the account: 85k + 65k due, 1,75,000 paid → 25k credit
+const overpaid: InvoiceDetail = {
+  ...base,
+  invoice_number: 'INV-0046',
+  paid_paisa: R(175_000),
+  payments: [{ ...base.payments[0], amount_paisa: R(175_000) }],
+};
+
+// Khata (credit sale): nothing paid, remaining = full amount due
+const khata: InvoiceDetail = {
+  ...base,
+  invoice_number: 'INV-0047',
+  paid_paisa: 0,
+  payments: [],
+};
+
 async function main() {
   const outDir = process.argv[2] ?? '.';
   const cases: Array<[string, InvoiceDetail]> = [
@@ -73,6 +89,8 @@ async function main() {
     ['zero-previous-balance', zeroPrev],
     ['null-previous-balance', nullPrev],
     ['credit-previous-balance', credit],
+    ['overpaid-credit-balance', overpaid],
+    ['khata-no-payment', khata],
   ];
   for (const [name, data] of cases) {
     await renderToFile(<InvoicePDF invoice={data} />, `${outDir}/${name}.pdf`);
