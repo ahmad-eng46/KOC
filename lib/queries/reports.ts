@@ -137,50 +137,26 @@ export function useCustomerReport() {
     queryKey: ['report-customer', activeId],
     enabled: !!activeId,
     queryFn: async () => {
+      // customer_balances_view (0042) — the same server-side balance the
+      // customer ledger and the invoice PDF use. The old client-side
+      // ledger sum returned zeros for staff/viewer under ledger RLS.
       const supabase = createClient();
-      const [custRes, ledgerRes] = await Promise.all([
-        supabase
-          .from('customers')
-          .select('id, name, phone, opening_balance_paisa')
-          .eq('business_id', activeId!)
-          .is('deleted_at', null),
-        supabase
-          .from('ledger_entries')
-          .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
-          .eq('business_id', activeId!),
-      ]);
-      if (custRes.error) throw custRes.error;
-      if (ledgerRes.error) throw ledgerRes.error;
+      const { data, error } = await supabase
+        .from('customer_balances_view')
+        .select('customer_id, name, phone, current_balance_paisa, total_sales_paisa, total_paid_paisa, last_activity')
+        .eq('business_id', activeId!)
+        .order('name');
+      if (error) throw error;
 
-      type Acc = {
-        invoiced: number;
-        paid: number;
-        deltaSum: number;
-        lastDate: string | null;
-      };
-      const map = new Map<string, Acc>();
-      for (const e of ledgerRes.data ?? []) {
-        const a = map.get(e.customer_id) ?? { invoiced: 0, paid: 0, deltaSum: 0, lastDate: null };
-        a.deltaSum += Number(e.debit_paisa) - Number(e.credit_paisa);
-        if (e.ref_type === 'invoice') a.invoiced += Number(e.debit_paisa);
-        if (e.ref_type === 'payment') a.paid += Number(e.credit_paisa);
-        if (!a.lastDate || e.entry_date > a.lastDate) a.lastDate = e.entry_date;
-        map.set(e.customer_id, a);
-      }
-
-      return (custRes.data ?? []).map((c) => {
-        const a = map.get(c.id);
-        const opening = Number(c.opening_balance_paisa);
-        return {
-          customer_id: c.id,
-          customer_name: c.name,
-          phone: c.phone,
-          invoiced_paisa: a?.invoiced ?? 0,
-          paid_paisa: a?.paid ?? 0,
-          balance_paisa: opening + (a?.deltaSum ?? 0),
-          last_activity: a?.lastDate ?? null,
-        } as CustomerReportRow;
-      });
+      return (data ?? []).map((r) => ({
+        customer_id: r.customer_id as string,
+        customer_name: r.name as string,
+        phone: (r.phone as string | null) ?? null,
+        invoiced_paisa: Number(r.total_sales_paisa ?? 0),
+        paid_paisa: Number(r.total_paid_paisa ?? 0),
+        balance_paisa: Number(r.current_balance_paisa ?? 0),
+        last_activity: (r.last_activity as string | null) ?? null,
+      })) as CustomerReportRow[];
     },
   });
 }
@@ -385,39 +361,37 @@ export function useDefaulters() {
     queryKey: ['report-defaulters', activeId],
     enabled: !!activeId,
     queryFn: async () => {
+      // Same view as useCustomerReport / the invoice PDF — one balance
+      // definition everywhere, or the owner sees different numbers in
+      // different screens and trusts none of them.
       const supabase = createClient();
-      const [setRes, custRes, ledRes] = await Promise.all([
+      const [setRes, balRes] = await Promise.all([
         supabase.from('app_settings').select('value').eq('business_id', activeId!).eq('key', 'defaulter_days').maybeSingle(),
-        supabase.from('customers').select('id, name, phone, opening_balance_paisa').eq('business_id', activeId!).is('deleted_at', null),
-        supabase.from('ledger_entries').select('customer_id, debit_paisa, credit_paisa, entry_date').eq('business_id', activeId!),
+        supabase
+          .from('customer_balances_view')
+          .select('customer_id, name, phone, current_balance_paisa, last_activity')
+          .eq('business_id', activeId!),
       ]);
+      if (balRes.error) throw balRes.error;
 
       const days = Number(setRes.data?.value ?? 20);
       const today = new Date();
 
-      const acc = new Map<string, { delta: number; lastDate: string | null }>();
-      for (const e of ledRes.data ?? []) {
-        const a = acc.get(e.customer_id) ?? { delta: 0, lastDate: null };
-        a.delta += Number(e.debit_paisa) - Number(e.credit_paisa);
-        if (!a.lastDate || e.entry_date > a.lastDate) a.lastDate = e.entry_date;
-        acc.set(e.customer_id, a);
-      }
-
       const rows: DefaulterRow[] = [];
-      for (const c of custRes.data ?? []) {
-        const a = acc.get(c.id);
-        const balance = Number(c.opening_balance_paisa) + (a?.delta ?? 0);
+      for (const c of balRes.data ?? []) {
+        const balance = Number(c.current_balance_paisa ?? 0);
         if (balance <= 0) continue;
-        const inactive = a?.lastDate
-          ? Math.floor((today.getTime() - new Date(a.lastDate).getTime()) / (1000 * 60 * 60 * 24))
+        const lastDate = (c.last_activity as string | null) ?? null;
+        const inactive = lastDate
+          ? Math.floor((today.getTime() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24))
           : 9999;
         if (inactive < days) continue;
         rows.push({
-          customer_id: c.id,
-          customer_name: c.name,
-          phone: c.phone,
+          customer_id: c.customer_id as string,
+          customer_name: c.name as string,
+          phone: (c.phone as string | null) ?? null,
           balance_paisa: balance,
-          last_activity: a?.lastDate ?? null,
+          last_activity: lastDate,
           days_inactive: inactive,
         });
       }

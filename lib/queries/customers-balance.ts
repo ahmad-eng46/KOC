@@ -8,18 +8,19 @@ export type CustomerWithBalance = {
   id: string;
   name: string;
   phone: string | null;
-  opening_balance_paisa: number;
-  current_balance_paisa: number; // opening + (sum debits - sum credits) from ledger_entries
+  current_balance_paisa: number; // opening + (sum debits - sum credits), server-computed
 };
 
 /**
- * Customers + their live current balance.
+ * Customers + their live current balance, from customer_balances_view
+ * (migration 0042) — the same opening + SUM(debit − credit) the customer
+ * ledger, the reports and the invoice PDF's previous-balance RPC use.
  *
- *   current_balance_paisa = opening_balance_paisa
- *                         + sum(ledger_entries.debit_paisa - credit_paisa)
- *
- * Ledger entries are aggregated client-side. For ~hundreds of entries this
- * is trivial; if/when we have many thousands, swap to a SQL RPC or view.
+ * Replaces the old client-side ledger aggregation, which silently degraded
+ * to opening-balance-only numbers for staff/viewer (ledger_entries RLS is
+ * admin/accountant). The view is an owner view: business isolation via
+ * user_has_business(), true balances for every role — sale-side money is
+ * not price data.
  */
 export function useCustomersWithBalance() {
   const activeId = useBusinessStore((s) => s.activeId);
@@ -29,36 +30,18 @@ export function useCustomersWithBalance() {
     enabled: !!activeId,
     queryFn: async () => {
       const supabase = createClient();
+      const { data, error } = await supabase
+        .from('customer_balances_view')
+        .select('customer_id, name, phone, current_balance_paisa')
+        .eq('business_id', activeId!)
+        .order('name');
+      if (error) throw error;
 
-      const [custRes, ledgerRes] = await Promise.all([
-        supabase
-          .from('customers')
-          .select('id, name, phone, opening_balance_paisa')
-          .eq('business_id', activeId!)
-          .is('deleted_at', null)
-          .order('name'),
-        supabase
-          .from('ledger_entries')
-          .select('customer_id, debit_paisa, credit_paisa')
-          .eq('business_id', activeId!),
-      ]);
-
-      if (custRes.error) throw custRes.error;
-      if (ledgerRes.error) throw ledgerRes.error;
-
-      const deltaByCustomer = new Map<string, number>();
-      for (const e of ledgerRes.data ?? []) {
-        const cur = deltaByCustomer.get(e.customer_id) ?? 0;
-        deltaByCustomer.set(
-          e.customer_id,
-          cur + Number(e.debit_paisa) - Number(e.credit_paisa),
-        );
-      }
-
-      return (custRes.data ?? []).map((c) => ({
-        ...c,
-        current_balance_paisa:
-          c.opening_balance_paisa + (deltaByCustomer.get(c.id) ?? 0),
+      return (data ?? []).map((r) => ({
+        id: r.customer_id as string,
+        name: r.name as string,
+        phone: (r.phone as string | null) ?? null,
+        current_balance_paisa: Number(r.current_balance_paisa ?? 0),
       })) as CustomerWithBalance[];
     },
   });
