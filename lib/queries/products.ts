@@ -14,25 +14,33 @@ export type Product = {
   sale_price_paisa: number;
   purchase_price_paisa: number | null;
   low_stock_threshold: number | null;
+  brand_id: string | null;
   is_active: boolean;
   created_at: string;
   quantity_on_hand: number;
 };
 
-export function useProducts() {
+/** 'unbranded' filters to products with no brand; undefined returns all. */
+export type ProductBrandFilter = string | 'unbranded' | undefined;
+
+export function useProducts(brandId?: ProductBrandFilter) {
   const activeId = useBusinessStore((s) => s.activeId);
 
   return useQuery({
-    queryKey: ['products', activeId],
+    queryKey: ['products', activeId, brandId ?? 'all'],
     enabled: !!activeId,
     queryFn: async () => {
       const supabase = createClient();
+      let productsQuery = supabase
+        .from('products_for_role')
+        .select('*')
+        .eq('business_id', activeId!)
+        .order('name');
+      if (brandId === 'unbranded') productsQuery = productsQuery.is('brand_id', null);
+      else if (brandId) productsQuery = productsQuery.eq('brand_id', brandId);
+
       const [productsRes, stockRes] = await Promise.all([
-        supabase
-          .from('products_for_role')
-          .select('*')
-          .eq('business_id', activeId!)
-          .order('name'),
+        productsQuery,
         supabase
           .from('current_stock')
           .select('product_id, quantity_on_hand')
@@ -51,6 +59,11 @@ export function useProducts() {
       })) as Product[];
     },
   });
+}
+
+/** Spec-named convenience wrapper: null = unbranded products. */
+export function useProductsByBrand(brandId: string | null) {
+  return useProducts(brandId ?? 'unbranded');
 }
 
 export function useProduct(id: string) {
