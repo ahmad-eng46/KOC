@@ -19,9 +19,92 @@ export type ReturnableItem = {
 export type ReturnFormData = {
   invoice_id: string;
   invoice_number: string;
+  issue_date: string;
   customer_name: string;
   items: ReturnableItem[];
 };
+
+export type ReturnableInvoice = {
+  invoice_id: string;
+  invoice_number: string;
+  issue_date: string;
+  total_paisa: number;
+  item_count: number;
+  /** Units still returnable across all the invoice's items. */
+  returnable_quantity: number;
+};
+
+/**
+ * A customer's invoices that still have something returnable, most recent
+ * first — step 2 of the customer-first return flow. Remaining quantities
+ * are computed the same way useReturnFormData does (sold − sum of
+ * return_items on non-deleted returns).
+ */
+export function useReturnableInvoices(customerId: string) {
+  const activeId = useBusinessStore((s) => s.activeId);
+
+  return useQuery({
+    queryKey: ['returnable-invoices', activeId, customerId],
+    enabled: !!activeId && !!customerId,
+    queryFn: async () => {
+      const supabase = createClient();
+      const [invRes, returnedRes] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, issue_date, total_paisa, invoice_items(id, quantity)')
+          .eq('business_id', activeId!)
+          .eq('customer_id', customerId)
+          .is('deleted_at', null)
+          .neq('status', 'draft')
+          .neq('status', 'cancelled')
+          .order('issue_date', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('return_items')
+          .select('invoice_item_id, quantity, returns!inner(customer_id, deleted_at)')
+          .eq('returns.customer_id', customerId)
+          .is('returns.deleted_at', null),
+      ]);
+      if (invRes.error) throw invRes.error;
+      if (returnedRes.error) throw returnedRes.error;
+
+      const returnedByItem = new Map<string, number>();
+      for (const r of returnedRes.data ?? []) {
+        returnedByItem.set(
+          r.invoice_item_id,
+          (returnedByItem.get(r.invoice_item_id) ?? 0) + Number(r.quantity),
+        );
+      }
+
+      type RawInvoice = {
+        id: string;
+        invoice_number: string;
+        issue_date: string;
+        total_paisa: number;
+        invoice_items: Array<{ id: string; quantity: number }> | null;
+      };
+
+      return ((invRes.data ?? []) as unknown as RawInvoice[])
+        .map((inv) => {
+          const items = inv.invoice_items ?? [];
+          const returnable = items.reduce(
+            (sum, it) =>
+              sum + Math.max(Number(it.quantity) - (returnedByItem.get(it.id) ?? 0), 0),
+            0,
+          );
+          return {
+            invoice_id: inv.id,
+            invoice_number: inv.invoice_number,
+            issue_date: inv.issue_date,
+            total_paisa: Number(inv.total_paisa),
+            item_count: items.length,
+            returnable_quantity: returnable,
+          } as ReturnableInvoice;
+        })
+        .filter((inv) => inv.returnable_quantity > 0);
+    },
+  });
+}
 
 export function useReturnFormData(invoiceId: string) {
   const activeId = useBusinessStore((s) => s.activeId);
@@ -35,7 +118,7 @@ export function useReturnFormData(invoiceId: string) {
       const [invRes, itemsRes, returnedRes] = await Promise.all([
         supabase
           .from('invoices')
-          .select('id, invoice_number, customers(name)')
+          .select('id, invoice_number, issue_date, customers(name)')
           .eq('id', invoiceId)
           .eq('business_id', activeId!)
           .is('deleted_at', null)
@@ -61,6 +144,7 @@ export function useReturnFormData(invoiceId: string) {
       const inv = invRes.data as unknown as {
         id: string;
         invoice_number: string;
+        issue_date: string;
         customers: RawCustomer | RawCustomer[] | null;
       };
       const cust = Array.isArray(inv.customers) ? inv.customers[0] : inv.customers;
@@ -102,6 +186,7 @@ export function useReturnFormData(invoiceId: string) {
       return {
         invoice_id: inv.id,
         invoice_number: inv.invoice_number,
+        issue_date: inv.issue_date,
         customer_name: cust?.name ?? '—',
         items,
       } as ReturnFormData;

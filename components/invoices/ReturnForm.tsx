@@ -3,23 +3,46 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { useReturnFormData } from '@/lib/queries/return-form';
 import { useBusinessStore } from '@/lib/store/business';
-import { formatPKR } from '@/lib/money';
+import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { createReturn } from '@/lib/actions/return';
+import { useToast } from '@/components/ui/Toast';
 
 type Props = { invoiceId: string };
+
+type PriceMode = 'original' | 'custom';
 
 type ItemSelection = {
   selected: boolean;
   qty: number;
+  priceMode: PriceMode;
+  /** Raw rupee text for the custom input; converted to paisa on use. */
+  customRupees: string;
+  overrideReason: string;
 };
+
+const EMPTY_SELECTION: ItemSelection = {
+  selected: false, qty: 0, priceMode: 'original', customRupees: '', overrideReason: '',
+};
+
+function customPaisa(sel: ItemSelection): number {
+  const n = parseFloat(sel.customRupees.replace(/,/g, ''));
+  return Number.isFinite(n) && n > 0 ? rupeesToPaisa(n) : 0;
+}
+
+/** The per-unit refund the current selection produces. */
+function effectivePricePaisa(sel: ItemSelection, originalPaisa: number): number {
+  return sel.priceMode === 'custom' ? customPaisa(sel) : originalPaisa;
+}
 
 export function ReturnForm({ invoiceId }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
+  const { showToast } = useToast();
   const { data, isLoading, error } = useReturnFormData(invoiceId);
 
   const [selections, setSelections] = useState<Record<string, ItemSelection>>({});
@@ -33,7 +56,7 @@ export function ReturnForm({ invoiceId }: Props) {
     for (const it of data.items) {
       const sel = selections[it.invoice_item_id];
       if (!sel?.selected || !sel.qty) continue;
-      total += Math.round(sel.qty * it.unit_price_paisa);
+      total += Math.round(sel.qty * effectivePricePaisa(sel, it.unit_price_paisa));
     }
     return total;
   }, [data, selections]);
@@ -47,6 +70,10 @@ export function ReturnForm({ invoiceId }: Props) {
       if (sel.qty <= 0) return `Quantity must be > 0 for ${it.product_name}`;
       if (sel.qty > it.remaining) {
         return `${it.product_name}: cannot return more than ${it.remaining} (sold ${it.sold_quantity}, already returned ${it.already_returned})`;
+      }
+      if (sel.priceMode === 'custom') {
+        if (customPaisa(sel) <= 0) return `${it.product_name}: enter a custom price > 0`;
+        if (!sel.overrideReason.trim()) return `${it.product_name}: a reason is required for the custom price`;
       }
     }
     if (!reason.trim()) return 'Reason is required';
@@ -70,22 +97,26 @@ export function ReturnForm({ invoiceId }: Props) {
 
   const allReturned = data.items.every((it) => it.remaining <= 0);
 
+  function patchSelection(itemId: string, patch: Partial<ItemSelection>) {
+    setSelections((prev) => ({
+      ...prev,
+      [itemId]: { ...(prev[itemId] ?? EMPTY_SELECTION), ...patch },
+    }));
+  }
+
   function toggle(itemId: string, item: { remaining: number }) {
     setSelections((prev) => {
       const cur = prev[itemId];
       if (cur?.selected) {
-        return { ...prev, [itemId]: { selected: false, qty: 0 } };
+        return { ...prev, [itemId]: { ...EMPTY_SELECTION } };
       }
-      return { ...prev, [itemId]: { selected: true, qty: item.remaining } };
+      return { ...prev, [itemId]: { ...EMPTY_SELECTION, selected: true, qty: item.remaining } };
     });
   }
 
   function setQty(itemId: string, value: string) {
     const n = parseFloat(value);
-    setSelections((prev) => ({
-      ...prev,
-      [itemId]: { selected: true, qty: isNaN(n) ? 0 : n },
-    }));
+    patchSelection(itemId, { selected: true, qty: isNaN(n) ? 0 : n });
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -96,10 +127,22 @@ export function ReturnForm({ invoiceId }: Props) {
 
     const items = data.items
       .filter((it) => selections[it.invoice_item_id]?.selected)
-      .map((it) => ({
-        invoice_item_id: it.invoice_item_id,
-        quantity: selections[it.invoice_item_id]!.qty,
-      }));
+      .map((it) => {
+        const sel = selections[it.invoice_item_id]!;
+        const overridden = sel.priceMode === 'custom';
+        return {
+          invoice_item_id: it.invoice_item_id,
+          quantity: sel.qty,
+          // Omitted price = the invoiced price; the RPC re-validates both.
+          ...(overridden
+            ? {
+                return_price_paisa: customPaisa(sel),
+                is_price_overridden: true,
+                override_reason: sel.overrideReason.trim(),
+              }
+            : { is_price_overridden: false }),
+        };
+      });
 
     const r = await createReturn({
       invoice_id: invoiceId,
@@ -118,6 +161,7 @@ export function ReturnForm({ invoiceId }: Props) {
     await queryClient.invalidateQueries({ queryKey: ['products', activeId] });
     await queryClient.invalidateQueries({ queryKey: ['customers-with-balance', activeId] });
 
+    showToast(`Return processed — ${formatPKR(totalReturnPaisa)} credited to the customer.`);
     router.push(`/invoices/${invoiceId}`);
     router.refresh();
   }
@@ -166,37 +210,107 @@ export function ReturnForm({ invoiceId }: Props) {
                       <span className={isFullyReturned ? 'text-gray-400' : 'text-green-600 font-medium'}>
                         Remaining: {it.remaining}
                       </span>
-                      {' · '}
-                      <span className="font-mono">{formatPKR(it.unit_price_paisa)}</span>
+                    </p>
+                    {/* What THEY paid — the refund default, never today's price */}
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Customer paid{' '}
+                      <span className="font-mono font-medium">{formatPKR(it.unit_price_paisa)}</span>
+                      /{it.unit} ({data.invoice_number},{' '}
+                      {format(parseISO(data.issue_date), 'dd MMM yyyy')})
                     </p>
 
                     {sel?.selected && !isFullyReturned && (
-                      <div className="mt-2 grid grid-cols-2 gap-3 max-w-sm">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Return Qty
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={sel.qty}
-                            onChange={(e) => setQty(it.invoice_item_id, e.target.value)}
-                            className={[
-                              'w-full h-9 px-3 rounded-lg border text-sm bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500',
-                              sel.qty > it.remaining ? 'border-red-400' : 'border-gray-300',
-                            ].join(' ')}
-                          />
-                          {sel.qty > it.remaining && (
-                            <p className="text-xs text-red-600 mt-0.5">Max {it.remaining}</p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Refund
-                          </label>
-                          <div className="h-9 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm font-mono tabular-nums flex items-center justify-end">
-                            {formatPKR(Math.round(sel.qty * it.unit_price_paisa))}
+                      <div className="mt-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-3 max-w-sm">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                              Return Qty
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={sel.qty}
+                              onChange={(e) => setQty(it.invoice_item_id, e.target.value)}
+                              className={[
+                                'w-full h-11 px-3 rounded-lg border text-sm bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500',
+                                sel.qty > it.remaining ? 'border-red-400' : 'border-gray-300',
+                              ].join(' ')}
+                            />
+                            {sel.qty > it.remaining && (
+                              <p className="text-xs text-red-600 mt-0.5">Max {it.remaining}</p>
+                            )}
                           </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                              Return Amount
+                            </label>
+                            <div className="h-11 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm font-mono tabular-nums flex items-center justify-end">
+                              {formatPKR(
+                                Math.round(sel.qty * effectivePricePaisa(sel, it.unit_price_paisa)),
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Return price: original (default) or custom override */}
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1.5">Return Price</p>
+                          <div className="space-y-2 max-w-sm">
+                            <label className="flex items-center gap-2 min-h-11 px-3 rounded-lg border border-gray-200 bg-white cursor-pointer has-checked:border-blue-400 has-checked:bg-blue-50/40">
+                              <input
+                                type="radio"
+                                name={`price-${it.invoice_item_id}`}
+                                checked={sel.priceMode === 'original'}
+                                onChange={() => patchSelection(it.invoice_item_id, { priceMode: 'original' })}
+                                className="w-4 h-4 border-gray-300 text-blue-600"
+                              />
+                              <span className="text-sm text-gray-700">
+                                Original price{' '}
+                                <span className="font-mono">({formatPKR(it.unit_price_paisa)}/{it.unit})</span>
+                              </span>
+                            </label>
+                            <label className="flex items-center gap-2 min-h-11 px-3 rounded-lg border border-gray-200 bg-white cursor-pointer has-checked:border-blue-400 has-checked:bg-blue-50/40">
+                              <input
+                                type="radio"
+                                name={`price-${it.invoice_item_id}`}
+                                checked={sel.priceMode === 'custom'}
+                                onChange={() => patchSelection(it.invoice_item_id, { priceMode: 'custom' })}
+                                className="w-4 h-4 border-gray-300 text-blue-600"
+                              />
+                              <span className="text-sm text-gray-700 shrink-0">Custom price:</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={sel.customRupees}
+                                onFocus={() => patchSelection(it.invoice_item_id, { priceMode: 'custom' })}
+                                onChange={(e) =>
+                                  patchSelection(it.invoice_item_id, {
+                                    priceMode: 'custom',
+                                    customRupees: e.target.value,
+                                  })
+                                }
+                                className="flex-1 min-w-0 h-8 px-2 rounded border border-gray-300 text-sm font-mono tabular-nums text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-gray-500 shrink-0">/{it.unit}</span>
+                            </label>
+                          </div>
+                          {sel.priceMode === 'custom' && (
+                            <div className="mt-2 max-w-sm">
+                              <input
+                                type="text"
+                                value={sel.overrideReason}
+                                onChange={(e) =>
+                                  patchSelection(it.invoice_item_id, { overrideReason: e.target.value })
+                                }
+                                placeholder="Reason for custom price, e.g. Product damaged *"
+                                className={[
+                                  'w-full h-11 px-3 rounded-lg border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500',
+                                  sel.overrideReason.trim() ? 'border-gray-300' : 'border-amber-400',
+                                ].join(' ')}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -231,7 +345,7 @@ export function ReturnForm({ invoiceId }: Props) {
           </span>
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          Customer's balance will be reduced by this amount; stock will be restored.
+          Customer&apos;s balance will be reduced by this amount; stock will be restored.
         </p>
       </div>
 
