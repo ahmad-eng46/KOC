@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { ProductForm } from '@/components/products/ProductForm';
 import { ProductPurchaseHistory } from '@/components/products/ProductPurchaseHistory';
+import { ProductStockHistory } from '@/components/products/ProductStockHistory';
 import { type Product } from '@/lib/queries/products';
 
 export const metadata = { title: 'Edit Product — KOC' };
@@ -66,6 +67,12 @@ export default async function ProductDetailPage({ params }: Props) {
       <div className="pt-2 max-w-3xl">
         <ProductPurchaseHistory productId={id} canSeeMoney={canSeePurchasePrice} />
       </div>
+
+      {session?.role !== 'viewer' && (
+        <div className="pt-2 max-w-3xl">
+          <ProductStockHistory productId={id} unit={product.unit} />
+        </div>
+      )}
     </div>
   );
 }
