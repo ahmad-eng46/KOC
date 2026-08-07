@@ -594,3 +594,132 @@ export async function fetchAuditData(filters: AuditFilters): Promise<AuditData> 
   });
   return { rows };
 }
+
+// ───────────────────────────────────────────────
+// LOCATION — per-city rollup + per-city customer breakdown
+// ───────────────────────────────────────────────
+export type LocationReportRow = {
+  location_id: string | null; // null = the Unassigned bucket
+  location_name: string;
+  customer_count: number;
+  /** Invoice debits inside the date range. */
+  sales_paisa: number;
+  /** Payment credits inside the date range. */
+  paid_paisa: number;
+  /** Sum of positive CURRENT balances — all-time, not range-bound. */
+  outstanding_paisa: number;
+  /** paid / sales inside the range; null when there were no sales. */
+  collection_pct: number | null;
+};
+
+export type LocationCustomerBreakdownRow = {
+  customer_name: string;
+  phone: string | null;
+  sales_paisa: number;
+  paid_paisa: number;
+  balance_paisa: number;
+};
+
+export type LocationReportData = {
+  rows: LocationReportRow[];
+  breakdown: Map<string | null, LocationCustomerBreakdownRow[]>;
+  total_sales_paisa: number;
+  total_paid_paisa: number;
+  total_outstanding_paisa: number;
+};
+
+/**
+ * Sales and Paid are filtered to the range; Outstanding is the customer's
+ * live balance (opening + all entries) because "what do they owe me" has no
+ * date range. Same ledger semantics as fetchCustomerReportData above.
+ */
+export async function fetchLocationReportData(range: DateRange): Promise<LocationReportData> {
+  const supabase = await createServerClient();
+  const businessId = await getActiveBusinessId();
+
+  const [locRes, custRes, ledgerRes] = await Promise.all([
+    supabase
+      .from('locations')
+      .select('id, name, sort_order')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .order('sort_order')
+      .order('name'),
+    supabase
+      .from('customers')
+      .select('id, name, phone, location_id, opening_balance_paisa')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .order('name'),
+    supabase
+      .from('ledger_entries')
+      .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
+      .eq('business_id', businessId),
+  ]);
+  if (locRes.error) throw locRes.error;
+  if (custRes.error) throw custRes.error;
+  if (ledgerRes.error) throw ledgerRes.error;
+
+  type Acc = { sales: number; paid: number; delta: number };
+  const byCustomer = new Map<string, Acc>();
+  for (const e of ledgerRes.data ?? []) {
+    const a = byCustomer.get(e.customer_id) ?? { sales: 0, paid: 0, delta: 0 };
+    a.delta += Number(e.debit_paisa) - Number(e.credit_paisa);
+    const inRange = e.entry_date >= range.from && e.entry_date <= range.to;
+    if (inRange && e.ref_type === 'invoice') a.sales += Number(e.debit_paisa);
+    if (inRange && e.ref_type === 'payment') a.paid += Number(e.credit_paisa);
+    byCustomer.set(e.customer_id, a);
+  }
+
+  const breakdown = new Map<string | null, LocationCustomerBreakdownRow[]>();
+  type LocAcc = { count: number; sales: number; paid: number; outstanding: number };
+  const byLocation = new Map<string | null, LocAcc>();
+
+  for (const c of custRes.data ?? []) {
+    const a = byCustomer.get(c.id);
+    const balance = Number(c.opening_balance_paisa) + (a?.delta ?? 0);
+    const key = (c.location_id as string | null) ?? null;
+
+    const locAcc = byLocation.get(key) ?? { count: 0, sales: 0, paid: 0, outstanding: 0 };
+    locAcc.count += 1;
+    locAcc.sales += a?.sales ?? 0;
+    locAcc.paid += a?.paid ?? 0;
+    locAcc.outstanding += Math.max(balance, 0);
+    byLocation.set(key, locAcc);
+
+    const list = breakdown.get(key) ?? [];
+    list.push({
+      customer_name: c.name,
+      phone: c.phone,
+      sales_paisa: a?.sales ?? 0,
+      paid_paisa: a?.paid ?? 0,
+      balance_paisa: balance,
+    });
+    breakdown.set(key, list);
+  }
+
+  const toRow = (id: string | null, name: string): LocationReportRow => {
+    const a = byLocation.get(id) ?? { count: 0, sales: 0, paid: 0, outstanding: 0 };
+    return {
+      location_id: id,
+      location_name: name,
+      customer_count: a.count,
+      sales_paisa: a.sales,
+      paid_paisa: a.paid,
+      outstanding_paisa: a.outstanding,
+      collection_pct: a.sales > 0 ? Math.round((a.paid / a.sales) * 100) : null,
+    };
+  };
+
+  const rows = (locRes.data ?? []).map((l) => toRow(l.id, l.name));
+  // The Unassigned bucket appears only when it has customers.
+  if (byLocation.has(null)) rows.push(toRow(null, 'Unassigned'));
+
+  return {
+    rows,
+    breakdown,
+    total_sales_paisa: rows.reduce((s, r) => s + r.sales_paisa, 0),
+    total_paid_paisa: rows.reduce((s, r) => s + r.paid_paisa, 0),
+    total_outstanding_paisa: rows.reduce((s, r) => s + r.outstanding_paisa, 0),
+  };
+}

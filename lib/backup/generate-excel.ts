@@ -71,6 +71,11 @@ type SheetSpec = {
     width?: number;
     /** 'paisa' divides by 100 and applies money format. 'date' / 'datetime' apply date format. */
     type?: 'paisa' | 'date' | 'datetime' | 'json';
+    /**
+     * Denormalised column: `key` doesn't exist on the table; the value is
+     * looked up from another table via lookup.via (an FK column on this row).
+     */
+    lookup?: { table: string; via: string; column: string };
   }>;
 };
 
@@ -84,6 +89,11 @@ const SHEETS: SheetSpec[] = [
       { header: 'Phone', key: 'phone', width: 18 },
       { header: 'Address', key: 'address', width: 30 },
       { header: 'Category ID', key: 'category_id', width: 38 },
+      { header: 'Location ID', key: 'location_id', width: 38 },
+      {
+        header: 'Location', key: 'location_name', width: 16,
+        lookup: { table: 'locations', via: 'location_id', column: 'name' },
+      },
       { header: 'Opening Balance', key: 'opening_balance_paisa', width: 16, type: 'paisa' },
       { header: 'Credit Limit', key: 'credit_limit_paisa', width: 16, type: 'paisa' },
       { header: 'Is Defaulter', key: 'is_defaulter', width: 12 },
@@ -221,6 +231,18 @@ const SHEETS: SheetSpec[] = [
       { header: 'Settled', key: 'is_settled', width: 10 },
       { header: 'Notes', key: 'notes', width: 30 },
       { header: 'Created At', key: 'created_at', width: 20, type: 'datetime' },
+    ],
+  },
+  {
+    name: 'Locations', table: 'locations',
+    columns: [
+      { header: 'ID', key: 'id', width: 38 },
+      { header: 'Name', key: 'name', width: 24 },
+      { header: 'Short Code', key: 'short_code', width: 12 },
+      { header: 'Sort Order', key: 'sort_order', width: 12 },
+      { header: 'Active', key: 'is_active', width: 10 },
+      { header: 'Created At', key: 'created_at', width: 20, type: 'datetime' },
+      { header: 'Deleted At', key: 'deleted_at', width: 20, type: 'datetime' },
     ],
   },
   {
@@ -530,10 +552,32 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
       continue;
     }
 
+    // Resolve lookup columns (e.g. customers.location_id → locations.name)
+    // in one query per lookup table, keyed by id.
+    const lookupMaps = new Map<string, Map<string, unknown>>();
+    for (const col of spec.columns) {
+      if (!col.lookup || lookupMaps.has(col.lookup.table)) continue;
+      const { data: lookupRows } = await adminClient
+        .from(col.lookup.table)
+        .select(`id, ${col.lookup.column}`)
+        .limit(ROW_LIMIT);
+      lookupMaps.set(
+        col.lookup.table,
+        new Map(
+          ((lookupRows ?? []) as unknown as Array<Record<string, unknown>>).map((r) => [
+            String(r.id),
+            r[col.lookup!.column],
+          ]),
+        ),
+      );
+    }
+
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const cleaned: Record<string, unknown> = {};
       for (const col of spec.columns) {
-        const raw = row[col.key];
+        const raw = col.lookup
+          ? lookupMaps.get(col.lookup.table)?.get(String(row[col.lookup.via] ?? '')) ?? null
+          : row[col.key];
         if (raw === null || raw === undefined) {
           cleaned[col.key] = null;
         } else if (col.type === 'paisa') {

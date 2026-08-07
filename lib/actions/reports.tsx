@@ -4,15 +4,13 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import ExcelJS from 'exceljs';
 import { format, parseISO } from 'date-fns';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
-import { formatPKR } from '@/lib/money';
 import {
   fetchSalesData, fetchPurchaseData, fetchCustomerReportData,
-  fetchBalanceData, fetchPLData,
+  fetchBalanceData, fetchPLData, fetchLocationReportData,
 } from '@/lib/reports/data';
 import {
   SalesReportPDF, PurchaseReportPDF, CustomerReportPDF,
-  BalanceReportPDF, PLReportPDF,
+  BalanceReportPDF, PLReportPDF, LocationReportPDF,
 } from '@/components/reports/pdfs';
 import type { DateRange } from '@/components/reports/shared';
 import { createServerClient } from '@/lib/supabase/server';
@@ -378,4 +376,89 @@ export async function exportAuditExcel(filters: AuditFilters): Promise<ExportRes
     const buf = await wb.xlsx.writeBuffer();
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `audit-${filters.from}-to-${filters.to}.xlsx` };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
+}
+
+// ───────────────────────────────────────────────
+// LOCATION
+// admin/accountant: the fetcher reads ledger_entries, whose RLS returns
+// nothing for staff/viewer — they would export a report of zeros.
+// ───────────────────────────────────────────────
+export async function exportLocationPdf(range: DateRange): Promise<ExportResult> {
+  const err = await ensureRole('admin', 'accountant');
+  if (err) return { ok: false, error: err };
+  try {
+    const [data, businessName] = await Promise.all([
+      fetchLocationReportData(range),
+      getBusinessName(),
+    ]);
+    const buf = await renderToBuffer(
+      <LocationReportPDF data={data} range={range} businessName={businessName} />,
+    );
+    return {
+      ok: true,
+      base64: Buffer.from(buf).toString('base64'),
+      filename: `locations-${range.from}-to-${range.to}.pdf`,
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function exportLocationExcel(range: DateRange): Promise<ExportResult> {
+  const err = await ensureRole('admin', 'accountant');
+  if (err) return { ok: false, error: err };
+  try {
+    const data = await fetchLocationReportData(range);
+    const wb = new ExcelJS.Workbook();
+
+    const ws = wb.addWorksheet('Summary');
+    ws.addRow(['Location', 'Customers', 'Sales', 'Paid', 'Outstanding', 'Collection %']);
+    ws.getRow(1).font = { bold: true };
+    for (const r of data.rows) {
+      ws.addRow([
+        r.location_name, r.customer_count,
+        r.sales_paisa / 100, r.paid_paisa / 100, r.outstanding_paisa / 100,
+        r.collection_pct === null ? '' : r.collection_pct / 100,
+      ]);
+    }
+    ws.addRow([
+      'Total', '',
+      data.total_sales_paisa / 100, data.total_paid_paisa / 100,
+      data.total_outstanding_paisa / 100, '',
+    ]).font = { bold: true };
+    ws.getColumn(6).numFmt = '0%';
+    ws.columns.forEach((c) => { c.width = 18; });
+
+    // One sheet per location with customers. Sheet names: 31-char Excel
+    // limit, and duplicates (however unlikely) get a numeric suffix.
+    const used = new Set<string>(['Summary']);
+    for (const r of data.rows) {
+      if (r.customer_count === 0) continue;
+      const base = r.location_name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 28).trim() || 'Location';
+      let name = base;
+      let n = 2;
+      while (used.has(name)) name = `${base} ${n++}`;
+      used.add(name);
+
+      const sheet = wb.addWorksheet(name);
+      sheet.addRow(['Customer', 'Phone', 'Sales', 'Paid', 'Balance']);
+      sheet.getRow(1).font = { bold: true };
+      for (const c of data.breakdown.get(r.location_id) ?? []) {
+        sheet.addRow([
+          c.customer_name, c.phone ?? '',
+          c.sales_paisa / 100, c.paid_paisa / 100, c.balance_paisa / 100,
+        ]);
+      }
+      sheet.columns.forEach((col) => { col.width = 20; });
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    return {
+      ok: true,
+      base64: Buffer.from(buf).toString('base64'),
+      filename: `locations-${range.from}-to-${range.to}.xlsx`,
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }

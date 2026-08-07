@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { formatPKR } from '@/lib/money';
 import type {
   SalesData, PurchaseData, CustomerReportData, BalanceData, PLData,
+  LocationReportData,
 } from '@/lib/reports/data';
 
 const s = StyleSheet.create({
@@ -401,6 +402,99 @@ export function CashBookReportPDF({ data, range, businessName }: {
           <Text style={[s.totalText, { width: '30%', textAlign: 'right' }]}>{formatPKR(data.closing_paisa)}</Text>
         </View>
       </Page>
+    </Document>
+  );
+}
+
+// ──────────────── LOCATION ────────────────
+export function LocationReportPDF({ data, range, businessName }: {
+  data: LocationReportData; range: { from: string; to: string }; businessName: string;
+}) {
+  return (
+    <Document title="Location Report">
+      {/* Page 1: summary table across all cities */}
+      <Page size="A4" style={s.page}>
+        <Text style={s.title}>{businessName} — Location Report</Text>
+        <Text style={s.meta}>{rangeStr(range.from, range.to)}</Text>
+
+        <View style={s.kpiRow}>
+          <View style={s.kpi}>
+            <Text style={s.kpiLabel}>Total Sales</Text>
+            <Text style={s.kpiValue}>{formatPKR(data.total_sales_paisa)}</Text>
+          </View>
+          <View style={s.kpi}>
+            <Text style={s.kpiLabel}>Total Collected</Text>
+            <Text style={s.kpiValue}>{formatPKR(data.total_paid_paisa)}</Text>
+          </View>
+          <View style={s.kpi}>
+            <Text style={s.kpiLabel}>Outstanding (all-time)</Text>
+            <Text style={s.kpiValue}>{formatPKR(data.total_outstanding_paisa)}</Text>
+          </View>
+        </View>
+
+        <View style={s.thRow}>
+          <Text style={[s.th, { width: '22%' }]}>Location</Text>
+          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Customers</Text>
+          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Sales</Text>
+          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Paid</Text>
+          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Outstanding</Text>
+          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Collection</Text>
+        </View>
+        {data.rows.map((r) => (
+          <View key={r.location_id ?? 'unassigned'} style={s.tdRow}>
+            <Text style={[s.td, { width: '22%' }]}>{r.location_name}</Text>
+            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{r.customer_count}</Text>
+            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.sales_paisa, { showSymbol: false })}</Text>
+            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.paid_paisa, { showSymbol: false })}</Text>
+            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.outstanding_paisa, { showSymbol: false })}</Text>
+            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>
+              {r.collection_pct === null ? '—' : `${r.collection_pct}%`}
+            </Text>
+          </View>
+        ))}
+        <View style={s.totalRow}>
+          <Text style={[s.totalText, { width: '34%' }]}>Total</Text>
+          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_sales_paisa, { showSymbol: false })}</Text>
+          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_paid_paisa, { showSymbol: false })}</Text>
+          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_outstanding_paisa, { showSymbol: false })}</Text>
+          <Text style={[s.totalText, { width: '12%' }]} />
+        </View>
+      </Page>
+
+      {/* One page per city with its customer breakdown */}
+      {data.rows
+        .filter((r) => r.customer_count > 0)
+        .map((r) => {
+          const customers = data.breakdown.get(r.location_id) ?? [];
+          return (
+            <Page key={`bd-${r.location_id ?? 'unassigned'}`} size="A4" style={s.page}>
+              <Text style={s.title}>{r.location_name}</Text>
+              <Text style={s.meta}>
+                {rangeStr(range.from, range.to)} · {r.customer_count} customers ·
+                {' '}outstanding {formatPKR(r.outstanding_paisa)}
+              </Text>
+
+              <View style={s.thRow}>
+                <Text style={[s.th, { width: '30%' }]}>Customer</Text>
+                <Text style={[s.th, { width: '18%' }]}>Phone</Text>
+                <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Sales</Text>
+                <Text style={[s.th, { width: '16%', textAlign: 'right' }]}>Paid</Text>
+                <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Balance</Text>
+              </View>
+              {customers.map((c) => (
+                <View key={c.customer_name} style={s.tdRow}>
+                  <Text style={[s.td, { width: '30%' }]}>{c.customer_name}</Text>
+                  <Text style={[s.td, { width: '18%' }]}>{c.phone ?? '—'}</Text>
+                  <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(c.sales_paisa, { showSymbol: false })}</Text>
+                  <Text style={[s.td, { width: '16%', textAlign: 'right' }]}>{formatPKR(c.paid_paisa, { showSymbol: false })}</Text>
+                  <Text style={[s.td, { width: '18%', textAlign: 'right', color: c.balance_paisa > 0 ? '#c00' : '#000' }]}>
+                    {formatPKR(c.balance_paisa, { showSymbol: false })}
+                  </Text>
+                </View>
+              ))}
+            </Page>
+          );
+        })}
     </Document>
   );
 }

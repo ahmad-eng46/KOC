@@ -112,6 +112,7 @@ async function runForBusiness(businessId: string, sched: Schedule) {
 
     // Per-table dump (mirrors lib/backup/generate-excel.ts but slimmer for Deno)
     const tables: Array<[string, string, boolean]> = [
+      ['Locations',       'locations',       true],
       ['Customers',       'customers',       true],
       ['Products',        'products',        true],
       ['Invoices',        'invoices',        true],
