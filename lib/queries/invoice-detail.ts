@@ -60,6 +60,14 @@ export type InvoiceDetail = {
     return_number: string;
     return_date: string;
     total_paisa: number;
+    items: Array<{
+      product_name: string;
+      quantity: number;
+      /** Refund per unit — the invoiced price unless overridden. */
+      return_price_paisa: number;
+      is_price_overridden: boolean;
+      override_reason: string | null;
+    }>;
   }>;
 };
 
@@ -95,7 +103,9 @@ export function useInvoiceDetail(id: string) {
           .order('created_at'),
         supabase
           .from('returns')
-          .select('id, return_number, return_date, total_paisa')
+          .select(
+            'id, return_number, return_date, total_paisa, return_items(quantity, return_price_paisa, is_price_overridden, override_reason, products(name))',
+          )
           .eq('invoice_id', id)
           .is('deleted_at', null)
           .order('created_at'),
@@ -185,10 +195,32 @@ export function useInvoiceDetail(id: string) {
           ...p,
           amount_paisa: Number(p.amount_paisa),
         })),
-        returns: (returnsRes.data ?? []).map((r) => ({
-          ...r,
-          total_paisa: Number(r.total_paisa),
-        })),
+        returns: (returnsRes.data ?? []).map((r) => {
+          type RawReturnItem = {
+            quantity: number;
+            return_price_paisa: number;
+            is_price_overridden: boolean;
+            override_reason: string | null;
+            products: { name: string } | { name: string }[] | null;
+          };
+          const rawItems = (r.return_items ?? []) as unknown as RawReturnItem[];
+          return {
+            id: r.id as string,
+            return_number: r.return_number as string,
+            return_date: r.return_date as string,
+            total_paisa: Number(r.total_paisa),
+            items: rawItems.map((ri) => {
+              const p = Array.isArray(ri.products) ? ri.products[0] : ri.products;
+              return {
+                product_name: p?.name ?? '—',
+                quantity: Number(ri.quantity),
+                return_price_paisa: Number(ri.return_price_paisa),
+                is_price_overridden: Boolean(ri.is_price_overridden),
+                override_reason: ri.override_reason ?? null,
+              };
+            }),
+          };
+        }),
       } as InvoiceDetail;
     },
   });

@@ -353,14 +353,38 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Returns</h3>
           <ul className="divide-y divide-gray-100">
             {invoice.returns.map((r) => (
-              <li key={r.id} className="py-2 flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-sm text-gray-900">{r.return_number}</p>
-                  <p className="text-xs text-gray-500">{format(parseISO(r.return_date), 'dd MMM yyyy')}</p>
+              <li key={r.id} className="py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-sm text-gray-900">{r.return_number}</p>
+                    <p className="text-xs text-gray-500">{format(parseISO(r.return_date), 'dd MMM yyyy')}</p>
+                  </div>
+                  <p className="font-mono text-sm font-medium text-gray-700">
+                    − {formatPKR(r.total_paisa)}
+                  </p>
                 </div>
-                <p className="font-mono text-sm font-medium text-gray-700">
-                  − {formatPKR(r.total_paisa)}
-                </p>
+                {r.items.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {r.items.map((ri, i) => (
+                      <li key={i} className="flex items-center justify-between gap-3 text-xs text-gray-600 pl-3">
+                        <span className="min-w-0 truncate">
+                          {ri.product_name} × {ri.quantity}
+                          {ri.is_price_overridden && (
+                            <span
+                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700"
+                              title={ri.override_reason ?? undefined}
+                            >
+                              price adjusted{ri.override_reason ? `: ${ri.override_reason}` : ''}
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-mono shrink-0">
+                          @ {formatPKR(ri.return_price_paisa)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
