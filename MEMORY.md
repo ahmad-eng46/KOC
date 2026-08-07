@@ -34,11 +34,11 @@
 
 ## Last Session
 
-**Date:** 2026-08-08
-**Worked on:** Two full features — Supplier (vendor) management and Location/city-based customer categorization. Eight commits, DB → server → UI → reports/backup for each.
-**Completed:** Suppliers: 0040/0041 (tables + balance view + atomic purchase RPC + supplier ledger RPC), validators/actions/hooks, /suppliers pages with purchase & payment modals, stock-flow chooser, product purchase history, 3 backup sheets. Locations: 0042 (locations + customers.location_id + customer_balances_view + location_summary_view + assign RPCs), /locations hub + city detail + bulk assign flow, customer list/form/detail integration, /reports/locations with PDF/Excel, backup sheet. All SQL asserted against a scratch Postgres 16 with RLS role-switching.
-**Blocked by:** Migrations **0039–0042 are NOT applied to Supabase** — same credential gap as 0037/0038. Until `supabase db push` (or dashboard SQL editor), the supplier/location pages will error on missing tables and the invoice previous-balance RPC 404s.
-**Next:** Apply 0037–0042 to the cloud DB, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
+**Date:** 2026-08-08 (session 17, same day as 16)
+**Worked on:** Smart expense categorization — assets (vehicles/shops) + sub-types under the existing categories, form progressive disclosure, list filters/grouping, analytics report with charts + PDF/Excel, settings management page. Plus the formatPKR lakh-grouping fix (1,50,000).
+**Completed:** 0043 migration (expense_assets, expense_sub_types, nullable expenses columns, denormalising/validating trigger, 29 seeded sub-types per business, expense_asset_summary_view), validators/actions/hooks, all six UI phases, backup sheets. 113 tests green, next build green.
+**Blocked by:** Migrations **0039–0043 are NOT applied to Supabase** — same credential gap as 0037/0038. Until applied, the new expense fields error on missing columns.
+**Next:** Apply 0037–0043 to the cloud DB, rotate the `owner@khaliqoil.com` password (`KocTest2024!` is in the repo and the app is now public)
 
 ---
 
@@ -143,6 +143,19 @@ drqpqjsamguffwkxiilp
 ---
 
 ## Session Log
+
+### Session 17 — 2026-08-08
+- **Worked on:** Smart expense categorization with asset tracking. Commits `246ca90`…`818f0af` (8 commits).
+- **formatPKR now uses the Pakistani number system** (`246ca90`): `toLocaleString('en-PK')` produces WESTERN grouping in V8 (150,000 not 1,50,000) — verified empirically, so grouping is manual (last 3 digits, then pairs), deterministic across server PDFs and browsers. This changed every money display app-wide; one old test assertion (999,999.99 → 9,99,999.99) encoded the removed behaviour and was updated. 25 money tests.
+- **DB (0043):** `expense_assets` (JSONB details) + `expense_sub_types`, both CHECK-pinned to the 8 fixed categories, case-insensitive unique per (business, category, name). `expenses` gains NULLABLE `asset_id`/`sub_type_id`/`asset_name`/`sub_type_name` — old rows untouched. **Denormalisation + category-match validation live in a BEFORE trigger** (`fn_expenses_denormalize`), not just the action. **Transport+Maintenance are one category group** (`expense_category_group()` SQL + mirrored TS in `lib/validators/expense-assets.ts` — keep in sync): a car's petrol and oil change attach to the same asset; a Rent expense on a car is rejected. Vehicle sub-types seeded under Transport ONLY (group rule exposes them to Maintenance; double-seeding would duplicate dropdowns). 29 defaults per existing business — later businesses start empty. `expense_asset_summary_view` = per (type, category, asset, sub-type, month) rollup; names fall back to the denormalised snapshot after asset soft-delete. 9 assertion groups on scratch Postgres 16.
+- **Form:** prefetch-once hooks (`useExpenseAssets`/`useExpenseSubTypes` fetch all, filter client-side per category group) so the progressive Asset/Expense-Type fields never spin. AssetPicker (searchable, "+ Add New" pinned), AddAssetSheet (bottom sheet; type chips per category; plate/fuel for vehicles; also does EDIT mode for the settings page), inline instant sub-type add. Category change resets both fields **unless the change stays inside Transport↔Maintenance**. Both fields optional; old flow byte-identical.
+- **List:** category chips → asset chips (group-aware) → period presets → Business/Home; asset+sub-type badges on rows; List / "By Item" grouped view (collapsible per-asset sections, totals, Untracked last). **Selecting a concrete asset drops the category filter** on purpose — an asset's view must span Transport+Maintenance.
+- **Analytics (/reports/expenses):** all math in `lib/expense-analytics.ts` — pure, `now`-injected, **14 unit tests** (period boundaries, category merge, untracked bucketing, share capping, zero-filled trend, %-change edges). Cards / sortable period-column table with expandable sub-type rows + Compare checkboxes / 12-month trend bar / capped donut (5+Other, labelled list) / two-asset comparison. Charts use the dataviz-skill reference palette, validated with its script; PDF component in `components/reports/expense-pdfs.tsx` (NOT the 'use server' module, so `scripts/render-expense-report-preview.tsx` can render it — done, eyeballed: lakh grouping + merged categories correct). Exports: PDF (summary + page per item) and Excel (Summary + sheet per category).
+- **Settings (/settings/expense-assets):** tabs per category GROUP (Vehicles = Transport+Maintenance), asset cards w/ Total Spent + This Month, edit/delete (delete warns with linked count; history keeps names), collapsible sub-type management. Accountants reach it via "Manage Items" on /expenses (Settings sidebar entry stays admin-only).
+- **Backup:** Expense Assets + Expense Sub-types sheets in both generators; Expenses sheet gains Item/Expense Type/id columns.
+- **Deviations (documented in commits):** the spec's "staff can create expenses" contradicts CLAUDE.md's fixed permission matrix (staff have no expenses.*) and existing RLS/pages — kept admin/accountant per CLAUDE.md's precedence, flagged to owner. The "Sheet Count column C bug" remains non-existent (re-verified session 16). Analytics/report gated admin/accountant to match the module.
+- **Verified:** 113/113 vitest, tsc clean, ESLint 0/0 on touched files, next build green (all new routes), migration assertions green.
+- **⚠️ Not applied:** 0043 (and 0039–0042) not pushed to Supabase — no DB credentials in session.
 
 ### Session 16 — 2026-08-08
 - **Worked on:** Supplier (vendor) management + Location/city customer categorization, both complete DB→UI. Commits `895b021`…`8fc9feb`.
