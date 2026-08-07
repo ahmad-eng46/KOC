@@ -16,7 +16,10 @@ export default async function ProductsPage() {
         <h1 className="text-xl font-semibold text-gray-900">Products</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your product catalogue</p>
       </div>
-      <ProductTable canSeePurchasePrice={canSeePurchasePrice} />
+      <ProductTable
+        canSeePurchasePrice={canSeePurchasePrice}
+        canBulkAssign={canSeePurchasePrice}
+      />
     </div>
   );
 }
