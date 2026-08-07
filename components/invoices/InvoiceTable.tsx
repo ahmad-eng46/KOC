@@ -13,7 +13,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { format, subDays, parseISO } from 'date-fns';
-import { Search, ChevronLeft, ChevronRight, Plus, Calendar, ArrowUpDown } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Plus, Calendar, ArrowUpDown, RotateCcw } from 'lucide-react';
 import {
   useInvoices,
   type InvoiceListRow,
@@ -38,7 +38,12 @@ function thirtyDaysAgoISO() {
   return format(subDays(new Date(), 30), 'yyyy-MM-dd');
 }
 
-export function InvoiceTable() {
+type Props = {
+  /** Renders the "New Return" entry — admin/accountant only (returns.create). */
+  canReturn?: boolean;
+};
+
+export function InvoiceTable({ canReturn = false }: Props) {
   const [from, setFrom] = useState(thirtyDaysAgoISO());
   const [to, setTo] = useState(todayISO());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -174,6 +179,14 @@ export function InvoiceTable() {
             </div>
           </div>
 
+          {canReturn && (
+            <Link
+              href="/returns/new"
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 shrink-0"
+            >
+              <RotateCcw size={15} /> New Return
+            </Link>
+          )}
           <Link
             href="/invoices/new"
             className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"

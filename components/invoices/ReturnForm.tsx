@@ -119,6 +119,14 @@ export function ReturnForm({ invoiceId }: Props) {
     patchSelection(itemId, { selected: true, qty: isNaN(n) ? 0 : n });
   }
 
+  function stepQty(itemId: string, delta: number, max: number) {
+    setSelections((prev) => {
+      const cur = prev[itemId] ?? EMPTY_SELECTION;
+      const next = Math.min(max, Math.max(0, cur.qty + delta));
+      return { ...prev, [itemId]: { ...cur, selected: true, qty: next } };
+    });
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (validationError || !data) return;
@@ -221,26 +229,46 @@ export function ReturnForm({ invoiceId }: Props) {
 
                     {sel?.selected && !isFullyReturned && (
                       <div className="mt-3 space-y-3">
-                        <div className="grid grid-cols-2 gap-3 max-w-sm">
+                        <div className="flex flex-wrap gap-3 max-w-sm">
                           <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">
                               Return Qty
                             </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={sel.qty}
-                              onChange={(e) => setQty(it.invoice_item_id, e.target.value)}
-                              className={[
-                                'w-full h-11 px-3 rounded-lg border text-sm bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                sel.qty > it.remaining ? 'border-red-400' : 'border-gray-300',
-                              ].join(' ')}
-                            />
+                            <div className="flex items-stretch gap-1">
+                              <button
+                                type="button"
+                                onClick={() => stepQty(it.invoice_item_id, -1, it.remaining)}
+                                disabled={sel.qty <= 0}
+                                aria-label="Decrease quantity"
+                                className="w-11 h-11 rounded-lg border border-gray-300 bg-white text-lg font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 shrink-0"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={sel.qty}
+                                onChange={(e) => setQty(it.invoice_item_id, e.target.value)}
+                                className={[
+                                  'w-16 h-11 px-2 rounded-lg border text-sm text-center bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500',
+                                  sel.qty > it.remaining ? 'border-red-400' : 'border-gray-300',
+                                ].join(' ')}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => stepQty(it.invoice_item_id, 1, it.remaining)}
+                                disabled={sel.qty >= it.remaining}
+                                aria-label="Increase quantity"
+                                className="w-11 h-11 rounded-lg border border-gray-300 bg-white text-lg font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 shrink-0"
+                              >
+                                +
+                              </button>
+                            </div>
                             {sel.qty > it.remaining && (
                               <p className="text-xs text-red-600 mt-0.5">Max {it.remaining}</p>
                             )}
                           </div>
-                          <div>
+                          <div className="flex-1 min-w-28">
                             <label className="block text-xs font-medium text-gray-500 mb-1">
                               Return Amount
                             </label>
@@ -336,43 +364,44 @@ export function ReturnForm({ invoiceId }: Props) {
         />
       </div>
 
-      {/* Total */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-900">Total Refund</span>
-          <span className="text-lg font-mono font-semibold text-gray-900 tabular-nums">
-            {formatPKR(totalReturnPaisa)}
-          </span>
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
-          Customer&apos;s balance will be reduced by this amount; stock will be restored.
-        </p>
-      </div>
-
       {serverError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3">
           <p className="text-sm text-red-700">{serverError}</p>
         </div>
       )}
 
-      <div className="flex gap-3 pt-2">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          disabled={submitting}
-          className="flex-1 h-11 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={!!validationError || submitting || allReturned}
-          title={validationError ?? undefined}
-          className="flex-1 h-11 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
-        >
-          <RotateCcw size={15} />
-          {submitting ? 'Processing…' : 'Process Return'}
-        </button>
+      {/* Summary + submit — sticks to the bottom of the scroll area on mobile */}
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 px-4 pt-3 pb-4 bg-gray-50/95 backdrop-blur-sm border-t border-gray-200 md:static md:mx-0 md:mb-0 md:px-0 md:pt-2 md:pb-0 md:bg-transparent md:border-0 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold text-gray-900">Total Refund</span>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Customer&apos;s balance will be reduced; stock will be restored.
+            </p>
+          </div>
+          <span className="text-lg font-mono font-semibold text-gray-900 tabular-nums">
+            {formatPKR(totalReturnPaisa)}
+          </span>
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            disabled={submitting}
+            className="flex-1 h-11 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!!validationError || submitting || allReturned}
+            title={validationError ?? undefined}
+            className="flex-1 h-11 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+          >
+            <RotateCcw size={15} />
+            {submitting ? 'Processing…' : 'Process Return'}
+          </button>
+        </div>
       </div>
     </form>
   );
