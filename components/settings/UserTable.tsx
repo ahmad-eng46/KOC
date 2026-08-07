@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import {
@@ -15,6 +14,7 @@ import {
 import { userRoles, type UserRole } from '@/lib/validators/user';
 import type { UserListRow } from '@/lib/actions/user';
 import { UserForm, type UserFormValues } from './UserForm';
+import { DropdownMenu, DropdownMenuItem } from '@/components/ui/DropdownMenu';
 
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: 'Admin', accountant: 'Accountant', staff: 'Staff', viewer: 'Viewer',
@@ -303,7 +303,7 @@ export function UserTable({ currentUserId }: Props) {
           />
           {editTarget.id === currentUserId && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-              You're editing your own profile. You can't change your own role here — ask another admin.
+              You&apos;re editing your own profile. You can&apos;t change your own role here — ask another admin.
             </p>
           )}
         </Modal>
@@ -354,7 +354,11 @@ export function UserTable({ currentUserId }: Props) {
 }
 
 // ─────────────────────────────────────────────
-// Kebab menu
+// Kebab menu — on the shared DropdownMenu:
+//  - portal + fixed positioning, so the table wrapper's overflow-hidden
+//    can't clip it and it flips upward near the viewport bottom
+//  - no onBlur close (the old onBlur+120ms timeout unmounted the panel
+//    between mousedown and mouseup, so every action's onClick was dead)
 // ─────────────────────────────────────────────
 function KebabMenu({
   user, isSelf, onEdit, onReset, onToggleActive, onDelete, onRestore, onHistory, onAudit,
@@ -363,66 +367,40 @@ function KebabMenu({
   onEdit: () => void; onReset: () => void; onToggleActive: () => void;
   onDelete: () => void; onRestore: () => void; onHistory: () => void; onAudit: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const isDeleted = !!user.deleted_at;
 
   return (
-    <div className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-      >
-        <MoreVertical size={14} />
-      </button>
-      {open && (
-        <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+    <DropdownMenu trigger={<MoreVertical size={14} />} triggerLabel={`Actions for ${user.full_name}`}>
+      {(close) => (
+        <>
           {!isDeleted && (
             <>
-              <MenuItem icon={Pencil} onClick={onEdit}>Edit user</MenuItem>
-              <MenuItem icon={Key} onClick={onReset}>Reset password</MenuItem>
-              <MenuItem icon={Power} onClick={onToggleActive} disabled={isSelf} hint={isSelf ? 'Cannot disable self' : undefined}>
+              <DropdownMenuItem icon={Pencil} onClick={onEdit} close={close}>Edit user</DropdownMenuItem>
+              <DropdownMenuItem icon={Key} onClick={onReset} close={close}>Reset password</DropdownMenuItem>
+              <DropdownMenuItem
+                icon={Power} onClick={onToggleActive} close={close}
+                disabled={isSelf} hint={isSelf ? 'Cannot disable self' : undefined}
+              >
                 {user.is_active ? 'Disable' : 'Enable'}
-              </MenuItem>
+              </DropdownMenuItem>
             </>
           )}
-          <MenuItem icon={Clock} onClick={onHistory}>Login history</MenuItem>
-          <MenuItem icon={ScrollText} onClick={onAudit}>View audit log</MenuItem>
+          <DropdownMenuItem icon={Clock} onClick={onHistory} close={close}>Login history</DropdownMenuItem>
+          <DropdownMenuItem icon={ScrollText} onClick={onAudit} close={close}>View audit log</DropdownMenuItem>
           {!isDeleted && (
-            <MenuItem icon={Trash2} onClick={onDelete} disabled={isSelf} danger hint={isSelf ? 'Cannot delete self' : undefined}>
+            <DropdownMenuItem
+              icon={Trash2} onClick={onDelete} close={close}
+              disabled={isSelf} danger hint={isSelf ? 'Cannot delete self' : undefined}
+            >
               Delete user
-            </MenuItem>
+            </DropdownMenuItem>
           )}
           {isDeleted && (
-            <MenuItem icon={RotateCcw} onClick={onRestore}>Restore user</MenuItem>
+            <DropdownMenuItem icon={RotateCcw} onClick={onRestore} close={close}>Restore user</DropdownMenuItem>
           )}
-        </div>
+        </>
       )}
-    </div>
-  );
-}
-
-function MenuItem({
-  icon: Icon, onClick, children, disabled, danger, hint,
-}: {
-  icon: React.ElementType; onClick: () => void;
-  children: React.ReactNode; disabled?: boolean; danger?: boolean; hint?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={hint}
-      className={[
-        'w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed',
-        danger ? 'text-red-600' : 'text-gray-700',
-      ].join(' ')}
-    >
-      <Icon size={14} />
-      {children}
-    </button>
+    </DropdownMenu>
   );
 }
 
@@ -445,7 +423,7 @@ function ResetPasswordModal({
     <Modal title={`Reset password for ${user.full_name}`} onClose={onClose}>
       <div className="space-y-3">
         <p className="text-sm text-gray-600">
-          The user's existing sessions will be signed out immediately. You'll see the new password once after success.
+          The user&apos;s existing sessions will be signed out immediately. You&apos;ll see the new password once after success.
         </p>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">New password</label>
@@ -537,7 +515,7 @@ function PasswordRevealDialog({
             onChange={(e) => setAcknowledged(e.target.checked)}
             className="mt-1 w-4 h-4 rounded border-gray-300 text-blue-600"
           />
-          <span className="text-sm text-gray-700">I've shared this password securely with the user.</span>
+          <span className="text-sm text-gray-700">I&apos;ve shared this password securely with the user.</span>
         </label>
         <button
           disabled={!acknowledged}
