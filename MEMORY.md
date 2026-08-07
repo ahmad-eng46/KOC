@@ -144,6 +144,15 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 19 — 2026-08-08
+- **Worked on:** Invoice-PDF full-balance spec (round 2 — the feature itself shipped in fb2ef92/session 15; this closed the deltas), commits `9deeb4f`…`168c483`.
+- **Totals math:** `computeInvoiceTotals` gains `hasCreditPrevious` / `isCreditBalance`; 10 tests incl. the spec's credit-previous subtraction (−5,000 + 85,000 → 80,000 due), the 1,75,000-paid → 25,000 Credit Balance case, khata (zero-payment) and fully-settled-zero.
+- **PDF:** labels aligned ("Total Amount Due", "Remaining Balance"); overpaid renders green **Credit Balance** with the absolute amount; negative previous renders green **"Credit from previous"** with explicit minus. Fixed in passing: the Discount row's U+2212 minus (silently dropped by Helvetica/WinAnsi, found session 15) → ASCII '-'. Preview script gained overpaid + khata fixtures; credit cases eyeballed against the spec mockups.
+- **On-screen invoice detail** (was never updated in session 15): header card and table footer now run through the same `computeInvoiceTotals` — the misleading "Balance Due Rs. -15,000" is gone from the screen too; Mark Paid still uses the invoice-scoped outstanding.
+- **Consistency:** `useCustomersWithBalance`, `useCustomerReport` (→ receivables aging) and `useDefaulters` migrated to `customer_balances_view` — closes the divergence where staff/viewer saw zero/opening-only balances from client-side ledger sums under RLS, and finishes the customers-balance.ts tech-debt item. `CustomerWithBalance` dropped unused `opening_balance_paisa`.
+- **Process note:** caught a piped-exit-code trap (`eslint | tail` reports tail's exit) that let 2 pre-existing unescaped-entity errors slip into a commit — fixed + amended; check exit codes unpiped.
+- **Verified:** 122/122 vitest, tsc clean, ESLint 0/0 on touched files, next build green, PDFs eyeballed.
+
 ### Session 18 — 2026-08-08
 - **Worked on:** Product brand/supplier system. Commits `6517978`…`0155c93` (9 commits).
 - **DB (0044):** `brands` (multinational | local_dealer, contact fields, sort_order; case-insensitive unique per business) + nullable `products.brand_id`. **`products_for_role` REPLACED to expose brand_id** — the view enumerates columns, so without this even admin's list (which reads the view) would never see it. `brand_summary_view` joins `current_stock` (the app's one stock computation) — out = on-hand ≤ 0 (incl. no-movement products), low = 0 < on-hand ≤ threshold, non-overlapping. Assignment via narrow SECURITY DEFINER RPCs (`assign_product_brand` admin/accountant/staff; `assign_products_brand` bulk admin/accountant) because products UPDATE RLS is admin-only *to guard price fields* — these touch only brand_id (the 0042 location-assign pattern). 8 assertion groups on scratch PG incl. staff-sees-brand-but-NULL-cost through the view.
