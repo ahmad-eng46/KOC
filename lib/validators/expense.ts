@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uuidLike } from '@/lib/validators/uuid';
 
 export const expenseTypes = ['business', 'home'] as const;
 export type ExpenseType = (typeof expenseTypes)[number];
@@ -25,6 +26,9 @@ export const expenseCreateSchema = z.object({
     .positive('Amount must be > 0'),
   expense_date: z.string().min(1, 'Date is required'),
   receipt_url: z.string().max(500).nullable().optional(),
+  // Optional asset tracking — old flow (category + amount only) is untouched.
+  asset_id: uuidLike().nullable().optional(),
+  sub_type_id: uuidLike().nullable().optional(),
 });
 
 export type ExpenseCreateInput = z.infer<typeof expenseCreateSchema>;

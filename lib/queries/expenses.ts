@@ -16,12 +16,19 @@ export type ExpenseRow = {
   include_in_pnl: boolean;
   receipt_url: string | null;
   created_at: string;
+  asset_id: string | null;
+  asset_name: string | null;
+  sub_type_id: string | null;
+  sub_type_name: string | null;
 };
 
 export type ExpenseFilters = {
   from: string;
   to: string;
   types: ExpenseType[]; // empty = all
+  category?: string;
+  /** 'untracked' = rows with no asset. */
+  assetId?: string | 'untracked';
 };
 
 export function useExpenses(filters: ExpenseFilters) {
@@ -35,7 +42,7 @@ export function useExpenses(filters: ExpenseFilters) {
       let q = supabase
         .from('expenses')
         .select(
-          'id, type, category, description, amount_paisa, expense_date, include_in_pnl, receipt_url, created_at',
+          'id, type, category, description, amount_paisa, expense_date, include_in_pnl, receipt_url, created_at, asset_id, asset_name, sub_type_id, sub_type_name',
         )
         .eq('business_id', activeId!)
         .is('deleted_at', null)
@@ -45,6 +52,9 @@ export function useExpenses(filters: ExpenseFilters) {
         .order('created_at', { ascending: false });
 
       if (filters.types.length > 0) q = q.in('type', filters.types);
+      if (filters.category) q = q.eq('category', filters.category);
+      if (filters.assetId === 'untracked') q = q.is('asset_id', null);
+      else if (filters.assetId) q = q.eq('asset_id', filters.assetId);
 
       const { data, error } = await q;
       if (error) throw error;

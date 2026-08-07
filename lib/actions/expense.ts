@@ -25,6 +25,10 @@ export async function createExpense(input: ExpenseCreateInput): Promise<CreateRe
   if (!businessId) return { ok: false, error: 'No active business.' };
 
   const supabase = await createServerClient();
+  // asset_name / sub_type_name are denormalised — and the asset↔category
+  // match validated (Transport↔Maintenance counting as one group) — by the
+  // trg_expenses_denormalize trigger, so no insert path can skip it. Its
+  // error messages are already user-readable and surface as-is below.
   const { data, error } = await supabase
     .from('expenses')
     .insert({
@@ -36,6 +40,8 @@ export async function createExpense(input: ExpenseCreateInput): Promise<CreateRe
       expense_date: parsed.data.expense_date,
       include_in_pnl: parsed.data.type === 'business', // home expenses opt-in via settings toggle
       receipt_url: parsed.data.receipt_url ?? null,
+      asset_id: parsed.data.asset_id ?? null,
+      sub_type_id: parsed.data.sub_type_id ?? null,
       created_by: session.id,
     })
     .select('id')
