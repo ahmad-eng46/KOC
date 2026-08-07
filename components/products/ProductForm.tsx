@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -8,6 +8,7 @@ import { productSchema, type ProductInput } from '@/lib/validators/product';
 import { createProduct, updateProduct } from '@/lib/actions/product';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
+import { BrandPicker } from './BrandPicker';
 
 type Props = {
   product?: Product;
@@ -23,6 +24,8 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const {
     register,
     handleSubmit,
+    control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(productSchema),
@@ -34,10 +37,13 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           sale_price_paisa: product.sale_price_paisa,
           purchase_price_paisa: product.purchase_price_paisa ?? null,
           low_stock_threshold: product.low_stock_threshold ?? null,
+          brand_id: product.brand_id ?? null,
           is_active: product.is_active,
         }
-      : { is_active: true, sale_price_paisa: 0 },
+      : { is_active: true, sale_price_paisa: 0, brand_id: null },
   });
+
+  const brandId = useWatch({ control, name: 'brand_id' });
 
   async function onSubmit(values: ProductInput) {
     setServerError(null);
@@ -62,6 +68,17 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           {...register('name')}
         />
       </Field>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          Brand / Supplier <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <BrandPicker
+          value={brandId ?? null}
+          onChange={(id) => setValue('brand_id', id, { shouldDirty: true })}
+          canCreate
+        />
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="SKU / Code" error={errors.sku?.message}>
