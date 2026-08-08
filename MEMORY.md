@@ -34,6 +34,25 @@
 
 ## Last Session
 
+**Date:** 2026-08-09 (session 20)
+**Worked on:** "Add new brand" saved nothing — brands table stayed at 0 rows, no error shown.
+**Root cause:** `QuickCreateBrandSheet` rendered its own `<form>` *inside* `ProductForm`'s `<form>`. Nested forms are invalid HTML; the sheet's submit bubbled into the product form's react-hook-form handler, which ran `updateProduct` + `router.push('/products')`. The navigation discarded the queued `createBrand` server action before its request was ever sent — hence no row and no error. Verified by reverting the fix: React logs "`<form>` cannot contain a nested `<form>`" and `brands` stays empty.
+**Completed:** Sheet portalled to `document.body` + `stopPropagation` on submit (portals still bubble through the React tree); try/catch + error toast around `createBrand`; `useInvalidateBrandData` now awaitable so the new brand is in the dropdown before it is auto-selected; `ProductForm`/`ProductTable` catch actions that *throw* (permission guards) instead of leaving a stuck "Saving…"; `23505`/`42501` mapped to readable messages. DB layer was never at fault — schema, RLS, views and RPCs from 0044 all verified working.
+**Verified:** 19/19 checks driven through headless Chrome (create → auto-select → Update Product → brand_id persisted → chip + badge → chip filter → Unbranded count → second brand → duplicate error → bulk assign). `tsc --noEmit` clean; changed files lint clean.
+**Note:** 0044 *is* applied to the cloud DB (contrary to the previous entry). Test runs left soft-deleted brand rows — invisible to the app, purge if desired.
+
+**Round 2 — brand names are user-typed; deleting a brand frees its products**
+- Nothing was ever seeded or hardcoded: brand names have always been free text. The only "fixed" thing was the example placeholder `Double Horse` in the picker and in Settings → Brands; both now read "Type the brand or dealer name".
+- **Found: admins cannot delete a brand at all.** `brands_update` in 0044 declares `USING` with no `WITH CHECK`, so Postgres copies `USING` onto the NEW row; the live copy of that expression rejects a row whose `deleted_at` is set. `UPDATE brands SET deleted_at = now()` fails 42501 while every other column update succeeds. Confirmed by probing each column in isolation against the live DB.
+- `deleteBrand()` unassigned the products *before* that failing update, so a refused delete still stripped every product of its brand and left the brand alive with zero products. Reordered: brand row first, unassign second — a refusal now changes nothing.
+- **`supabase/migrations/0046_brand_soft_delete.sql` is NOT yet applied.** It recreates `brands_update` with an explicit `WITH CHECK`, adds a trigger so soft-deleting a brand always nulls `products.brand_id` (the FK's ON DELETE SET NULL only covers hard deletes, which `brands_delete` forbids), and backfills any product pointing at a deleted brand. Until it is applied, brand deletion fails with a clear toast instead of corrupting data.
+- Could not apply it here: `supabase/.temp/pooler-url` has no password and the CLI's access token lacks privileges.
+- Verified in headless Chrome, 7/7: user-typed name saved verbatim → assigned → delete refused cleanly → product keeps its brand → brand intact. Re-run the delete flow after applying 0046 to confirm the success path.
+
+---
+
+## Session 18
+
 **Date:** 2026-08-08 (session 18, same day as 16/17)
 **Worked on:** Product brand/supplier system — brands table + products.brand_id, filter chips + badges + bulk assignment on the products list, brand picker with quick-create on the product form, /settings/brands management, and the owner's key deliverable: per-brand stock report PDF/Excel with the REORDER NEEDED block.
 **Completed:** 0044 migration (brands, products.brand_id, products_for_role replaced to expose it, brand_summary_view over current_stock, narrow assign RPCs), validators/actions/hooks, all UI phases, exports (previews rendered + eyeballed), backup Brands sheet + Products Brand columns. 118 tests green, next build green.
