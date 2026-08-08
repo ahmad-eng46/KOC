@@ -11,6 +11,14 @@ export const invoiceItemSchema = z.object({
     .int('Rate must be in whole paisa')
     .min(0, 'Rate cannot be negative'),
   discount_paisa: z.number().int().min(0).default(0),
+  /**
+   * Display only. `quantity` above is always in stock units; these record what
+   * the user actually typed so the invoice can print "2 Box (24 cans)" even
+   * after the product's pack size is later changed.
+   */
+  entered_quantity: z.number().positive().optional(),
+  entry_mode: z.enum(['unit', 'pack']).optional(),
+  pack_size_snapshot: z.number().int().min(1).optional(),
 });
 
 export const invoiceCreateSchema = z.object({

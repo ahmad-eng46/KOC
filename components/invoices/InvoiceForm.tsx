@@ -12,13 +12,16 @@ import { computeInvoiceTotals } from '@/lib/invoice';
 import { createInvoice } from '@/lib/actions/invoice';
 import type { DiscountType } from '@/lib/validators/invoice';
 import type { Role } from '@/lib/auth/permissions';
+import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
 import { CustomerCombobox } from './CustomerCombobox';
 import { ProductCombobox } from './ProductCombobox';
 
 type LineItem = {
   key: string;
   product_id: string | null;
+  /** What the user typed — boxes when entry_mode is 'pack', units otherwise. */
   quantity: number;
+  entry_mode: EntryMode;
   unit_price_paisa: number;
 };
 
@@ -27,7 +30,7 @@ type Props = {
 };
 
 function emptyItem(key: string): LineItem {
-  return { key, product_id: null, quantity: 1, unit_price_paisa: 0 };
+  return { key, product_id: null, quantity: 1, entry_mode: 'unit', unit_price_paisa: 0 };
 }
 
 export function InvoiceForm({ role }: Props) {
@@ -68,10 +71,27 @@ export function InvoiceForm({ role }: Props) {
     return rupeesToPaisa(n);
   }, [paymentInput]);
 
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /**
+   * The line items in stock units. A pack entry of 2 on a box of 12 becomes 24
+   * here, and everything downstream — totals, the stock guard, what is sent to
+   * the server — reads these, never the raw entry. Rates are per unit, so the
+   * line total is units x rate exactly as it always was.
+   */
+  const unitItems = useMemo(
+    () =>
+      items.map((it) => {
+        const p = it.product_id ? productById.get(it.product_id) : undefined;
+        return { ...it, quantity: toUnits(it.quantity, it.entry_mode, p?.pack_size ?? 1) };
+      }),
+    [items, productById],
+  );
+
   // ★ All math via the unit-tested computeInvoiceTotals — DO NOT inline. ★
   const totals = useMemo(
-    () => computeInvoiceTotals(items, discountType, discountValue),
-    [items, discountType, discountValue],
+    () => computeInvoiceTotals(unitItems, discountType, discountValue),
+    [unitItems, discountType, discountValue],
   );
 
   const newBalance = previousBalance + totals.total_paisa - paymentReceivedPaisa;
@@ -80,7 +100,7 @@ export function InvoiceForm({ role }: Props) {
   const stockWarnings = useMemo(() => {
     const warnings: { name: string; requested: number; onHand: number }[] = [];
     const requestedByProduct = new Map<string, number>();
-    for (const it of items) {
+    for (const it of unitItems) {
       if (!it.product_id || it.quantity <= 0) continue;
       requestedByProduct.set(
         it.product_id,
@@ -95,10 +115,10 @@ export function InvoiceForm({ role }: Props) {
       }
     }
     return warnings;
-  }, [items, products]);
+  }, [unitItems, products]);
 
   // ── Validation ──────────────────────────────────────
-  const validItems = items.filter(
+  const validItems = unitItems.filter(
     (it) => it.product_id !== null && it.quantity > 0,
   );
 
@@ -128,13 +148,14 @@ export function InvoiceForm({ role }: Props) {
   }
   function pickProduct(key: string, productId: string | null) {
     if (!productId) {
-      updateItem(key, { product_id: null, unit_price_paisa: 0 });
+      updateItem(key, { product_id: null, unit_price_paisa: 0, entry_mode: 'unit' });
       return;
     }
     const p = products.find((x) => x.id === productId);
     updateItem(key, {
       product_id: productId,
       unit_price_paisa: p?.sale_price_paisa ?? 0,
+      entry_mode: p && hasPack(p) ? 'pack' : 'unit',
     });
   }
   function changeQty(key: string, value: string) {
@@ -162,12 +183,19 @@ export function InvoiceForm({ role }: Props) {
 
     const result = await createInvoice({
       customer_id: customerId!,
-      items: validItems.map((it) => ({
-        product_id: it.product_id!,
-        quantity: it.quantity,
-        unit_price_paisa: it.unit_price_paisa,
-        discount_paisa: 0,
-      })),
+      items: validItems.map((it) => {
+        const p = productById.get(it.product_id!);
+        return {
+          product_id: it.product_id!,
+          // Units — the server, the stock movement and the ledger never see packs.
+          quantity: it.quantity,
+          unit_price_paisa: it.unit_price_paisa,
+          discount_paisa: 0,
+          entered_quantity: items.find((x) => x.key === it.key)?.quantity ?? it.quantity,
+          entry_mode: it.entry_mode,
+          pack_size_snapshot: p?.pack_size ?? 1,
+        };
+      }),
       discount_type: discountType,
       discount_value: discountValue,
       payment_received_paisa: paymentReceivedPaisa,
@@ -250,6 +278,7 @@ export function InvoiceForm({ role }: Props) {
             onPickProduct={(pid) => pickProduct(item.key, pid)}
             onChangeQty={(v) => changeQty(item.key, v)}
             onChangeRate={(v) => changeRate(item.key, v)}
+            onChangeMode={(mode) => updateItem(item.key, { entry_mode: mode })}
             lineTotalPaisa={totals.line_totals_paisa[idx] ?? 0}
           />
         ))}
@@ -435,6 +464,7 @@ type ItemRowProps = {
   onPickProduct: (id: string | null) => void;
   onChangeQty: (v: string) => void;
   onChangeRate: (v: string) => void;
+  onChangeMode: (mode: EntryMode) => void;
   lineTotalPaisa: number;
 };
 
@@ -448,9 +478,16 @@ function ItemRowCard({
   onPickProduct,
   onChangeQty,
   onChangeRate,
+  onChangeMode,
   lineTotalPaisa,
 }: ItemRowProps) {
   const [rateText, setRateText] = useState<string | null>(null);
+
+  const product = item.product_id ? products.find((p) => p.id === item.product_id) : undefined;
+  const packed = !!product && hasPack(product);
+  const hint = product
+    ? conversionHint(item.quantity, item.entry_mode, product)
+    : null;
 
   // Display value — local edit text (admin) or auto-filled product price
   const rateDisplay =
@@ -493,14 +530,28 @@ function ItemRowCard({
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={item.quantity}
-            onChange={(e) => onChangeQty(e.target.value)}
-            disabled={!item.product_id}
-            className="w-full h-10 px-3 rounded-xl border border-gray-300 text-sm bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-          />
+          <div className="flex items-stretch gap-1">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={item.quantity}
+              onChange={(e) => onChangeQty(e.target.value)}
+              disabled={!item.product_id}
+              className="min-w-0 flex-1 h-10 px-3 rounded-xl border border-gray-300 text-sm bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+            />
+            {packed && (
+              <select
+                value={item.entry_mode}
+                onChange={(e) => onChangeMode(e.target.value as EntryMode)}
+                aria-label="Quantity unit"
+                className="h-10 max-w-24 px-1.5 rounded-xl border border-gray-300 text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="pack">{packOptionLabel(product!)}</option>
+                <option value="unit">{unitOptionLabel(product!)}</option>
+              </select>
+            )}
+          </div>
+          {hint && <p className="mt-1 text-xs text-blue-700 font-medium">{hint}</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Rate (Rs.)</label>

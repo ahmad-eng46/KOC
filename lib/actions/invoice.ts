@@ -88,6 +88,11 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
       unit_price_paisa: it.unit_price_paisa,
       discount_paisa: it.discount_paisa ?? 0,
       line_total_paisa: totals.line_totals_paisa[i],
+      // Carried through untouched — the RPC stores them for the PDF and does
+      // no arithmetic with them. quantity above is units, as it always was.
+      entered_quantity: it.entered_quantity ?? null,
+      entry_mode: it.entry_mode ?? null,
+      pack_size_snapshot: it.pack_size_snapshot ?? null,
     })),
     payment:
       data.payment_received_paisa > 0
