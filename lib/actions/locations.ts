@@ -13,8 +13,9 @@ import {
   type BulkAssignLocationInput,
 } from '@/lib/validators/locations';
 
-type CreateResult = { ok: true; id: string } | { ok: false; error: string };
+type CreateResult = { ok: true; id: string; name: string } | { ok: false; error: string };
 type SimpleResult = { ok: true } | { ok: false; error: string };
+type CountResult = { ok: true; count: number } | { ok: false; error: string };
 type BulkResult = { ok: true; updated: number } | { ok: false; error: string };
 
 export async function createLocation(input: LocationInput): Promise<CreateResult> {
@@ -40,7 +41,7 @@ export async function createLocation(input: LocationInput): Promise<CreateResult
       short_code: parsed.data.short_code || null,
       sort_order: parsed.data.sort_order ?? 0,
     })
-    .select('id')
+    .select('id, name')
     .single();
 
   if (error) {
@@ -52,7 +53,8 @@ export async function createLocation(input: LocationInput): Promise<CreateResult
   }
 
   revalidatePath('/locations');
-  return { ok: true, id: data.id };
+  revalidatePath('/customers');
+  return { ok: true, id: data.id, name: data.name };
 }
 
 export async function updateLocation(
@@ -93,16 +95,23 @@ export async function updateLocation(
 
   revalidatePath('/locations');
   revalidatePath(`/locations/${id}`);
-  return { ok: true, id };
+  revalidatePath('/customers');
+  return { ok: true, id, name: parsed.data.name.trim() };
 }
 
 /**
- * Soft delete, admin only. Refused while customers are still assigned — the
- * caller should reassign them first (the error carries the count so the UI
- * can say so). This also guarantees no customer ends up pointing at a
- * location the active lists no longer show.
+ * Soft delete, admin only. The location's customers go back to "No Location"
+ * rather than the delete being refused until they are reassigned by hand —
+ * same behaviour as deleting a brand. The count comes back so the UI can say
+ * "5 shops were moved".
+ *
+ * The location row goes first: the soft delete is the step the database can
+ * refuse (see 0047), and unassigning before it would strip every customer of
+ * its city while the city survived. Ordered this way a refusal changes
+ * nothing. 0047's trigger does the unassignment; the RPC afterwards is what
+ * keeps this correct on a database where that migration is not applied yet.
  */
-export async function deleteLocation(id: string): Promise<SimpleResult> {
+export async function deleteLocation(id: string): Promise<CountResult> {
   const session = await getSession();
   if (!session || session.role !== 'admin') {
     return { ok: false, error: 'Only admins can delete locations.' };
@@ -113,20 +122,15 @@ export async function deleteLocation(id: string): Promise<SimpleResult> {
 
   const supabase = await createServerClient();
 
-  const { count, error: countErr } = await supabase
+  const { data: customerRows, error: listErr } = await supabase
     .from('customers')
-    .select('id', { count: 'exact', head: true })
+    .select('id')
     .eq('business_id', businessId)
     .eq('location_id', id)
     .is('deleted_at', null);
+  if (listErr) return { ok: false, error: listErr.message };
 
-  if (countErr) return { ok: false, error: countErr.message };
-  if ((count ?? 0) > 0) {
-    return {
-      ok: false,
-      error: `${count} customer${count === 1 ? ' is' : 's are'} assigned to this location. Reassign them first.`,
-    };
-  }
+  const ids = (customerRows ?? []).map((r) => r.id as string);
 
   const { error } = await supabase
     .from('locations')
@@ -135,10 +139,28 @@ export async function deleteLocation(id: string): Promise<SimpleResult> {
     .eq('business_id', businessId)
     .is('deleted_at', null);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // 42501 here means the locations_update policy refused the soft delete.
+    return {
+      ok: false,
+      error:
+        error.code === '42501'
+          ? 'The database refused to delete this city. Apply migration 0047.'
+          : error.message,
+    };
+  }
+
+  if (ids.length > 0) {
+    const { error: unassignErr } = await supabase.rpc('assign_customers_location', {
+      p_customer_ids: ids,
+      p_location_id: null,
+    });
+    if (unassignErr) return { ok: false, error: unassignErr.message };
+  }
 
   revalidatePath('/locations');
-  return { ok: true };
+  revalidatePath('/customers');
+  return { ok: true, count: ids.length };
 }
 
 /**

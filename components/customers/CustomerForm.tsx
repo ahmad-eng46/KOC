@@ -1,15 +1,15 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
 import { useCustomerCategories } from '@/lib/queries/customers';
-import { useLocations } from '@/lib/queries/locations';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
+import { LocationPicker } from './LocationPicker';
 
 /** A "— None —" select option submits '' — the schema wants null. */
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
@@ -22,11 +22,12 @@ export function CustomerForm({ customer }: Props) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const { data: categories = [] } = useCustomerCategories();
-  const { data: locations = [] } = useLocations();
 
   const {
     register,
     handleSubmit,
+    control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(customerSchema),
@@ -41,21 +42,28 @@ export function CustomerForm({ customer }: Props) {
           credit_limit_paisa: customer.credit_limit_paisa ?? null,
           notes: customer.notes ?? '',
         }
-      : { opening_balance_paisa: 0 },
+      : { opening_balance_paisa: 0, location_id: null },
   });
+
+  const locationId = useWatch({ control, name: 'location_id' });
 
   async function onSubmit(values: CustomerInput) {
     setServerError(null);
-    const result = customer
-      ? await updateCustomer(customer.id, values)
-      : await createCustomer(values);
+    try {
+      const result = customer
+        ? await updateCustomer(customer.id, values)
+        : await createCustomer(values);
 
-    if (!result.ok) {
-      setServerError(result.error);
-      return;
+      if (!result.ok) {
+        setServerError(result.error);
+        return;
+      }
+      router.push('/customers');
+      router.refresh();
+    } catch (err) {
+      // Permission guards in the actions throw rather than return.
+      setServerError(err instanceof Error ? err.message : 'Could not save the customer.');
     }
-    router.push('/customers');
-    router.refresh();
   }
 
   return (
@@ -96,19 +104,12 @@ export function CustomerForm({ customer }: Props) {
 
       {/* Location */}
       <Field label="Location">
-        <select
-          className={inputCls(false)}
-          {...register('location_id', { setValueAs: emptyToNull })}
-        >
-          <option value="">— No location —</option>
-          {locations
-            .filter((l) => l.is_active)
-            .map((l) => (
-              <option key={l.location_id} value={l.location_id}>
-                {l.location_name}
-              </option>
-            ))}
-        </select>
+        <LocationPicker
+          value={locationId ?? null}
+          onChange={(id) => setValue('location_id', id, { shouldDirty: true })}
+          canCreate
+          customerId={customer?.id}
+        />
       </Field>
 
       {/* Address */}

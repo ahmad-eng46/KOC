@@ -56,6 +56,14 @@
 - Consequence: Cancel no longer undoes the brand assignment (it is already committed), only the other unsaved edits.
 - Verified in headless Chrome, 9/9: attached without pressing Update Product, survives navigating away unsaved, badge + chip appear, reload shows it, Update Product keeps it, `/products/new` still fine.
 
+**Round 4 — the same treatment for customer locations**
+- `components/customers/LocationPicker.tsx` mirrors `BrandPicker`: dropdown of active cities, "+ Add new location" quick-create portalled to `<body>` with `stopPropagation` (CustomerForm has the same nested-`<form>` trap), free-text name, and immediate `assignCustomerLocation` when editing an existing customer. `CustomerForm`'s plain `<select>` is gone — there was previously no way to add a city without leaving for /locations.
+- **`locations` had the identical RLS soft-delete bug as `brands`** — same `USING`-without-`WITH CHECK` shape copied from 0042, so admins could not delete a city either. Verified column by column against the live DB before writing the fix.
+- `deleteLocation` no longer refuses while customers are assigned; it frees them to "No Location" like brands do, and deletes the location row first so a refusal changes nothing.
+- `createLocation`/`updateLocation` now return `name`; `useInvalidateLocationData` is awaitable; AddLocationModal and LocationDetailHeader got try/catch + error toasts.
+- **`supabase/migrations/0047_location_soft_delete.sql` is NOT yet applied** — same three parts as 0046 (explicit `WITH CHECK`, unassign trigger, backfill).
+- Verified in headless Chrome, 14/14: add city from the customer form → attached without pressing Update Customer → shows in the Location column and the All Locations filter → delete refused cleanly with the customer's city intact → /customers/new still fine.
+
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked.
 
 ---

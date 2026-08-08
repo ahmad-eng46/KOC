@@ -46,16 +46,23 @@ export function AddLocationModal({ location, onClose }: Props) {
 
   async function onSubmit(values: LocationInput) {
     setServerError(null);
-    const result = location
-      ? await updateLocation(location.location_id, values)
-      : await createLocation(values);
-    if (!result.ok) {
-      setServerError(result.error);
-      return;
+    try {
+      const result = location
+        ? await updateLocation(location.location_id, values)
+        : await createLocation(values);
+      if (!result.ok) {
+        setServerError(result.error);
+        showToast(result.error, 'error');
+        return;
+      }
+      await invalidate();
+      showToast(location ? 'City updated.' : `City "${result.name}" added.`);
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the city.';
+      setServerError(message);
+      showToast(message, 'error');
     }
-    invalidate();
-    showToast(location ? 'City updated.' : `City "${values.name}" added.`);
-    onClose();
   }
 
   return (

@@ -27,15 +27,28 @@ export function LocationDetailHeader({ locationId, canManage, canDelete }: Props
 
   async function handleDelete() {
     if (!location) return;
-    if (!confirm(`Delete ${location.location_name}?`)) return;
-    const result = await deleteLocation(location.location_id);
-    if (!result.ok) {
-      showToast(result.error, 'error');
-      return;
+    const suffix =
+      location.customer_count > 0
+        ? ` ${location.customer_count} shop${location.customer_count === 1 ? '' : 's'} will become unassigned.`
+        : '';
+    if (!confirm(`Delete ${location.location_name}?${suffix}`)) return;
+
+    try {
+      const result = await deleteLocation(location.location_id);
+      if (!result.ok) {
+        showToast(result.error, 'error');
+        return;
+      }
+      await invalidate();
+      showToast(
+        result.count > 0
+          ? `City "${location.location_name}" deleted — ${result.count} shop${result.count === 1 ? '' : 's'} moved to No Location.`
+          : `City "${location.location_name}" deleted.`,
+      );
+      router.push('/locations');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not delete the city.', 'error');
     }
-    invalidate();
-    showToast(`City "${location.location_name}" deleted.`);
-    router.push('/locations');
   }
 
   return (

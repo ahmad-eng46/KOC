@@ -213,9 +213,13 @@ export function useInvalidateLocationData() {
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
 
-  return () => {
-    for (const key of ['locations', 'customers-by-location', 'customers']) {
-      queryClient.invalidateQueries({ queryKey: [key, activeId] });
-    }
+  // Resolves once the refetches have landed, so a caller can select a
+  // just-created location without racing the dropdown's own data.
+  return async () => {
+    await Promise.all(
+      ['locations', 'customers-by-location', 'customers'].map((key) =>
+        queryClient.invalidateQueries({ queryKey: [key, activeId] }),
+      ),
+    );
   };
 }
