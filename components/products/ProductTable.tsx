@@ -8,6 +8,7 @@ import { useProducts, useDeleteProduct, type Product } from '@/lib/queries/produ
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
 import { bulkAssignBrand } from '@/lib/actions/brands';
 import { formatPKR } from '@/lib/money';
+import { formatStock } from '@/lib/pack';
 import { BrandBadge } from './BrandBadge';
 import { ExportStockButtons } from './ExportStockButtons';
 import { useToast } from '@/components/ui/Toast';
@@ -285,7 +286,7 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
               <div className="text-right shrink-0 ml-1">
                 <p className="text-sm font-mono text-gray-700">{formatPKR(p.sale_price_paisa)}</p>
                 <p className={`text-xs mt-0.5 ${isLow ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
-                  Stock: {p.quantity_on_hand} {p.unit}
+                  Stock: {formatStock(p.quantity_on_hand, p)}
                   {isLow && ' ⚠'}
                 </p>
               </div>
@@ -363,6 +364,7 @@ function DesktopRow({
           {p.quantity_on_hand}
         </span>
         {isLow && <AlertTriangle size={13} className="inline ml-1 text-red-500" />}
+        <PackNote product={p} />
       </td>
       <td className="px-4 py-3 text-right font-mono text-gray-700">
         {formatPKR(p.sale_price_paisa)}
@@ -439,4 +441,12 @@ function BrandChip({
       {label}
     </button>
   );
+}
+
+/** "(20 Boxes + 10 loose)" beneath a stock figure; nothing without a pack. */
+function PackNote({ product }: { product: Product }) {
+  const full = formatStock(product.quantity_on_hand, product);
+  const open = full.indexOf('(');
+  if (open === -1) return null;
+  return <p className="text-[10px] text-gray-400 font-normal mt-0.5">{full.slice(open)}</p>;
 }

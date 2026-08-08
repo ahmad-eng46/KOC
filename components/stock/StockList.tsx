@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Search, Plus, AlertTriangle, PackageCheck, PackageX } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import { hasPack, splitPacks, plural } from '@/lib/pack';
 import { useProducts } from '@/lib/queries/products';
 import { useBusinessStore } from '@/lib/store/business';
 import { AddStockModal } from './AddStockModal';
@@ -156,9 +157,13 @@ export function StockList({
                     <span className={isOut ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-gray-900'}>
                       {p.quantity_on_hand}
                     </span>
+                    <PackBreakdown product={p} quantity={p.quantity_on_hand} />
                   </td>
                   <td className="px-4 py-3 text-right text-gray-400 font-mono text-xs">
                     {p.low_stock_threshold ?? '—'}
+                    {p.low_stock_threshold != null && (
+                      <PackBreakdown product={p} quantity={p.low_stock_threshold} />
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {isOut ? (
@@ -211,6 +216,7 @@ export function StockList({
                   <p className={`text-sm font-mono font-medium ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-gray-900'}`}>
                     {p.quantity_on_hand}
                   </p>
+                  <PackBreakdown product={p} quantity={p.quantity_on_hand} />
                   {isOut && <p className="text-[10px] text-red-500 font-semibold">OUT OF STOCK</p>}
                   {isLow && !isOut && <p className="text-[10px] text-amber-500 font-semibold">LOW STOCK</p>}
                 </div>
@@ -245,5 +251,27 @@ export function StockList({
         />
       )}
     </>
+  );
+}
+
+/**
+ * "(20 Boxes + 10 loose)" under a raw unit count. Silent for products with no
+ * pack, and below one full pack there is nothing useful to say.
+ */
+function PackBreakdown({
+  product,
+  quantity,
+}: {
+  product: { pack_size: number; pack_name: string | null; unit: string };
+  quantity: number;
+}) {
+  if (!hasPack(product) || quantity <= 0) return null;
+  const { packs, loose } = splitPacks(quantity, product.pack_size);
+  if (packs === 0) return null;
+  return (
+    <p className="text-[10px] text-gray-400 font-normal mt-0.5">
+      {packs} {plural(product.pack_name!, packs)}
+      {loose > 0 ? ` + ${loose} loose` : ''}
+    </p>
   );
 }
