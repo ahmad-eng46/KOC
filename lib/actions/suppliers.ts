@@ -15,12 +15,14 @@ import {
 } from '@/lib/validators/suppliers';
 
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
+/** Supplier writes echo the name so a picker can select and announce it. */
+type NamedCreateResult = { ok: true; id: string; name: string } | { ok: false; error: string };
 type SimpleResult = { ok: true } | { ok: false; error: string };
 
 // Every action re-validates with zod and re-checks the role on the server.
 // RLS is the second layer; neither is trusted alone.
 
-export async function createSupplier(input: SupplierInput): Promise<CreateResult> {
+export async function createSupplier(input: SupplierInput): Promise<NamedCreateResult> {
   const session = await getSession();
   if (!session || !can(session.role, 'suppliers.create')) {
     return { ok: false, error: 'Insufficient permissions.' };
@@ -44,19 +46,20 @@ export async function createSupplier(input: SupplierInput): Promise<CreateResult
       address: parsed.data.address || null,
       notes: parsed.data.notes || null,
     })
-    .select('id')
+    .select('id, name')
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Insert failed.' };
 
   revalidatePath('/suppliers');
-  return { ok: true, id: data.id };
+  revalidatePath('/stock');
+  return { ok: true, id: data.id, name: data.name };
 }
 
 export async function updateSupplier(
   id: string,
   input: SupplierInput,
-): Promise<CreateResult> {
+): Promise<NamedCreateResult> {
   const session = await getSession();
   if (!session || !can(session.role, 'suppliers.update')) {
     return { ok: false, error: 'Insufficient permissions.' };
@@ -87,7 +90,7 @@ export async function updateSupplier(
 
   revalidatePath('/suppliers');
   revalidatePath(`/suppliers/${id}`);
-  return { ok: true, id };
+  return { ok: true, id, name: parsed.data.name };
 }
 
 /**

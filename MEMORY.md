@@ -73,6 +73,14 @@
 - `tsconfig` targets ES2017 and the project is `noEmit`, so BigInt *literals* (`0n`) do not type-check; `BigInt(0)` constants are used instead rather than changing the shared target.
 - Verified in headless Chrome against real invoice INV-0005 (1% discount): "Customer paid" and the Original-price radio both read Rs. 217.80 against a Rs. 220.00 list, Return Amount 165 × 217.80 = Rs. 35,937.00. 132 tests green.
 
+**Round 6 — supplier name on the purchase form**
+- Purchase date, quantity and unit price were already user-entered on `AddPurchaseModal` and stored correctly on `stock_purchases`; the gap was the supplier, a bare `<select>` limited to suppliers created elsewhere.
+- `components/suppliers/SupplierPicker.tsx` mirrors `BrandPicker`/`LocationPicker`: dropdown, "+ Add new supplier" quick-create portalled to `<body>` with `stopPropagation` (AddPurchaseModal has the same nested-`<form>` trap), name + optional phone, auto-selected on create.
+- No immediate assignment here, unlike brand/location: a purchase does not exist until Save Purchase, so the supplier is simply selected. Verified the quick-create does not submit a half-filled purchase.
+- Quick-create is gated on `suppliers.create` (admin/accountant). **Staff can record a purchase but not invent a supplier**, so the option is threaded down from `app/(app)/stock/page.tsx` → StockList → AddStockModal → AddPurchaseModal rather than hardcoded.
+- **`suppliers` is the third table with the RLS soft-delete bug** (after brands and locations) — same `USING`-without-`WITH CHECK` from 0040, verified column by column. `supabase/migrations/0049_supplier_soft_delete.sql` fixes it; policy only, no unassign trigger, because `stock_purchases.supplier_id` is NOT NULL ON DELETE RESTRICT and `deleteSupplier` rightly refuses while the account is not square.
+- Verified in headless Chrome, 14/14: supplier created from inside the purchase form → auto-selected → purchase saved with quantity 42, date 2026-07-15, unit price 135050 paisa, total 5672100 paisa, and a matching `type='in'` stock movement.
+
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked.
 
 ---

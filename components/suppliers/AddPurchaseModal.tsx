@@ -7,7 +7,8 @@ import { format } from 'date-fns';
 import { X } from 'lucide-react';
 import { stockPurchaseSchema, type StockPurchaseInput } from '@/lib/validators/suppliers';
 import { createStockPurchase } from '@/lib/actions/suppliers';
-import { useSuppliers, useInvalidateSupplierData } from '@/lib/queries/suppliers';
+import { useInvalidateSupplierData } from '@/lib/queries/suppliers';
+import { SupplierPicker } from './SupplierPicker';
 import { useProducts } from '@/lib/queries/products';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { purchaseTotalPaisa } from '@/lib/supplier-totals';
@@ -18,6 +19,11 @@ type Props = {
   /** Pre-selected and locked when opened from a supplier's page. */
   defaultSupplierId?: string;
   defaultProductId?: string;
+  /**
+   * suppliers.create — admin/accountant. Staff may record a purchase but not
+   * invent a supplier, so they get the list without the quick-create.
+   */
+  canCreateSupplier?: boolean;
   onClose: () => void;
   onSuccess?: () => void;
 };
@@ -46,12 +52,12 @@ function numberField(v: unknown): number {
 export function AddPurchaseModal({
   defaultSupplierId,
   defaultProductId,
+  canCreateSupplier = false,
   onClose,
   onSuccess,
 }: Props) {
   const { showToast } = useToast();
   const invalidate = useInvalidateSupplierData();
-  const { data: suppliers = [] } = useSuppliers();
   const { data: products = [] } = useProducts();
   const [serverError, setServerError] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -60,6 +66,7 @@ export function AddPurchaseModal({
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(stockPurchaseSchema),
@@ -84,6 +91,7 @@ export function AddPurchaseModal({
   const quantity = useWatch({ control, name: 'quantity' });
   const unitPricePaisa = useWatch({ control, name: 'unit_price_paisa' });
   const productId = useWatch({ control, name: 'product_id' });
+  const supplierId = useWatch({ control, name: 'supplier_id' });
   const selectedProduct = products.find((p) => p.id === productId);
 
   // Previewed with the same arithmetic the RPC uses, so this is exactly what
@@ -130,18 +138,12 @@ export function AddPurchaseModal({
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4">
           <Field label="Supplier *" error={errors.supplier_id?.message}>
-            <select
-              className={inputCls(!!errors.supplier_id)}
+            <SupplierPicker
+              value={supplierId || null}
+              onChange={(id) => setValue('supplier_id', id ?? '', { shouldDirty: true, shouldValidate: true })}
+              canCreate={canCreateSupplier}
               disabled={!!defaultSupplierId}
-              {...register('supplier_id')}
-            >
-              <option value="">— Select supplier —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
 
           <Field label="Product *" error={errors.product_id?.message}>

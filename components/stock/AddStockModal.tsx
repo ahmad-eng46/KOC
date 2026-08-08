@@ -15,6 +15,8 @@ type Props = {
   canAdjust: boolean;
   /** Offer the "record a supplier purchase" path (roles with purchases.create). */
   canPurchase?: boolean;
+  /** suppliers.create — lets the purchase form add a supplier inline. */
+  canCreateSupplier?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -24,6 +26,7 @@ export function AddStockModal({
   defaultProductId,
   canAdjust,
   canPurchase = false,
+  canCreateSupplier = false,
   onClose,
   onSuccess,
 }: Props) {
@@ -74,6 +77,7 @@ export function AddStockModal({
     return (
       <AddPurchaseModal
         defaultProductId={defaultProductId}
+        canCreateSupplier={canCreateSupplier}
         onClose={onClose}
         onSuccess={onSuccess}
       />

@@ -8,9 +8,20 @@ import { useProducts } from '@/lib/queries/products';
 import { useBusinessStore } from '@/lib/store/business';
 import { AddStockModal } from './AddStockModal';
 
-type Props = { canUpdate: boolean; canAdjust: boolean; canPurchase?: boolean };
+type Props = {
+  canUpdate: boolean;
+  canAdjust: boolean;
+  canPurchase?: boolean;
+  /** suppliers.create — lets the purchase form add a supplier inline. */
+  canCreateSupplier?: boolean;
+};
 
-export function StockList({ canUpdate, canAdjust, canPurchase = false }: Props) {
+export function StockList({
+  canUpdate,
+  canAdjust,
+  canPurchase = false,
+  canCreateSupplier = false,
+}: Props) {
   const { data: products = [], isLoading } = useProducts();
   const activeId = useBusinessStore((s) => s.activeId);
   const queryClient = useQueryClient();
@@ -228,6 +239,7 @@ export function StockList({ canUpdate, canAdjust, canPurchase = false }: Props) 
           defaultProductId={modalProductId}
           canAdjust={canAdjust}
           canPurchase={canPurchase}
+          canCreateSupplier={canCreateSupplier}
           onClose={() => setModalOpen(false)}
           onSuccess={() => queryClient.invalidateQueries({ queryKey: ['products', activeId] })}
         />

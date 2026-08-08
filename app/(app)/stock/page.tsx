@@ -11,6 +11,7 @@ export default async function StockPage() {
   const canUpdate = session ? can(session.role, 'stock.update') : false;
   const canAdjust = session?.role === 'admin';
   const canPurchase = session ? can(session.role, 'purchases.create') : false;
+  const canCreateSupplier = session ? can(session.role, 'suppliers.create') : false;
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -18,7 +19,12 @@ export default async function StockPage() {
         <h1 className="text-xl font-semibold text-gray-900">Stock</h1>
         <p className="text-sm text-gray-500 mt-0.5">Current inventory levels — updates in real time</p>
       </div>
-      <StockList canUpdate={canUpdate} canAdjust={canAdjust} canPurchase={canPurchase} />
+      <StockList
+        canUpdate={canUpdate}
+        canAdjust={canAdjust}
+        canPurchase={canPurchase}
+        canCreateSupplier={canCreateSupplier}
+      />
     </div>
   );
 }

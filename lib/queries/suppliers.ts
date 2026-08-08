@@ -288,18 +288,20 @@ export function useInvalidateSupplierData() {
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
 
-  return () => {
-    for (const key of [
-      'suppliers',
-      'supplier-balances',
-      'stock-purchases',
-      'supplier-payments',
-      'supplier-ledger',
-      'products',
-      'current-stock',
-      'stock',
-    ]) {
-      queryClient.invalidateQueries({ queryKey: [key, activeId] });
-    }
+  // Resolves once the refetches have landed, so a caller can select a
+  // just-created supplier without racing the dropdown's own data.
+  return async () => {
+    await Promise.all(
+      [
+        'suppliers',
+        'supplier-balances',
+        'stock-purchases',
+        'supplier-payments',
+        'supplier-ledger',
+        'products',
+        'current-stock',
+        'stock',
+      ].map((key) => queryClient.invalidateQueries({ queryKey: [key, activeId] })),
+    );
   };
 }
