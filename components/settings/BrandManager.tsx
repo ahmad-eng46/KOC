@@ -31,17 +31,21 @@ export function BrandManager({ canDelete }: Props) {
         : '';
     if (!confirm(`Delete ${brand.name}?${suffix}`)) return;
 
-    const result = await deleteBrand(brand.id);
-    if (!result.ok) {
-      showToast(result.error, 'error');
-      return;
+    try {
+      const result = await deleteBrand(brand.id);
+      if (!result.ok) {
+        showToast(result.error, 'error');
+        return;
+      }
+      await invalidate();
+      showToast(
+        result.count > 0
+          ? `${brand.name} deleted — ${result.count} product${result.count === 1 ? '' : 's'} moved to Unbranded.`
+          : `${brand.name} deleted.`,
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not delete the brand.', 'error');
     }
-    invalidate();
-    showToast(
-      result.count > 0
-        ? `${brand.name} deleted — ${result.count} product${result.count === 1 ? '' : 's'} moved to Unbranded.`
-        : `${brand.name} deleted.`,
-    );
   }
 
   if (isLoading) {
@@ -183,14 +187,21 @@ function BrandFormSheet({ brand, onClose }: { brand?: BrandSummary; onClose: () 
 
   async function onSubmit(values: BrandInput) {
     setServerError(null);
-    const result = brand ? await updateBrand(brand.id, values) : await createBrand(values);
-    if (!result.ok) {
-      setServerError(result.error);
-      return;
+    try {
+      const result = brand ? await updateBrand(brand.id, values) : await createBrand(values);
+      if (!result.ok) {
+        setServerError(result.error);
+        showToast(result.error, 'error');
+        return;
+      }
+      await invalidate();
+      showToast(brand ? `"${result.name}" updated.` : `Brand "${result.name}" added.`);
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the brand.';
+      setServerError(message);
+      showToast(message, 'error');
     }
-    invalidate();
-    showToast(brand ? `"${result.name}" updated.` : `Brand "${result.name}" added.`);
-    onClose();
   }
 
   return (
@@ -217,7 +228,11 @@ function BrandFormSheet({ brand, onClose }: { brand?: BrandSummary; onClose: () 
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4">
           <Field label="Brand Name *" error={errors.name?.message}>
-            <input className={inputCls(!!errors.name)} placeholder="Double Horse" {...register('name')} />
+            <input
+              className={inputCls(!!errors.name)}
+              placeholder="Type the brand or dealer name"
+              {...register('name')}
+            />
           </Field>
 
           <Field label="Type">

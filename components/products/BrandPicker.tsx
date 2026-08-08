@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Plus, X } from 'lucide-react';
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
 import { createBrand } from '@/lib/actions/brands';
@@ -140,6 +141,13 @@ function BrandGroup({
 /**
  * Two fields, one tap each, save — the whole flow under five seconds.
  * Bottom sheet on mobile, centred card on desktop.
+ *
+ * Portalled to <body>: the picker is rendered inside ProductForm's <form>, and
+ * a <form> nested in a <form> is invalid HTML — the submit here would bubble
+ * into the product form's handler, saving the product and navigating to
+ * /products before this action's request was ever sent. React portals still
+ * propagate events through the React tree, so the submit handler also stops
+ * propagation.
  */
 function QuickCreateBrandSheet({
   onClose, onCreated,
@@ -165,31 +173,45 @@ function QuickCreateBrandSheet({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
     if (name.trim().length < 2) {
       setServerError('Name must be at least 2 characters.');
       return;
     }
     setServerError(null);
     setSubmitting(true);
-    const result = await createBrand({
-      name: name.trim(),
-      brand_type: brandType,
-      sort_order: 0,
-    });
-    setSubmitting(false);
 
-    if (!result.ok) {
-      setServerError(result.error);
-      return;
+    try {
+      const result = await createBrand({
+        name: name.trim(),
+        brand_type: brandType,
+        sort_order: 0,
+      });
+
+      if (!result.ok) {
+        setServerError(result.error);
+        showToast(result.error, 'error');
+        return;
+      }
+
+      // Awaited so the dropdown already holds the new brand when it is
+      // selected below — otherwise the picker briefly reads "No brand".
+      await invalidate();
+      showToast(`Brand "${result.name}" added.`);
+      onCreated(result.id, result.name);
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the brand.';
+      setServerError(message);
+      showToast(message, 'error');
+    } finally {
+      setSubmitting(false);
     }
-
-    invalidate();
-    showToast(`Brand "${result.name}" added.`);
-    onCreated(result.id, result.name);
-    onClose();
   }
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
@@ -215,7 +237,7 @@ function QuickCreateBrandSheet({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Double Horse"
+              placeholder="Type the brand or dealer name"
               autoFocus
               className="w-full h-11 px-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -266,6 +288,7 @@ function QuickCreateBrandSheet({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

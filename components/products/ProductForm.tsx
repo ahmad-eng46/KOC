@@ -47,16 +47,21 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
 
   async function onSubmit(values: ProductInput) {
     setServerError(null);
-    const result = product
-      ? await updateProduct(product.id, values)
-      : await createProduct(values);
+    try {
+      const result = product
+        ? await updateProduct(product.id, values)
+        : await createProduct(values);
 
-    if (!result.ok) {
-      setServerError(result.error);
-      return;
+      if (!result.ok) {
+        setServerError(result.error);
+        return;
+      }
+      router.push('/products');
+      router.refresh();
+    } catch (err) {
+      // Permission guards in the actions throw rather than return.
+      setServerError(err instanceof Error ? err.message : 'Could not save the product.');
     }
-    router.push('/products');
-    router.refresh();
   }
 
   return (

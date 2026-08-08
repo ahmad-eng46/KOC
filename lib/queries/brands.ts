@@ -105,8 +105,12 @@ export function useInvalidateBrandData() {
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
 
-  return () => {
-    queryClient.invalidateQueries({ queryKey: ['brands', activeId] });
-    queryClient.invalidateQueries({ queryKey: ['products', activeId] });
+  // Resolves once the refetches have landed, so a caller can select a
+  // just-created brand without racing the dropdown's own data.
+  return async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['brands', activeId] }),
+      queryClient.invalidateQueries({ queryKey: ['products', activeId] }),
+    ]);
   };
 }

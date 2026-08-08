@@ -31,6 +31,13 @@ async function requireManager(): Promise<SimpleResult> {
   return { ok: true };
 }
 
+/** Postgres codes the UI should never show raw. */
+function writeError(error: { code?: string; message: string }, name: string): string {
+  if (error.code === '23505') return `A brand named "${name}" already exists.`;
+  if (error.code === '42501') return 'You do not have permission to manage brands.';
+  return error.message;
+}
+
 function cleanBrand(data: BrandInput) {
   return {
     name: data.name.trim(),
@@ -60,12 +67,7 @@ export async function createBrand(input: BrandInput): Promise<CreateResult> {
     .select('id, name')
     .single();
 
-  if (error) {
-    if (error.code === '23505') {
-      return { ok: false, error: `A brand named "${parsed.data.name.trim()}" already exists.` };
-    }
-    return { ok: false, error: error.message };
-  }
+  if (error) return { ok: false, error: writeError(error, parsed.data.name.trim()) };
 
   revalidateAll();
   return { ok: true, id: data.id, name: data.name };
@@ -89,12 +91,7 @@ export async function updateBrand(id: string, input: BrandInput): Promise<Create
     .eq('business_id', businessId)
     .is('deleted_at', null);
 
-  if (error) {
-    if (error.code === '23505') {
-      return { ok: false, error: `A brand named "${parsed.data.name.trim()}" already exists.` };
-    }
-    return { ok: false, error: error.message };
-  }
+  if (error) return { ok: false, error: writeError(error, parsed.data.name.trim()) };
 
   revalidateAll();
   return { ok: true, id, name: parsed.data.name.trim() };
@@ -102,8 +99,14 @@ export async function updateBrand(id: string, input: BrandInput): Promise<Create
 
 /**
  * Soft delete, admin only. The brand's products are moved to Unbranded
- * (brand_id NULL) via the bulk RPC rather than left pointing at a hidden
- * brand — the count comes back so the UI can say "5 products were moved".
+ * (brand_id NULL) rather than left pointing at a hidden brand — the count
+ * comes back so the UI can say "5 products were moved".
+ *
+ * The brand row goes first. Unassigning first meant a delete the database
+ * refused (see 0046) still stripped every product of its brand, leaving the
+ * brand alive with nothing in it. Ordered this way a refusal changes nothing.
+ * 0046's trigger does the unassignment; the RPC afterwards is what keeps this
+ * correct on a database where that migration has not been applied yet.
  */
 export async function deleteBrand(id: string): Promise<CountResult> {
   const session = await getSession();
@@ -124,15 +127,6 @@ export async function deleteBrand(id: string): Promise<CountResult> {
   if (listErr) return { ok: false, error: listErr.message };
 
   const ids = (productRows ?? []).map((r) => r.id as string);
-  let moved = 0;
-  if (ids.length > 0) {
-    const { data: count, error: unassignErr } = await supabase.rpc('assign_products_brand', {
-      p_product_ids: ids,
-      p_brand_id: null,
-    });
-    if (unassignErr) return { ok: false, error: unassignErr.message };
-    moved = Number(count ?? 0);
-  }
 
   const { error } = await supabase
     .from('brands')
@@ -141,10 +135,27 @@ export async function deleteBrand(id: string): Promise<CountResult> {
     .eq('business_id', businessId)
     .is('deleted_at', null);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // 42501 here means the brands_update policy refused the soft delete — see 0046.
+    return {
+      ok: false,
+      error:
+        error.code === '42501'
+          ? 'The database refused to delete this brand. Apply migration 0046.'
+          : error.message,
+    };
+  }
+
+  if (ids.length > 0) {
+    const { error: unassignErr } = await supabase.rpc('assign_products_brand', {
+      p_product_ids: ids,
+      p_brand_id: null,
+    });
+    if (unassignErr) return { ok: false, error: unassignErr.message };
+  }
 
   revalidateAll();
-  return { ok: true, count: moved };
+  return { ok: true, count: ids.length };
 }
 
 /** Single assignment via the narrow RPC — staff allowed (brand ≠ price data). */

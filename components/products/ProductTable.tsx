@@ -87,19 +87,24 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
   async function onBulkAssign() {
     if (selected.size === 0 || !bulkBrandId) return;
     setAssigning(true);
-    const result = await bulkAssignBrand({
-      product_ids: Array.from(selected),
-      brand_id: bulkBrandId,
-    });
-    setAssigning(false);
-    if (!result.ok) {
-      showToast(result.error, 'error');
-      return;
+    try {
+      const result = await bulkAssignBrand({
+        product_ids: Array.from(selected),
+        brand_id: bulkBrandId,
+      });
+      if (!result.ok) {
+        showToast(result.error, 'error');
+        return;
+      }
+      const brandName = brandById.get(bulkBrandId)?.name ?? 'brand';
+      await invalidateBrands();
+      setSelected(new Set());
+      showToast(`${result.count} product${result.count === 1 ? '' : 's'} assigned to ${brandName}.`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not assign the brand.', 'error');
+    } finally {
+      setAssigning(false);
     }
-    const brandName = brandById.get(bulkBrandId)?.name ?? 'brand';
-    invalidateBrands();
-    setSelected(new Set());
-    showToast(`${result.count} product${result.count === 1 ? '' : 's'} assigned to ${brandName}.`);
   }
 
   if (isLoading) {
