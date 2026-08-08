@@ -8,12 +8,15 @@ import { productSchema, type ProductInput } from '@/lib/validators/product';
 import { createProduct, updateProduct } from '@/lib/actions/product';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
+import { packPreview } from '@/lib/pack';
 import { BrandPicker } from './BrandPicker';
 
 type Props = {
   product?: Product;
   canSeePurchasePrice: boolean;
 };
+
+const COMMON_PACK_NAMES = ['Box', 'Packet', 'Carton', 'Case', 'Bundle', 'Crate', 'Drum'];
 
 const COMMON_UNITS = ['Litre', 'KG', 'Piece', 'Box', 'Carton', 'Dozen', 'Bag', 'Tin', 'Bottle', 'Drum'];
 
@@ -38,12 +41,27 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           purchase_price_paisa: product.purchase_price_paisa ?? null,
           low_stock_threshold: product.low_stock_threshold ?? null,
           brand_id: product.brand_id ?? null,
+          pack_size: product.pack_size ?? 1,
+          pack_name: product.pack_name ?? '',
           is_active: product.is_active,
         }
-      : { is_active: true, sale_price_paisa: 0, brand_id: null },
+      : { is_active: true, sale_price_paisa: 0, brand_id: null, pack_size: 1, pack_name: '' },
   });
 
   const brandId = useWatch({ control, name: 'brand_id' });
+  const unit = useWatch({ control, name: 'unit' });
+  const packName = useWatch({ control, name: 'pack_name' });
+  const packSize = useWatch({ control, name: 'pack_size' });
+
+  const packPreviewText = packPreview({
+    unit: unit || 'unit',
+    pack_name: packName ?? null,
+    pack_size: Number(packSize) || 1,
+  });
+  // Existing stock is in units, so re-sizing the pack only changes how future
+  // quantities are typed — worth saying out loud before they wonder.
+  const packSizeChanged =
+    !!product && (Number(packSize) || 1) !== (product.pack_size ?? 1);
 
   async function onSubmit(values: ProductInput) {
     setServerError(null);
@@ -110,6 +128,63 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             {COMMON_UNITS.map((u) => <option key={u} value={u} />)}
           </datalist>
         </Field>
+      </div>
+
+      {/* Bulk packaging — optional. Prices stay per unit; only entry changes. */}
+      <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-gray-700">
+            Bulk packaging <span className="text-gray-400 font-normal">(optional)</span>
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            If this comes in boxes or packets, say so here and you can buy and sell by the
+            box. Stock and prices stay per {unit || 'unit'}.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Pack Name" error={errors.pack_name?.message}>
+            <input
+              className={inputCls(!!errors.pack_name)}
+              placeholder="Box"
+              list="pack-names-list"
+              {...register('pack_name')}
+            />
+            <datalist id="pack-names-list">
+              {COMMON_PACK_NAMES.map((n) => <option key={n} value={n} />)}
+            </datalist>
+          </Field>
+          <Field
+            label={`Units per Pack${unit ? ` (${unit})` : ''}`}
+            error={errors.pack_size?.message}
+          >
+            <input
+              className={inputCls(!!errors.pack_size)}
+              placeholder="12"
+              inputMode="numeric"
+              {...register('pack_size', {
+                setValueAs: (v: unknown) => {
+                  if (typeof v !== 'string') return (v as number) ?? 1;
+                  if (v.trim() === '') return 1;
+                  const n = parseInt(v, 10);
+                  return Number.isNaN(n) ? NaN : n;
+                },
+              })}
+            />
+          </Field>
+        </div>
+
+        {packPreviewText && (
+          <p className="text-sm font-medium text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
+            {packPreviewText}
+          </p>
+        )}
+        {packSizeChanged && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Changing the pack size only affects how quantities are entered from now on.
+            Stock already recorded stays as it is — it is counted in {product?.unit ?? 'units'}.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

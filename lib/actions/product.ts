@@ -9,6 +9,20 @@ import { productSchema, type ProductInput } from '@/lib/validators/product';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
+/**
+ * A blank pack name means "no pack", and no pack means a pack size of 1 —
+ * otherwise a product could carry a size of 12 with nothing to call it and the
+ * forms would have no word for what they were converting to.
+ */
+function normalisePack(data: ProductInput): ProductInput {
+  const packName = data.pack_name?.trim() || null;
+  return {
+    ...data,
+    pack_name: packName,
+    pack_size: packName ? data.pack_size : 1,
+  };
+}
+
 export async function createProduct(input: ProductInput): Promise<ActionResult> {
   const { profile } = await requireAuth();
   if (!can(profile.role as Role, 'products.create')) {
@@ -19,6 +33,7 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
+  const values = normalisePack(parsed.data);
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
@@ -26,7 +41,7 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from('products')
-    .insert({ ...parsed.data, business_id: businessId })
+    .insert({ ...values, business_id: businessId })
     .select('id')
     .single();
 
@@ -46,6 +61,7 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Ac
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
+  const values = normalisePack(parsed.data);
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
@@ -53,7 +69,7 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Ac
   const supabase = await createServerClient();
   const { error } = await supabase
     .from('products')
-    .update(parsed.data)
+    .update(values)
     .eq('id', id)
     .eq('business_id', businessId);
 

@@ -11,6 +11,10 @@ export type Product = {
   name: string;
   sku: string | null;
   unit: string;
+  /** Units in one pack; 1 means the product is sold individually. */
+  pack_size: number;
+  /** What the pack is called — "Box". Null when there is no pack. */
+  pack_name: string | null;
   sale_price_paisa: number;
   purchase_price_paisa: number | null;
   low_stock_threshold: number | null;
