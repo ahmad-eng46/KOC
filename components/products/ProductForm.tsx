@@ -75,9 +75,14 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
       </Field>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          Brand / Supplier <span className="text-gray-400 font-normal">(optional)</span>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Brand <span className="text-gray-400 font-normal">(optional)</span>
         </label>
+        <p className="text-xs text-gray-500 mb-1.5">
+          The brand this product carries, like Double Horse. Who you buy it from is not
+          set here — that goes on each purchase, so the same product can come from Ali
+          one week and Waqas the next.
+        </p>
         <BrandPicker
           value={brandId ?? null}
           onChange={(id) => setValue('brand_id', id, { shouldDirty: true })}

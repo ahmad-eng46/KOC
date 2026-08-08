@@ -1,31 +1,56 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
-import { History } from 'lucide-react';
+import { History, Plus } from 'lucide-react';
 import { useStockPurchases } from '@/lib/queries/suppliers';
 import { formatPKR } from '@/lib/money';
+import { AddPurchaseModal } from '@/components/suppliers/AddPurchaseModal';
 
 type Props = {
   productId: string;
   /** Unit price column only renders for admin/accountant (iron rule #3). */
   canSeeMoney: boolean;
+  /** purchases.create — shows the "Add Purchase" button. */
+  canPurchase?: boolean;
+  /** suppliers.create — lets that form add a supplier inline. */
+  canCreateSupplier?: boolean;
 };
 
 /**
  * Where this product was bought and at what price — every stock_purchase for
- * one product, newest first. Staff still see date/supplier/qty; the money
- * columns are NULL for them at the database level.
+ * one product, newest first. The same product bought from Ali in June and
+ * Waqas in July is two rows, each with its own date and price. Staff still see
+ * date/supplier/qty; the money columns are NULL for them at the database level.
  */
-export function ProductPurchaseHistory({ productId, canSeeMoney }: Props) {
+export function ProductPurchaseHistory({
+  productId,
+  canSeeMoney,
+  canPurchase = false,
+  canCreateSupplier = false,
+}: Props) {
   const { data: purchases = [], isLoading } = useStockPurchases(undefined, productId);
+  const [addOpen, setAddOpen] = useState(false);
 
   return (
     <div className="space-y-3">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <History size={15} className="text-gray-400" />
-        Purchase History
-      </h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+          <History size={15} className="text-gray-400" />
+          Purchase History
+        </h2>
+        {canPurchase && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+          >
+            <Plus size={14} />
+            Add Purchase
+          </button>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center h-24">
@@ -34,6 +59,7 @@ export function ProductPurchaseHistory({ productId, canSeeMoney }: Props) {
       ) : purchases.length === 0 ? (
         <p className="text-sm text-gray-400 py-4">
           No supplier purchases recorded for this product yet.
+          {canPurchase && ' Use Add Purchase to record who you bought it from, when, and at what price.'}
         </p>
       ) : (
         <>
@@ -110,6 +136,14 @@ export function ProductPurchaseHistory({ productId, canSeeMoney }: Props) {
             ))}
           </div>
         </>
+      )}
+
+      {addOpen && (
+        <AddPurchaseModal
+          defaultProductId={productId}
+          canCreateSupplier={canCreateSupplier}
+          onClose={() => setAddOpen(false)}
+        />
       )}
     </div>
   );

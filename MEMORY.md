@@ -81,6 +81,13 @@
 - **`suppliers` is the third table with the RLS soft-delete bug** (after brands and locations) — same `USING`-without-`WITH CHECK` from 0040, verified column by column. `supabase/migrations/0049_supplier_soft_delete.sql` fixes it; policy only, no unassign trigger, because `stock_purchases.supplier_id` is NOT NULL ON DELETE RESTRICT and `deleteSupplier` rightly refuses while the account is not square.
 - Verified in headless Chrome, 14/14: supplier created from inside the purchase form → auto-selected → purchase saved with quantity 42, date 2026-07-15, unit price 135050 paisa, total 5672100 paisa, and a matching `type='in'` stock movement.
 
+**Round 7 — supplier ≠ brand, and recording a purchase from the product**
+- The data model already separated them: `products.brand_id` is the brand (Double Horse), `stock_purchases.supplier_id` is who each delivery came from (Ali, Waqas). The same product bought from two people is two purchase rows with their own dates and prices, and the product page already listed them.
+- What conflated the two in the user's mind was the product form's label, **"Brand / Supplier"**, plus the `local_dealer` brand type. Relabelled to "Brand" with a line explaining the supplier goes on each purchase. `brand_type` left alone — reports, badges and existing rows depend on it.
+- The missing capability was recording a purchase *from the product*: `ProductPurchaseHistory` was read-only. It now has an **Add Purchase** button opening `AddPurchaseModal` with the product locked, gated on `purchases.create` (+ `suppliers.create` for the inline supplier quick-create).
+- **Found while verifying:** opened from a product page, the locked Product `<select>` rendered blank. It was uncontrolled and the value is set before `useProducts` resolves, so the browser dropped a value whose `<option>` did not exist yet. The submitted data was right (react-hook-form kept it) but the field looked empty. Made it controlled, with a fallback option for a product that is inactive or still loading.
+- Verified in headless Chrome, 10/10: same product bought from Ali (10 Jun, 30 @ Rs. 1,200) and Waqas (22 Jul, 25 @ Rs. 1,275.50), both stored with their own supplier/date/price and both listed in the product's purchase history.
+
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked.
 
 ---

@@ -147,12 +147,24 @@ export function AddPurchaseModal({
           </Field>
 
           <Field label="Product *" error={errors.product_id?.message}>
+            {/* Controlled, not registered: opened from a product page the value
+                is set before useProducts resolves, and an uncontrolled select
+                drops a value whose <option> does not exist yet — the field then
+                read blank even though the right product was submitted. */}
             <select
               className={inputCls(!!errors.product_id)}
               disabled={!!defaultProductId}
-              {...register('product_id')}
+              value={productId ?? ''}
+              onChange={(e) =>
+                setValue('product_id', e.target.value, { shouldDirty: true, shouldValidate: true })
+              }
             >
               <option value="">— Select product —</option>
+              {/* A locked product that is inactive, or not loaded yet, still
+                  needs an option or the select renders empty. */}
+              {productId && !products.some((p) => p.id === productId) && (
+                <option value={productId}>Loading…</option>
+              )}
               {activeProducts.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

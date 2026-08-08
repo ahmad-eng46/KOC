@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
+import { can } from '@/lib/auth/permissions';
 import { getSession } from '@/lib/auth/session';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
@@ -27,6 +28,8 @@ export default async function ProductDetailPage({ params }: Props) {
 
   const canSeePurchasePrice =
     session?.role === 'admin' || session?.role === 'accountant';
+  const canPurchase = session ? can(session.role, 'purchases.create') : false;
+  const canCreateSupplier = session ? can(session.role, 'suppliers.create') : false;
 
   const supabase = await createServerClient();
   const { data, error } = await supabase
@@ -65,7 +68,12 @@ export default async function ProductDetailPage({ params }: Props) {
       )}
 
       <div className="pt-2 max-w-3xl">
-        <ProductPurchaseHistory productId={id} canSeeMoney={canSeePurchasePrice} />
+        <ProductPurchaseHistory
+          productId={id}
+          canSeeMoney={canSeePurchasePrice}
+          canPurchase={canPurchase}
+          canCreateSupplier={canCreateSupplier}
+        />
       </div>
 
       {session?.role !== 'viewer' && (
