@@ -9,6 +9,7 @@ import { useReturnFormData } from '@/lib/queries/return-form';
 import { useBusinessStore } from '@/lib/store/business';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { createReturn } from '@/lib/actions/return';
+import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
 import { useToast } from '@/components/ui/Toast';
 
 type Props = { invoiceId: string };
@@ -17,7 +18,9 @@ type PriceMode = 'original' | 'custom';
 
 type ItemSelection = {
   selected: boolean;
+  /** What the user typed — boxes when entryMode is 'pack', units otherwise. */
   qty: number;
+  entryMode: EntryMode;
   priceMode: PriceMode;
   /** Raw rupee text for the custom input; converted to paisa on use. */
   customRupees: string;
@@ -25,7 +28,7 @@ type ItemSelection = {
 };
 
 const EMPTY_SELECTION: ItemSelection = {
-  selected: false, qty: 0, priceMode: 'original', customRupees: '', overrideReason: '',
+  selected: false, qty: 0, entryMode: 'unit', priceMode: 'original', customRupees: '', overrideReason: '',
 };
 
 function customPaisa(sel: ItemSelection): number {
@@ -41,6 +44,15 @@ function customPaisa(sel: ItemSelection): number {
  */
 function refundPricePaisa(sel: ItemSelection, effectivePaisa: number): number {
   return sel.priceMode === 'custom' ? customPaisa(sel) : effectivePaisa;
+}
+
+/**
+ * The selection in stock units. Returns are recorded in units like everything
+ * else, so a "1 Box" entry becomes 12 before any check or any RPC sees it.
+ */
+function unitQty(sel: ItemSelection | undefined, packSize: number): number {
+  if (!sel) return 0;
+  return toUnits(sel.qty, sel.entryMode, packSize);
 }
 
 /**
@@ -73,7 +85,9 @@ export function ReturnForm({ invoiceId }: Props) {
     for (const it of data.items) {
       const sel = selections[it.invoice_item_id];
       if (!sel?.selected || !sel.qty) continue;
-      total += Math.round(sel.qty * refundPricePaisa(sel, it.effective_unit_price_paisa));
+      total += Math.round(
+        unitQty(sel, it.pack_size) * refundPricePaisa(sel, it.effective_unit_price_paisa),
+      );
     }
     return total;
   }, [data, selections]);
@@ -85,8 +99,8 @@ export function ReturnForm({ invoiceId }: Props) {
     for (const it of picked) {
       const sel = selections[it.invoice_item_id]!;
       if (sel.qty <= 0) return `Quantity must be > 0 for ${it.product_name}`;
-      if (sel.qty > it.remaining) {
-        return `${it.product_name}: cannot return more than ${it.remaining} (sold ${it.sold_quantity}, already returned ${it.already_returned})`;
+      if (unitQty(sel, it.pack_size) > it.remaining) {
+        return `${it.product_name}: cannot return more than ${it.remaining} ${it.unit} (sold ${it.sold_quantity}, already returned ${it.already_returned})`;
       }
       if (sel.priceMode === 'custom') {
         if (customPaisa(sel) <= 0) return `${it.product_name}: enter a custom price > 0`;
@@ -157,7 +171,7 @@ export function ReturnForm({ invoiceId }: Props) {
         if (sel.priceMode === 'custom') {
           return {
             invoice_item_id: it.invoice_item_id,
-            quantity: sel.qty,
+            quantity: unitQty(sel, it.pack_size),
             return_price_paisa: customPaisa(sel),
             is_price_overridden: true,
             override_reason: sel.overrideReason.trim(),
@@ -165,7 +179,7 @@ export function ReturnForm({ invoiceId }: Props) {
         }
         return {
           invoice_item_id: it.invoice_item_id,
-          quantity: sel.qty,
+          quantity: unitQty(sel, it.pack_size),
           // On a discounted invoice, name the price instead of letting the RPC
           // default it. A database still on 0045 defaults to the pre-discount
           // list price, and refusing the return is far better than silently
@@ -226,6 +240,15 @@ export function ReturnForm({ invoiceId }: Props) {
           {data.items.map((it) => {
             const sel = selections[it.invoice_item_id];
             const isFullyReturned = it.remaining <= 0;
+            const packed = hasPack(it);
+            const mode: EntryMode = sel?.entryMode ?? 'unit';
+            // The cap is in whatever the user is typing: whole boxes when
+            // entering packs, units otherwise. Stock itself is always units.
+            const maxEntry =
+              packed && mode === 'pack'
+                ? Math.floor(it.remaining / it.pack_size)
+                : it.remaining;
+            const hint = sel?.selected ? conversionHint(sel.qty, mode, it) : null;
             return (
               <div key={it.invoice_item_id} className="p-4">
                 <div className="flex items-start gap-3">
@@ -276,7 +299,7 @@ export function ReturnForm({ invoiceId }: Props) {
                             <div className="flex items-stretch gap-1">
                               <button
                                 type="button"
-                                onClick={() => stepQty(it.invoice_item_id, -1, it.remaining)}
+                                onClick={() => stepQty(it.invoice_item_id, -1, maxEntry)}
                                 disabled={sel.qty <= 0}
                                 aria-label="Decrease quantity"
                                 className="w-11 h-11 rounded-lg border border-gray-300 bg-white text-lg font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 shrink-0"
@@ -290,21 +313,43 @@ export function ReturnForm({ invoiceId }: Props) {
                                 onChange={(e) => setQty(it.invoice_item_id, e.target.value)}
                                 className={[
                                   'w-16 h-11 px-2 rounded-lg border text-sm text-center bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                  sel.qty > it.remaining ? 'border-red-400' : 'border-gray-300',
+                                  sel.qty > maxEntry ? 'border-red-400' : 'border-gray-300',
                                 ].join(' ')}
                               />
                               <button
                                 type="button"
-                                onClick={() => stepQty(it.invoice_item_id, 1, it.remaining)}
-                                disabled={sel.qty >= it.remaining}
+                                onClick={() => stepQty(it.invoice_item_id, 1, maxEntry)}
+                                disabled={sel.qty >= maxEntry}
                                 aria-label="Increase quantity"
                                 className="w-11 h-11 rounded-lg border border-gray-300 bg-white text-lg font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 shrink-0"
                               >
                                 +
                               </button>
                             </div>
-                            {sel.qty > it.remaining && (
-                              <p className="text-xs text-red-600 mt-0.5">Max {it.remaining}</p>
+                            {packed && (
+                              <select
+                                value={sel.entryMode}
+                                onChange={(e) =>
+                                  patchSelection(it.invoice_item_id, {
+                                    entryMode: e.target.value as EntryMode,
+                                    qty: 0,
+                                  })
+                                }
+                                aria-label="Return quantity unit"
+                                className="mt-1 w-full h-9 px-1.5 rounded-lg border border-gray-300 text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="pack">{packOptionLabel(it)}</option>
+                                <option value="unit">{unitOptionLabel(it)}</option>
+                              </select>
+                            )}
+                            {hint && <p className="text-xs text-blue-700 font-medium mt-1">{hint}</p>}
+                            {sel.qty > maxEntry && (
+                              <p className="text-xs text-red-600 mt-0.5">
+                                Max {maxEntry}
+                                {packed && sel.entryMode === 'pack'
+                                  ? ` ${it.pack_name} (${it.remaining} ${it.unit} left)`
+                                  : ''}
+                              </p>
                             )}
                           </div>
                           <div className="flex-1 min-w-28">
@@ -313,7 +358,10 @@ export function ReturnForm({ invoiceId }: Props) {
                             </label>
                             <div className="h-11 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm font-mono tabular-nums flex items-center justify-end">
                               {formatPKR(
-                                Math.round(sel.qty * refundPricePaisa(sel, it.effective_unit_price_paisa)),
+                                Math.round(
+                                  unitQty(sel, it.pack_size) *
+                                    refundPricePaisa(sel, it.effective_unit_price_paisa),
+                                ),
                               )}
                             </div>
                           </div>

@@ -12,6 +12,9 @@ export type ReturnableItem = {
   sku: string | null;
   unit: string;
   sold_quantity: number;
+  /** The product's pack today, so a return can be entered by the box. */
+  pack_size: number;
+  pack_name: string | null;
   /** The list price on the invoice line, BEFORE the invoice-level discount. */
   unit_price_paisa: number;
   /**
@@ -140,7 +143,7 @@ export function useReturnFormData(invoiceId: string) {
         supabase
           .from('invoice_items')
           .select(
-            'id, product_id, quantity, unit_price_paisa, line_total_paisa, products(name, sku, unit)',
+            'id, product_id, quantity, unit_price_paisa, line_total_paisa, products(name, sku, unit, pack_size, pack_name)',
           )
           .eq('invoice_id', invoiceId)
           .order('created_at')
@@ -181,8 +184,8 @@ export function useReturnFormData(invoiceId: string) {
         unit_price_paisa: number;
         line_total_paisa: number;
         products:
-          | { name: string; sku: string | null; unit: string }
-          | { name: string; sku: string | null; unit: string }[]
+          | { name: string; sku: string | null; unit: string; pack_size: number; pack_name: string | null }
+          | { name: string; sku: string | null; unit: string; pack_size: number; pack_name: string | null }[]
           | null;
       };
       const rawItems = itemsRes.data as unknown as RawItem[];
@@ -213,6 +216,8 @@ export function useReturnFormData(invoiceId: string) {
           product_name: p?.name ?? '—',
           sku: p?.sku ?? null,
           unit: p?.unit ?? '',
+          pack_size: Number(p?.pack_size ?? 1),
+          pack_name: p?.pack_name ?? null,
           sold_quantity: sold,
           unit_price_paisa: Number(it.unit_price_paisa),
           effective_unit_price_paisa: eff?.effectiveUnitPricePaisa ?? Number(it.unit_price_paisa),
