@@ -6,8 +6,10 @@ export const returnItemSchema = z
     invoice_item_id: uuidLike('Invalid invoice item'),
     quantity: z.number({ error: 'Quantity must be a number' }).positive('Must be > 0'),
     /**
-     * Refund per unit in paisa. Omitted = the invoiced price (what the
-     * customer actually paid, discount included) — the RPC fills it in.
+     * Refund per unit in paisa. Omitted = whatever the RPC works out the
+     * customer paid: the invoice line less its share of the invoice-level
+     * discount. The form states it explicitly on discounted invoices so a
+     * database still on 0045 rejects rather than over-credits.
      */
     return_price_paisa: z
       .number({ error: 'Price must be a number' })

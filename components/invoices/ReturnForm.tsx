@@ -33,9 +33,26 @@ function customPaisa(sel: ItemSelection): number {
   return Number.isFinite(n) && n > 0 ? rupeesToPaisa(n) : 0;
 }
 
-/** The per-unit refund the current selection produces. */
-function effectivePricePaisa(sel: ItemSelection, originalPaisa: number): number {
-  return sel.priceMode === 'custom' ? customPaisa(sel) : originalPaisa;
+/**
+ * The per-unit refund the current selection produces. `effectivePaisa` is the
+ * post-discount price from useReturnFormData, never the invoice line's list
+ * price — refunding the list price on a discounted invoice hands back money
+ * the customer never paid.
+ */
+function refundPricePaisa(sel: ItemSelection, effectivePaisa: number): number {
+  return sel.priceMode === 'custom' ? customPaisa(sel) : effectivePaisa;
+}
+
+/**
+ * The RPC rejects a price it did not expect. On a discounted invoice that
+ * almost always means the database is still on 0045, where the refund default
+ * is the pre-discount list price — say so rather than showing raw paisa.
+ */
+function explainPriceMismatch(error: string, invoiceDiscountPaisa: number): string {
+  if (invoiceDiscountPaisa > 0 && /differs from the (price actually paid|invoiced price)/.test(error)) {
+    return `This invoice has a ${formatPKR(invoiceDiscountPaisa)} discount, and the database is still refunding the pre-discount price. Apply migration 0048 so returns credit what the customer actually paid. (${error})`;
+  }
+  return error;
 }
 
 export function ReturnForm({ invoiceId }: Props) {
@@ -56,7 +73,7 @@ export function ReturnForm({ invoiceId }: Props) {
     for (const it of data.items) {
       const sel = selections[it.invoice_item_id];
       if (!sel?.selected || !sel.qty) continue;
-      total += Math.round(sel.qty * effectivePricePaisa(sel, it.unit_price_paisa));
+      total += Math.round(sel.qty * refundPricePaisa(sel, it.effective_unit_price_paisa));
     }
     return total;
   }, [data, selections]);
@@ -137,18 +154,27 @@ export function ReturnForm({ invoiceId }: Props) {
       .filter((it) => selections[it.invoice_item_id]?.selected)
       .map((it) => {
         const sel = selections[it.invoice_item_id]!;
-        const overridden = sel.priceMode === 'custom';
+        if (sel.priceMode === 'custom') {
+          return {
+            invoice_item_id: it.invoice_item_id,
+            quantity: sel.qty,
+            return_price_paisa: customPaisa(sel),
+            is_price_overridden: true,
+            override_reason: sel.overrideReason.trim(),
+          };
+        }
         return {
           invoice_item_id: it.invoice_item_id,
           quantity: sel.qty,
-          // Omitted price = the invoiced price; the RPC re-validates both.
-          ...(overridden
-            ? {
-                return_price_paisa: customPaisa(sel),
-                is_price_overridden: true,
-                override_reason: sel.overrideReason.trim(),
-              }
-            : { is_price_overridden: false }),
+          // On a discounted invoice, name the price instead of letting the RPC
+          // default it. A database still on 0045 defaults to the pre-discount
+          // list price, and refusing the return is far better than silently
+          // crediting more than the customer paid. Without a discount the two
+          // agree, so the default stays.
+          ...(data.discount_paisa > 0 && it.effective_unit_price_paisa > 0
+            ? { return_price_paisa: it.effective_unit_price_paisa }
+            : {}),
+          is_price_overridden: false,
         };
       });
 
@@ -159,7 +185,7 @@ export function ReturnForm({ invoiceId }: Props) {
     });
 
     if (!r.ok) {
-      setServerError(r.error);
+      setServerError(explainPriceMismatch(r.error, data.discount_paisa));
       setSubmitting(false);
       return;
     }
@@ -219,13 +245,26 @@ export function ReturnForm({ invoiceId }: Props) {
                         Remaining: {it.remaining}
                       </span>
                     </p>
-                    {/* What THEY paid — the refund default, never today's price */}
+                    {/* What THEY paid — the refund default, never today's price
+                        and never the pre-discount list price */}
                     <p className="text-xs text-gray-600 mt-0.5">
                       Customer paid{' '}
-                      <span className="font-mono font-medium">{formatPKR(it.unit_price_paisa)}</span>
+                      <span className="font-mono font-medium">
+                        {formatPKR(it.effective_unit_price_paisa)}
+                      </span>
                       /{it.unit} ({data.invoice_number},{' '}
                       {format(parseISO(data.issue_date), 'dd MMM yyyy')})
                     </p>
+                    {it.discount_share_paisa > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Listed at{' '}
+                        <span className="font-mono line-through">
+                          {formatPKR(it.unit_price_paisa)}
+                        </span>
+                        /{it.unit} — {formatPKR(it.discount_share_paisa)} of the invoice discount
+                        applies to this line
+                      </p>
+                    )}
 
                     {sel?.selected && !isFullyReturned && (
                       <div className="mt-3 space-y-3">
@@ -274,7 +313,7 @@ export function ReturnForm({ invoiceId }: Props) {
                             </label>
                             <div className="h-11 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm font-mono tabular-nums flex items-center justify-end">
                               {formatPKR(
-                                Math.round(sel.qty * effectivePricePaisa(sel, it.unit_price_paisa)),
+                                Math.round(sel.qty * refundPricePaisa(sel, it.effective_unit_price_paisa)),
                               )}
                             </div>
                           </div>
@@ -294,7 +333,9 @@ export function ReturnForm({ invoiceId }: Props) {
                               />
                               <span className="text-sm text-gray-700">
                                 Original price{' '}
-                                <span className="font-mono">({formatPKR(it.unit_price_paisa)}/{it.unit})</span>
+                                <span className="font-mono">
+                                  ({formatPKR(it.effective_unit_price_paisa)}/{it.unit})
+                                </span>
                               </span>
                             </label>
                             <label className="flex items-center gap-2 min-h-11 px-3 rounded-lg border border-gray-200 bg-white cursor-pointer has-checked:border-blue-400 has-checked:bg-blue-50/40">

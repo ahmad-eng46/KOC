@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
+import { distributeInvoiceDiscount } from '@/lib/return-pricing';
 
 export type ReturnableItem = {
   invoice_item_id: string;
@@ -11,7 +12,16 @@ export type ReturnableItem = {
   sku: string | null;
   unit: string;
   sold_quantity: number;
+  /** The list price on the invoice line, BEFORE the invoice-level discount. */
   unit_price_paisa: number;
+  /**
+   * What the customer actually paid per unit, once this line's share of the
+   * invoice discount is taken off. This is what a refund is based on — equal
+   * to unit_price_paisa when the invoice had no discount.
+   */
+  effective_unit_price_paisa: number;
+  /** This line's share of the invoice discount, for the "you saved" note. */
+  discount_share_paisa: number;
   already_returned: number;
   remaining: number;
 };
@@ -21,6 +31,8 @@ export type ReturnFormData = {
   invoice_number: string;
   issue_date: string;
   customer_name: string;
+  /** Flat amount off the whole invoice; 0 when there was none. */
+  discount_paisa: number;
   items: ReturnableItem[];
 };
 
@@ -118,16 +130,21 @@ export function useReturnFormData(invoiceId: string) {
       const [invRes, itemsRes, returnedRes] = await Promise.all([
         supabase
           .from('invoices')
-          .select('id, invoice_number, issue_date, customers(name)')
+          .select('id, invoice_number, issue_date, discount_paisa, customers(name)')
           .eq('id', invoiceId)
           .eq('business_id', activeId!)
           .is('deleted_at', null)
           .single(),
+        // Ordered by (created_at, id) to match invoice_item_effective_prices()
+        // in 0048 — the order decides which line absorbs the rounding remainder.
         supabase
           .from('invoice_items')
-          .select('id, product_id, quantity, unit_price_paisa, products(name, sku, unit)')
+          .select(
+            'id, product_id, quantity, unit_price_paisa, line_total_paisa, products(name, sku, unit)',
+          )
           .eq('invoice_id', invoiceId)
-          .order('created_at'),
+          .order('created_at')
+          .order('id'),
         // All return_items for this invoice's items, joined to (non-deleted) returns
         supabase
           .from('return_items')
@@ -145,6 +162,7 @@ export function useReturnFormData(invoiceId: string) {
         id: string;
         invoice_number: string;
         issue_date: string;
+        discount_paisa: number | null;
         customers: RawCustomer | RawCustomer[] | null;
       };
       const cust = Array.isArray(inv.customers) ? inv.customers[0] : inv.customers;
@@ -161,15 +179,34 @@ export function useReturnFormData(invoiceId: string) {
         product_id: string;
         quantity: number;
         unit_price_paisa: number;
+        line_total_paisa: number;
         products:
           | { name: string; sku: string | null; unit: string }
           | { name: string; sku: string | null; unit: string }[]
           | null;
       };
-      const items = (itemsRes.data as unknown as RawItem[]).map((it) => {
+      const rawItems = itemsRes.data as unknown as RawItem[];
+
+      // The invoice discount is a flat amount off the total, so each line's
+      // list price overstates what was paid for it. Spread it before showing
+      // any price a refund will be based on.
+      const discountPaisa = Number(inv.discount_paisa ?? 0);
+      const effective = new Map(
+        distributeInvoiceDiscount(
+          rawItems.map((it) => ({
+            id: it.id,
+            quantity: Number(it.quantity),
+            lineTotalPaisa: Number(it.line_total_paisa),
+          })),
+          discountPaisa,
+        ).map((e) => [e.id, e]),
+      );
+
+      const items = rawItems.map((it) => {
         const p = Array.isArray(it.products) ? it.products[0] : it.products;
         const sold = Number(it.quantity);
         const already = returnedMap.get(it.id) ?? 0;
+        const eff = effective.get(it.id);
         return {
           invoice_item_id: it.id,
           product_id: it.product_id,
@@ -178,6 +215,8 @@ export function useReturnFormData(invoiceId: string) {
           unit: p?.unit ?? '',
           sold_quantity: sold,
           unit_price_paisa: Number(it.unit_price_paisa),
+          effective_unit_price_paisa: eff?.effectiveUnitPricePaisa ?? Number(it.unit_price_paisa),
+          discount_share_paisa: eff?.discountSharePaisa ?? 0,
           already_returned: already,
           remaining: sold - already,
         } as ReturnableItem;
@@ -188,6 +227,7 @@ export function useReturnFormData(invoiceId: string) {
         invoice_number: inv.invoice_number,
         issue_date: inv.issue_date,
         customer_name: cust?.name ?? '—',
+        discount_paisa: discountPaisa,
         items,
       } as ReturnFormData;
     },

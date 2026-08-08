@@ -64,6 +64,15 @@
 - **`supabase/migrations/0047_location_soft_delete.sql` is NOT yet applied** — same three parts as 0046 (explicit `WITH CHECK`, unassign trigger, backfill).
 - Verified in headless Chrome, 14/14: add city from the customer form → attached without pressing Update Customer → shows in the Location column and the All Locations filter → delete refused cleanly with the customer's city intact → /customers/new still fine.
 
+**Round 5 — returns refunded the pre-discount price**
+- Discounts are invoice-level (flat amount off the total) while `invoice_items.unit_price_paisa` keeps the list price, so `create_return_atomic` refunded the list price. INV-00115: 1 × Air Filter listed Rs. 950, Rs. 95 off, customer paid Rs. 855, return credited Rs. 950.
+- `lib/return-pricing.ts` spreads the invoice discount across lines in proportion to `line_total_paisa` (so a per-item discount, which the schema allows, is already accounted for). Integer paisa via BigInt — `base × discount` overflows `Number.MAX_SAFE_INTEGER` on large invoices. Last line by `(created_at, id)` absorbs the remainder so shares sum to the discount exactly. 10 unit tests pin the arithmetic.
+- `supabase/migrations/0048_return_effective_price.sql` adds `invoice_item_effective_prices()` and replaces `create_return_atomic` to default the refund to that price. **NOT yet applied.**
+- The two implementations were checked against each other on a throwaway local Postgres 16 (`initdb` in the scratchpad, real function loaded from the migration file): **204/204 lines agree across 68 invoices**, 60 of them randomised with fractional quantities and awkward ratios.
+- Because a database still on 0045 would credit the list price while the fixed UI showed the discounted one, the form now **states** the price on discounted invoices instead of letting the RPC default it — a stale RPC rejects the return rather than over-credits, and the error is rewritten to name migration 0048. Invoices with no discount still omit it, so they are unaffected.
+- `tsconfig` targets ES2017 and the project is `noEmit`, so BigInt *literals* (`0n`) do not type-check; `BigInt(0)` constants are used instead rather than changing the shared target.
+- Verified in headless Chrome against real invoice INV-0005 (1% discount): "Customer paid" and the Original-price radio both read Rs. 217.80 against a Rs. 220.00 list, Return Amount 165 × 217.80 = Rs. 35,937.00. 132 tests green.
+
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked.
 
 ---
