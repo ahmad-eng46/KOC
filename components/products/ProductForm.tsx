@@ -82,6 +82,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           value={brandId ?? null}
           onChange={(id) => setValue('brand_id', id, { shouldDirty: true })}
           canCreate
+          productId={product?.id}
         />
       </div>
 

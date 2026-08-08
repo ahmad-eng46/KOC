@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Plus, X } from 'lucide-react';
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
-import { createBrand } from '@/lib/actions/brands';
+import { createBrand, assignProductBrand } from '@/lib/actions/brands';
 import { brandTypes, BRAND_TYPE_LABELS, type BrandType } from '@/lib/validators/brands';
 import { useToast } from '@/components/ui/Toast';
 
@@ -13,6 +13,13 @@ type Props = {
   onChange: (brandId: string | null) => void;
   /** Quick-create needs admin/accountant; hide the option otherwise. */
   canCreate: boolean;
+  /**
+   * The product being edited, when there is one. Adding a brand from a
+   * product's own form means "this product is that brand", so the product is
+   * attached to it immediately rather than waiting for Update Product.
+   * Absent on /products/new — there is no row to attach yet.
+   */
+  productId?: string;
 };
 
 /**
@@ -21,7 +28,7 @@ type Props = {
  * quick-create sheet asks only name + type — everything else lives in
  * Settings → Brands.
  */
-export function BrandPicker({ value, onChange, canCreate }: Props) {
+export function BrandPicker({ value, onChange, canCreate, productId }: Props) {
   const { data: brands = [] } = useBrands();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -101,6 +108,7 @@ export function BrandPicker({ value, onChange, canCreate }: Props) {
 
       {createOpen && (
         <QuickCreateBrandSheet
+          productId={productId}
           onClose={() => setCreateOpen(false)}
           onCreated={(id) => onChange(id)}
         />
@@ -150,8 +158,9 @@ function BrandGroup({
  * propagation.
  */
 function QuickCreateBrandSheet({
-  onClose, onCreated,
+  productId, onClose, onCreated,
 }: {
+  productId?: string;
   onClose: () => void;
   onCreated: (id: string, name: string) => void;
 }) {
@@ -194,12 +203,29 @@ function QuickCreateBrandSheet({
         return;
       }
 
+      // Attaching the product is what the user came here to do, so it happens
+      // now rather than waiting for Update Product. The form field is set
+      // either way, so Update Product still carries the brand if this fails.
+      const link = productId
+        ? await assignProductBrand({ product_id: productId, brand_id: result.id })
+        : null;
+
       // Awaited so the dropdown already holds the new brand when it is
       // selected below — otherwise the picker briefly reads "No brand".
       await invalidate();
-      showToast(`Brand "${result.name}" added.`);
       onCreated(result.id, result.name);
       onClose();
+
+      if (link && !link.ok) {
+        showToast(
+          `Brand "${result.name}" added, but this product was not attached: ${link.error} Press Update Product to retry.`,
+          'error',
+        );
+      } else if (link) {
+        showToast(`Brand "${result.name}" added, and this product assigned to it.`);
+      } else {
+        showToast(`Brand "${result.name}" added.`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save the brand.';
       setServerError(message);

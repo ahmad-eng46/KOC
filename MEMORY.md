@@ -49,6 +49,15 @@
 - Could not apply it here: `supabase/.temp/pooler-url` has no password and the CLI's access token lacks privileges.
 - Verified in headless Chrome, 7/7: user-typed name saved verbatim → assigned → delete refused cleanly → product keeps its brand → brand intact. Re-run the delete flow after applying 0046 to confirm the success path.
 
+**Round 3 — adding a brand from a product's form attaches that product to it**
+- `BrandPicker` takes an optional `productId`; `ProductForm` passes it when editing an existing product. After `createBrand`, the picker calls `assignProductBrand` so the link is written immediately instead of waiting for Update Product. The form field is still set, so Update Product carries the same value rather than clobbering it.
+- If the brand saves but the link fails, the toast names the reason and says to press Update Product; the brand stays selected, so nothing is lost.
+- `/products/new` is unchanged — no product row exists yet, so the brand is simply selected and saved with Create Product.
+- Consequence: Cancel no longer undoes the brand assignment (it is already committed), only the other unsaved edits.
+- Verified in headless Chrome, 9/9: attached without pressing Update Product, survives navigating away unsaved, badge + chip appear, reload shows it, Update Product keeps it, `/products/new` still fine.
+
+**Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked.
+
 ---
 
 ## Session 18
