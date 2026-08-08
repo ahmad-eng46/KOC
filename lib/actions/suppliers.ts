@@ -171,6 +171,10 @@ export async function createStockPurchase(
       unit_price_paisa: parsed.data.unit_price_paisa,
       purchase_date: parsed.data.purchase_date,
       notes: parsed.data.notes || null,
+      // Display only; the RPC stores them and computes nothing from them.
+      entered_quantity: parsed.data.entered_quantity ?? null,
+      entry_mode: parsed.data.entry_mode ?? null,
+      pack_size_snapshot: parsed.data.pack_size_snapshot ?? null,
     },
   });
 

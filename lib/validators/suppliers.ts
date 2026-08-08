@@ -36,7 +36,12 @@ export type SupplierInput = z.infer<typeof supplierSchema>;
 export const stockPurchaseSchema = z.object({
   supplier_id: uuidLike('Select a supplier'),
   product_id: uuidLike('Select a product'),
+  /** Always stock units — the form converts a pack entry before sending. */
   quantity,
+  /** Display only: what the user typed, and in what. */
+  entered_quantity: z.number().positive().optional(),
+  entry_mode: z.enum(['unit', 'pack']).optional(),
+  pack_size_snapshot: z.number().int().min(1).optional(),
   unit_price_paisa: z
     .number({ error: 'Unit price must be a number' })
     .int('Must be a whole number in paisa')

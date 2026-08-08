@@ -12,6 +12,7 @@ import { SupplierPicker } from './SupplierPicker';
 import { useProducts } from '@/lib/queries/products';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { purchaseTotalPaisa } from '@/lib/supplier-totals';
+import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
 import { Field, ServerError, inputCls, textareaCls } from '@/components/ui/form-fields';
 import { useToast } from '@/components/ui/Toast';
 
@@ -60,6 +61,8 @@ export function AddPurchaseModal({
   const invalidate = useInvalidateSupplierData();
   const { data: products = [] } = useProducts();
   const [serverError, setServerError] = useState<string | null>(null);
+  // null = follow the product's default; a value = the user chose one.
+  const [modeChoice, setModeChoice] = useState<EntryMode | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -93,17 +96,36 @@ export function AddPurchaseModal({
   const productId = useWatch({ control, name: 'product_id' });
   const supplierId = useWatch({ control, name: 'supplier_id' });
   const selectedProduct = products.find((p) => p.id === productId);
+  const packed = !!selectedProduct && hasPack(selectedProduct);
+  const packSize = selectedProduct?.pack_size ?? 1;
+
+  // Derived rather than synced: buying is nearly always by the box, so a
+  // packed product defaults to packs, and an unpacked one can only be units
+  // however stale the choice is.
+  const entryMode: EntryMode = packed ? (modeChoice ?? 'pack') : 'unit';
+
+  /** Stock units. Every total and everything sent to the server uses this. */
+  const unitQuantity = Number.isFinite(quantity)
+    ? toUnits(quantity as number, entryMode, packSize)
+    : quantity;
 
   // Previewed with the same arithmetic the RPC uses, so this is exactly what
   // gets stored — see lib/supplier-totals.ts.
   const previewTotal =
-    Number.isFinite(quantity) && Number.isFinite(unitPricePaisa)
-      ? purchaseTotalPaisa(quantity as number, unitPricePaisa as number)
+    Number.isFinite(unitQuantity) && Number.isFinite(unitPricePaisa)
+      ? purchaseTotalPaisa(unitQuantity as number, unitPricePaisa as number)
       : null;
 
   async function onSubmit(values: StockPurchaseInput) {
     setServerError(null);
-    const result = await createStockPurchase(values);
+    const result = await createStockPurchase({
+      ...values,
+      // The server only ever sees units; the entry is kept alongside for display.
+      quantity: toUnits(values.quantity, entryMode, packSize),
+      entered_quantity: values.quantity,
+      entry_mode: entryMode,
+      pack_size_snapshot: packSize,
+    });
     if (!result.ok) {
       setServerError(result.error);
       return;
@@ -155,9 +177,10 @@ export function AddPurchaseModal({
               className={inputCls(!!errors.product_id)}
               disabled={!!defaultProductId}
               value={productId ?? ''}
-              onChange={(e) =>
-                setValue('product_id', e.target.value, { shouldDirty: true, shouldValidate: true })
-              }
+              onChange={(e) => {
+                setModeChoice(null); // a new product brings its own default
+                setValue('product_id', e.target.value, { shouldDirty: true, shouldValidate: true });
+              }}
             >
               <option value="">— Select product —</option>
               {/* A locked product that is inactive, or not loaded yet, still
@@ -176,15 +199,33 @@ export function AddPurchaseModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label={`Quantity *${selectedProduct ? ` (${selectedProduct.unit})` : ''}`}
+              label={`Quantity *${selectedProduct && !packed ? ` (${selectedProduct.unit})` : ''}`}
               error={errors.quantity?.message}
             >
-              <input
-                className={inputCls(!!errors.quantity)}
-                placeholder="40"
-                inputMode="decimal"
-                {...register('quantity', { setValueAs: numberField })}
-              />
+              <div className="flex items-stretch gap-1">
+                <input
+                  className={`${inputCls(!!errors.quantity)} min-w-0 flex-1`}
+                  placeholder="40"
+                  inputMode="decimal"
+                  {...register('quantity', { setValueAs: numberField })}
+                />
+                {packed && (
+                  <select
+                    value={entryMode}
+                    onChange={(e) => setModeChoice(e.target.value as EntryMode)}
+                    aria-label="Quantity unit"
+                    className="h-11 max-w-24 px-1.5 rounded-xl border border-gray-300 text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="pack">{packOptionLabel(selectedProduct!)}</option>
+                    <option value="unit">{unitOptionLabel(selectedProduct!)}</option>
+                  </select>
+                )}
+              </div>
+              {selectedProduct && (
+                <p className="mt-1 text-xs text-blue-700 font-medium">
+                  {conversionHint(quantity as number, entryMode, selectedProduct) ?? ''}
+                </p>
+              )}
             </Field>
 
             <Field label="Unit Price (Rs.) *" error={errors.unit_price_paisa?.message}>
@@ -224,6 +265,7 @@ export function AddPurchaseModal({
           <p className="text-xs text-gray-500">
             Recording a purchase adds the quantity to stock and sets this product&apos;s
             current cost to the unit price above.
+            {packed && ` Stock and price are per ${selectedProduct!.unit}; buying by the ${selectedProduct!.pack_name} just multiplies out.`}
           </p>
 
           <ServerError message={serverError} />
