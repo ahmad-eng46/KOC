@@ -6,7 +6,12 @@
 --   products_for_role      — REPLACED to expose brand_id (it enumerates
 --                            columns, so without this nobody — including
 --                            admin, whose list reads the view — would see
---                            the new column)
+--                            the new column). CREATE OR REPLACE cannot do
+--                            this: brand_id sits before is_active, and
+--                            Postgres only allows appending columns to an
+--                            existing view. Hence the DROP first. Nothing
+--                            else in the schema depends on the view, so the
+--                            drop needs no CASCADE.
 --   brand_summary_view     — per-brand product / low / out-of-stock counts
 --   assign_product_brand() / assign_products_brand() — narrow SECURITY
 --                            DEFINER updates (see PERMISSIONS below)
@@ -30,12 +35,15 @@
 --   DROP VIEW IF EXISTS public.brand_summary_view;
 --   DROP FUNCTION IF EXISTS public.assign_products_brand(UUID[], UUID);
 --   DROP FUNCTION IF EXISTS public.assign_product_brand(UUID, UUID);
---   (recreate products_for_role from 0018 without brand_id)
+--   DROP VIEW IF EXISTS public.products_for_role;  -- then recreate from 0018
 --   ALTER TABLE public.products DROP COLUMN IF EXISTS brand_id;
 --   DROP TABLE IF EXISTS public.brands;
+--
+-- This file is written to be re-runnable end to end, so a half-applied run
+-- (SQL editor, statement-at-a-time) can be fixed by pasting it again.
 -- ═══════════════════════════════════════════════════════════════
 
-CREATE TABLE public.brands (
+CREATE TABLE IF NOT EXISTS public.brands (
   id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id    UUID        NOT NULL REFERENCES public.businesses(id) ON DELETE RESTRICT,
   name           TEXT        NOT NULL,
@@ -52,15 +60,16 @@ CREATE TABLE public.brands (
   deleted_at     TIMESTAMPTZ
 );
 
+DROP TRIGGER IF EXISTS trg_brands_updated_at ON public.brands;
 CREATE TRIGGER trg_brands_updated_at
   BEFORE UPDATE ON public.brands
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE UNIQUE INDEX brands_business_name_unique
+CREATE UNIQUE INDEX IF NOT EXISTS brands_business_name_unique
   ON public.brands (business_id, LOWER(name))
   WHERE deleted_at IS NULL;
 
-CREATE INDEX brands_business_active
+CREATE INDEX IF NOT EXISTS brands_business_active
   ON public.brands (business_id, sort_order, name)
   WHERE deleted_at IS NULL;
 
@@ -68,9 +77,9 @@ CREATE INDEX brands_business_active
 -- products.brand_id — nullable, backward compatible
 -- ─────────────────────────────────────────────
 ALTER TABLE public.products
-  ADD COLUMN brand_id UUID REFERENCES public.brands(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES public.brands(id) ON DELETE SET NULL;
 
-CREATE INDEX products_brand ON public.products (business_id, brand_id)
+CREATE INDEX IF NOT EXISTS products_brand ON public.products (business_id, brand_id)
   WHERE deleted_at IS NULL;
 
 -- ─────────────────────────────────────────────
@@ -80,32 +89,41 @@ CREATE INDEX products_brand ON public.products (business_id, brand_id)
 -- ─────────────────────────────────────────────
 ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS brands_select ON public.brands;
 CREATE POLICY brands_select ON public.brands
   FOR SELECT USING (
     public.user_has_business(business_id)
     AND deleted_at IS NULL
   );
 
+DROP POLICY IF EXISTS brands_insert ON public.brands;
 CREATE POLICY brands_insert ON public.brands
   FOR INSERT WITH CHECK (
     public.user_has_business(business_id)
     AND public.user_role() IN ('admin', 'accountant')
   );
 
+DROP POLICY IF EXISTS brands_update ON public.brands;
 CREATE POLICY brands_update ON public.brands
   FOR UPDATE USING (
     public.user_has_business(business_id)
     AND public.user_role() IN ('admin', 'accountant')
   );
 
+DROP POLICY IF EXISTS brands_delete ON public.brands;
 CREATE POLICY brands_delete ON public.brands
   FOR DELETE USING (false);
 
 -- ─────────────────────────────────────────────
 -- products_for_role: same view as 0018 plus brand_id.
 -- Purchase price stays NULL for staff/viewer — unchanged.
+--
+-- DROP, not CREATE OR REPLACE: brand_id is inserted before is_active, and
+-- Postgres refuses to reorder or rename an existing view's columns.
 -- ─────────────────────────────────────────────
-CREATE OR REPLACE VIEW public.products_for_role AS
+DROP VIEW IF EXISTS public.products_for_role;
+
+CREATE VIEW public.products_for_role AS
 SELECT
   id,
   business_id,
