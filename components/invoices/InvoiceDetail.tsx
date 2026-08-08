@@ -12,6 +12,7 @@ import {
 import { useInvoiceDetail } from '@/lib/queries/invoice-detail';
 import { useBusinessStore } from '@/lib/store/business';
 import { computeInvoiceTotals } from '@/lib/invoice-totals';
+import { formatEnteredQuantity } from '@/lib/pack';
 import { formatPKR } from '@/lib/money';
 import { softDeleteInvoice, markInvoicePaid } from '@/lib/actions/invoice-detail';
 import { can, type Role } from '@/lib/auth/permissions';
@@ -241,7 +242,17 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
                   {it.sku && <p className="text-xs text-gray-500">{it.sku}</p>}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
-                  {it.quantity} {it.unit}
+                  {(() => {
+                    const q = formatEnteredQuantity(it);
+                    return (
+                      <>
+                        {q.primary}
+                        {q.secondary && (
+                          <span className="block text-xs text-gray-500">({q.secondary})</span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-gray-700">
                   {formatPKR(it.unit_price_paisa)}

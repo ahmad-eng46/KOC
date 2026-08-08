@@ -43,6 +43,10 @@ export type InvoiceDetail = {
     sku: string | null;
     unit: string;
     quantity: number;
+    /** What the user typed, and in what — null on rows written before packs. */
+    entered_quantity: number | null;
+    entry_mode: 'unit' | 'pack' | null;
+    pack_name: string | null;
     unit_price_paisa: number;
     discount_paisa: number;
     line_total_paisa: number;
@@ -92,7 +96,7 @@ export function useInvoiceDetail(id: string) {
           .single(),
         supabase
           .from('invoice_items')
-          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, products(name, sku, unit)')
+          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot, products(name, sku, unit, pack_name)')
           .eq('invoice_id', id)
           .order('created_at'),
         supabase
@@ -149,12 +153,14 @@ export function useInvoiceDetail(id: string) {
         id: string;
         product_id: string;
         quantity: number;
+        entered_quantity: number | null;
+        entry_mode: 'unit' | 'pack' | null;
         unit_price_paisa: number;
         discount_paisa: number;
         line_total_paisa: number;
         products:
-          | { name: string; sku: string | null; unit: string }
-          | { name: string; sku: string | null; unit: string }[]
+          | { name: string; sku: string | null; unit: string; pack_name: string | null }
+          | { name: string; sku: string | null; unit: string; pack_name: string | null }[]
           | null;
       };
       const items = (itemsRes.data as unknown as RawItem[]).map((it) => {
@@ -166,6 +172,9 @@ export function useInvoiceDetail(id: string) {
           sku: p?.sku ?? null,
           unit: p?.unit ?? '',
           quantity: Number(it.quantity),
+          entered_quantity: it.entered_quantity == null ? null : Number(it.entered_quantity),
+          entry_mode: it.entry_mode ?? null,
+          pack_name: p?.pack_name ?? null,
           unit_price_paisa: Number(it.unit_price_paisa),
           discount_paisa: Number(it.discount_paisa),
           line_total_paisa: Number(it.line_total_paisa),

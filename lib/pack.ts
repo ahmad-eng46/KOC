@@ -120,3 +120,34 @@ export function conversionHint(
   const units = toUnits(quantity, mode, p.pack_size);
   return `= ${units} ${plural(p.unit, units)}`;
 }
+
+/**
+ * How a recorded line reads back: "2 Box" with "24 cans" underneath when it
+ * was entered by the pack, plain units otherwise.
+ *
+ * Rows written before packs existed have a null entry_mode, which is exactly
+ * "entered in units" — so they render as they always did. The size comes from
+ * the snapshot taken at the time, the name from the product today: the number
+ * must not drift when the pack is resized, the wording may.
+ */
+export function formatEnteredQuantity(item: {
+  /** Always stock units. */
+  quantity: number;
+  unit: string;
+  entered_quantity?: number | null;
+  entry_mode?: EntryMode | null;
+  pack_name?: string | null;
+}): { primary: string; secondary: string | null } {
+  const units = round3(item.quantity);
+  const plain = { primary: `${units} ${plural(item.unit, units)}`, secondary: null };
+
+  if (item.entry_mode !== 'pack') return plain;
+  const entered = item.entered_quantity;
+  const name = item.pack_name?.trim();
+  if (entered == null || !name) return plain;
+
+  return {
+    primary: `${round3(entered)} ${plural(name, entered)}`,
+    secondary: `${units} ${plural(item.unit, units)}`,
+  };
+}

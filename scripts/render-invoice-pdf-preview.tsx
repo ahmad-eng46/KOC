@@ -32,11 +32,14 @@ const base: InvoiceDetail = {
       id: 'i1', product_id: 'p1', product_name: 'Engine Oil 20W-50', sku: 'EO-2050',
       unit: 'ltr', quantity: 40, unit_price_paisa: R(1_500), discount_paisa: 0,
       line_total_paisa: R(60_000),
+      entered_quantity: null, entry_mode: null, pack_name: null,
     },
     {
       id: 'i2', product_id: 'p2', product_name: 'Gear Oil EP-90', sku: 'GO-90',
       unit: 'ltr', quantity: 20, unit_price_paisa: R(1_300), discount_paisa: 0,
       line_total_paisa: R(26_000),
+      // Sold as 2 cartons of 10 — the pack-aware row in the preview.
+      entered_quantity: 2, entry_mode: 'pack' as const, pack_name: 'Carton',
     },
   ],
   payments: [

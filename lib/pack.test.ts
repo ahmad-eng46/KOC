@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   hasPack, toUnits, fromUnits, splitPacks, formatStock,
-  packPreview, packOptionLabel, conversionHint, plural,
+  packPreview, packOptionLabel, conversionHint, plural, formatEnteredQuantity,
 } from './pack';
 
 const OIL = { pack_size: 12, pack_name: 'Box', unit: 'can' };
@@ -122,5 +122,39 @@ describe('plural', () => {
   it('preserves the owner-typed casing', () => {
     expect(plural('Carton', 3)).toBe('Cartons');
     expect(plural('Litre', 2)).toBe('Litres');
+  });
+});
+
+describe('formatEnteredQuantity', () => {
+  it('reads back a pack entry as packs with the units underneath', () => {
+    expect(formatEnteredQuantity({
+      quantity: 24, unit: 'can', entered_quantity: 2, entry_mode: 'pack', pack_name: 'Box',
+    })).toEqual({ primary: '2 Boxes', secondary: '24 cans' });
+  });
+
+  it('reads back a unit entry plainly', () => {
+    expect(formatEnteredQuantity({
+      quantity: 5, unit: 'pcs', entered_quantity: 5, entry_mode: 'unit', pack_name: 'Packet',
+    })).toEqual({ primary: '5 pcs', secondary: null });
+  });
+
+  it('treats rows written before packs existed as units', () => {
+    expect(formatEnteredQuantity({ quantity: 12, unit: 'can' }))
+      .toEqual({ primary: '12 cans', secondary: null });
+    expect(formatEnteredQuantity({
+      quantity: 12, unit: 'can', entered_quantity: null, entry_mode: null, pack_name: 'Box',
+    })).toEqual({ primary: '12 cans', secondary: null });
+  });
+
+  it('falls back to units when the pack has since lost its name', () => {
+    expect(formatEnteredQuantity({
+      quantity: 24, unit: 'can', entered_quantity: 2, entry_mode: 'pack', pack_name: null,
+    })).toEqual({ primary: '24 cans', secondary: null });
+  });
+
+  it('keeps a single pack singular', () => {
+    expect(formatEnteredQuantity({
+      quantity: 12, unit: 'can', entered_quantity: 1, entry_mode: 'pack', pack_name: 'Box',
+    })).toEqual({ primary: '1 Box', secondary: '12 cans' });
   });
 });

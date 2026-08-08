@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { format, parseISO } from 'date-fns';
 import { formatPKR } from '@/lib/money';
+import { formatEnteredQuantity } from '@/lib/pack';
 import { computeInvoiceTotals } from '@/lib/invoice-totals';
 import type { InvoiceDetail } from '@/lib/queries/invoice-detail';
 
@@ -109,7 +110,12 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceDetail }) {
                 <Text style={styles.td}>{it.product_name}</Text>
                 {it.sku && <Text style={{ fontSize: 8, color: '#888' }}>{it.sku}</Text>}
               </View>
-              <Text style={[styles.td, styles.cellQty]}>{it.quantity} {it.unit}</Text>
+              <Text style={[styles.td, styles.cellQty]}>
+                {formatEnteredQuantity(it).primary}
+                {formatEnteredQuantity(it).secondary
+                  ? `\n(${formatEnteredQuantity(it).secondary})`
+                  : ''}
+              </Text>
               <Text style={[styles.td, styles.cellRate]}>{formatPKR(it.unit_price_paisa, { showSymbol: false })}</Text>
               <Text style={[styles.td, styles.cellAmount]}>{formatPKR(it.line_total_paisa, { showSymbol: false })}</Text>
             </View>
