@@ -13,6 +13,11 @@ import { toKarachiExcelDate } from '@/lib/date';
 import {
   INFO_SHEET_NAME, writeInfoSheet, setInfoSheetCount,
 } from '@/lib/backup/info-sheet';
+import {
+  DEFAULT_BACKUP_OPTIONS, resolveRange, type BackupOptions,
+} from '@/lib/backup/options';
+import { loadBackupDataset } from '@/lib/backup/dataset';
+import { addSummarySheet } from '@/lib/backup/sheets/summary-sheet';
 
 const MONEY_FMT = '"Rs. "#,##0.00';
 const DATE_FMT = 'yyyy-mm-dd';
@@ -498,7 +503,9 @@ export type GeneratedBackup = {
  *
  * The caller is expected to be admin — gate this at the action layer.
  */
-export async function generateExcelBackup(): Promise<GeneratedBackup> {
+export async function generateExcelBackup(
+  options: BackupOptions = DEFAULT_BACKUP_OPTIONS,
+): Promise<GeneratedBackup> {
   const businessId = await getActiveBusinessId();
 
   const supabase = await createServerClient();
@@ -509,20 +516,33 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
     .single();
   const businessName = biz?.name ?? 'KOC';
 
+  const generatedAt = new Date();
+  const session = await getSession();
+  // Iron rule #3: cost is absent from the file for staff and viewer, not
+  // hidden in it. The service-role reads below bypass RLS, so this is the
+  // only gate.
+  const showCost = session?.role === 'admin' || session?.role === 'accountant';
+  const range = resolveRange(options.range, generatedAt);
+  const sections = new Set(options.sections);
+
+  const data = await loadBackupDataset({
+    businessId, businessName, range, showCost, sections,
+  });
+
   const wb = new ExcelJS.Workbook();
   wb.creator = 'KOC Backup System';
-  wb.created = new Date();
-
-  const session = await getSession();
+  wb.created = generatedAt;
 
   const info = wb.addWorksheet(INFO_SHEET_NAME);
   writeInfoSheet(info, {
     businessName,
     businessId,
-    generatedAt: new Date(),
-    period: 'All Time',
+    generatedAt,
+    period: range.label,
     generatedBy: session?.full_name ?? session?.email ?? 'Unknown',
   });
+
+  if (sections.has('summary')) addSummarySheet(wb, data, generatedAt);
 
   // Per table
   for (const spec of SHEETS) {
