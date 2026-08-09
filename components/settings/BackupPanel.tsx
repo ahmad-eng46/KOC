@@ -4,13 +4,15 @@ import { useEffect, useState, useTransition } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   Download, RefreshCw, FileSpreadsheet, AlertCircle,
-  CheckCircle2, Clock, FileX,
+  CheckCircle2, Clock, FileX, SlidersHorizontal,
 } from 'lucide-react';
 import { downloadBase64 } from '@/lib/reports/download';
 import {
   runBackupNow, listRecentBackups, getBackupSignedUrl,
   saveBackupSchedule, type BackupHistoryRow,
 } from '@/lib/actions/backup';
+import { BackupOptionsDialog } from '@/components/settings/BackupOptionsDialog';
+import { DEFAULT_BACKUP_OPTIONS, type BackupOptions } from '@/lib/backup/options';
 import {
   BACKUP_FREQUENCIES, BACKUP_DESTINATIONS,
   FREQUENCY_LABEL, DESTINATION_LABEL, DESTINATION_AVAILABLE,
@@ -27,6 +29,7 @@ export function BackupPanel({ initialSchedule }: Props) {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const [running, startRun] = useTransition();
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [savingSchedule, startSaveSchedule] = useTransition();
   const [scheduleSavedAt, setScheduleSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,18 +42,31 @@ export function BackupPanel({ initialSchedule }: Props) {
     setHistoryLoading(false);
   }
 
-  useEffect(() => { loadHistory(); }, []);
+  // setState lives inside the async callback, not the effect body: calling it
+  // synchronously there cascades a render (react-hooks/set-state-in-effect).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const r = await listRecentBackups();
+      if (cancelled) return;
+      if (r.ok) setHistory(r.data);
+      else setError(r.error);
+      setHistoryLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  function onBackupNow() {
+  function onBackupNow(options: BackupOptions = DEFAULT_BACKUP_OPTIONS) {
     setError(null);
     startRun(async () => {
-      const r = await runBackupNow();
+      const r = await runBackupNow(options);
       if (!r.ok) {
         setError(r.error);
         return;
       }
       // Trigger client-side download of the freshly-generated file
       downloadBase64(r.base64, r.filename, XLSX_MIME);
+      setOptionsOpen(false);
       // Refresh history to show the new row
       loadHistory();
     });
@@ -90,12 +106,12 @@ export function BackupPanel({ initialSchedule }: Props) {
       {/* ── Manual backup ─────────────────── */}
       <Section
         title="Backup Now"
-        description="Generate and download a multi-sheet .xlsx covering every major table for the active business."
+        description="Generate and download a formatted .xlsx business report — summary, balances, stock, invoices, expenses and suppliers."
       >
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={onBackupNow}
+            onClick={() => onBackupNow()}
             disabled={running}
             className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
           >
@@ -110,6 +126,15 @@ export function BackupPanel({ initialSchedule }: Props) {
                 Backup Now (Excel)
               </>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOptionsOpen(true)}
+            disabled={running}
+            className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-60"
+          >
+            <SlidersHorizontal size={15} />
+            Choose what to include…
           </button>
           <p className="text-xs text-gray-500">
             File downloads to your browser AND uploads to private Storage for retention.
@@ -203,7 +228,7 @@ export function BackupPanel({ initialSchedule }: Props) {
             <div className="w-5 h-5 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
           </div>
         ) : history.length === 0 ? (
-          <p className="text-sm text-gray-500">No backups yet. Click "Backup Now" to create your first.</p>
+          <p className="text-sm text-gray-500">No backups yet. Click &quot;Backup Now&quot; to create your first.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {history.map((h) => (
@@ -238,6 +263,14 @@ export function BackupPanel({ initialSchedule }: Props) {
           </ul>
         )}
       </Section>
+
+      {optionsOpen && (
+        <BackupOptionsDialog
+          running={running}
+          onCancel={() => setOptionsOpen(false)}
+          onGenerate={onBackupNow}
+        />
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 flex items-start gap-2">

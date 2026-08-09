@@ -6,6 +6,9 @@ import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { generateExcelBackup } from '@/lib/backup/generate-excel';
 import {
+  DEFAULT_BACKUP_OPTIONS, backupOptionsSchema, type BackupOptions,
+} from '@/lib/backup/options';
+import {
   backupScheduleSchema, type BackupSchedule, DEFAULT_SCHEDULE,
 } from '@/lib/backup/schedule';
 import { setSetting, getSetting } from '@/lib/settings';
@@ -20,11 +23,17 @@ const SCHEDULE_KEY = 'backup_schedule';
  * Generate a fresh Excel backup, upload to Storage, and record a backups row.
  * Returns base64 + filename so the client can also download it immediately.
  */
-export async function runBackupNow(): Promise<ManualBackupResult> {
+export async function runBackupNow(
+  options: BackupOptions = DEFAULT_BACKUP_OPTIONS,
+): Promise<ManualBackupResult> {
   const session = await getSession();
   if (!session || session.role !== 'admin') {
     return { ok: false, error: 'Admin only.' };
   }
+
+  // The dialog validates too, but that is for the owner's benefit only.
+  const parsed = backupOptionsSchema.safeParse(options);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
@@ -45,7 +54,7 @@ export async function runBackupNow(): Promise<ManualBackupResult> {
 
   try {
     // 2. Generate workbook
-    const gen = await generateExcelBackup();
+    const gen = await generateExcelBackup(parsed.data);
 
     // 3. Upload to Storage
     const path = `${businessId}/excel/${gen.filename}`;
