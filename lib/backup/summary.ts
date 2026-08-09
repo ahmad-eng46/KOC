@@ -1,6 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type {
-  CustomerRow, CustomerStats, ExpenseRow, InvoiceRow, PaymentRow, ProductRow,
+  CustomerRow, CustomerStats, ExpenseRow, InvoiceRow, ProductRow,
   SupplierRow, SupplierStats,
 } from '@/lib/backup/dataset';
 
@@ -26,7 +26,6 @@ export type SummaryInput = {
   invoices: InvoiceRow[];
   customers: CustomerRow[];
   customerStats: Map<string, CustomerStats>;
-  payments: PaymentRow[];
   expenses: ExpenseRow[];
   products: ProductRow[];
   stockByProduct: Map<string, number>;
@@ -71,8 +70,11 @@ export function buildSummary(input: SummaryInput, now: Date): SummaryBlock[] {
   const salesLast30 = sum(invoices.filter((i) => i.issue_date >= last30Start).map((i) => i.total_paisa));
   const avgInvoice = invoices.length === 0 ? 0 : Math.round(salesAll / invoices.length);
 
-  const livePayments = input.payments.filter((p) => p.deleted_at === null);
-  const paidAll = sum(livePayments.map((p) => p.amount_paisa));
+  // Collections come from the ledger, not from the payments table: a voided
+  // payment leaves its ledger credit behind, so the ledger figure is the one
+  // that reconciles with the balances below and with the Payments sheet,
+  // which lists voided rows rather than hiding them.
+  const paidAll = sum(input.customers.map((c) => input.customerStats.get(c.id)?.paid ?? 0));
 
   const balances = input.customers.map((c) => input.customerStats.get(c.id)?.balance ?? 0);
   const receivables = sum(balances.filter((b) => b > 0));

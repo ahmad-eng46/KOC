@@ -3,7 +3,7 @@ import {
   buildSummary, monthStartDay, last30StartDay, type SummaryInput,
 } from '@/lib/backup/summary';
 import type {
-  CustomerRow, ExpenseRow, InvoiceRow, PaymentRow, ProductRow, SupplierRow,
+  CustomerRow, ExpenseRow, InvoiceRow, ProductRow, SupplierRow,
 } from '@/lib/backup/dataset';
 
 const NOW = new Date('2026-08-09T17:22:00Z'); // 09 Aug 2026, 10:22 PM PKT
@@ -31,7 +31,6 @@ function baseInput(over: Partial<SummaryInput> = {}): SummaryInput {
     invoices: [],
     customers: [],
     customerStats: new Map(),
-    payments: [],
     expenses: [],
     products: [],
     stockByProduct: new Map(),
@@ -101,18 +100,16 @@ describe('buildSummary', () => {
     const blocks = buildSummary(baseInput({
       customers,
       customerStats: new Map([
-        ['c1', { sales: 0, paid: 0, returned: 0, balance: 5_000_00 }],
-        ['c2', { sales: 0, paid: 0, returned: 0, balance: -1_000_00 }],
+        ['c1', { sales: 8_000_00, paid: 3_000_00, returned: 0, balance: 5_000_00 }],
+        ['c2', { sales: 0, paid: 1_000_00, returned: 0, balance: -1_000_00 }],
         ['c3', { sales: 0, paid: 0, returned: 0, balance: 0 }],
       ]),
-      payments: [
-        { id: 'p1', customer_id: 'c1', invoice_id: null, amount_paisa: 3_000_00, method: 'cash', reference: null, payment_date: '2026-08-01', notes: null, deleted_at: null },
-        { id: 'p2', customer_id: 'c2', invoice_id: null, amount_paisa: 900_00, method: 'cash', reference: null, payment_date: '2026-08-02', notes: null, deleted_at: '2026-08-03T00:00:00Z' },
-      ] satisfies PaymentRow[],
     }), NOW);
 
     expect(moneyLine(blocks, 'COLLECTIONS', 'Outstanding Receivables')).toBe(5_000_00);
-    expect(moneyLine(blocks, 'COLLECTIONS', 'Total Payments Received')).toBe(3_000_00);
+    // From the ledger, so the voided payment still counts — exactly as the
+    // customer balance and the Payments sheet report it.
+    expect(moneyLine(blocks, 'COLLECTIONS', 'Total Payments Received')).toBe(4_000_00);
     const dues = blocks.find((b) => b.title === 'COLLECTIONS')?.lines
       .find((l) => l.label === 'Customers with Dues');
     expect(dues?.kind === 'text' && dues.text).toBe('1 of 3');
