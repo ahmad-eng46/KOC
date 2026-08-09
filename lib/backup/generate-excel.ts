@@ -8,7 +8,11 @@ import ExcelJS from 'exceljs';
 import { createServerClient } from '@/lib/supabase/server';
 import { adminClient } from '@/lib/supabase/admin';
 import { getActiveBusinessId } from '@/lib/business';
+import { getSession } from '@/lib/auth/session';
 import { toKarachiExcelDate } from '@/lib/date';
+import {
+  INFO_SHEET_NAME, writeInfoSheet, setInfoSheetCount,
+} from '@/lib/backup/info-sheet';
 
 const MONEY_FMT = '"Rs. "#,##0.00';
 const DATE_FMT = 'yyyy-mm-dd';
@@ -509,23 +513,15 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
   wb.creator = 'KOC Backup System';
   wb.created = new Date();
 
-  // First sheet: meta info
-  const meta = wb.addWorksheet('Meta');
-  meta.columns = [{ header: 'Key', key: 'key', width: 22 }, { header: 'Value', key: 'value', width: 50 }];
-  meta.getRow(1).font = { bold: true };
-  meta.addRow({ key: 'Business', value: businessName });
-  meta.addRow({ key: 'Business ID', value: businessId });
-  meta.addRow({ key: 'Generated At', value: new Date().toISOString() });
-  const metaSheetCountRow = meta.addRow({ key: 'Sheet Count', value: 0 });
-  meta.addRow({
-    key: 'Money Columns',
-    value:
-      'Shown in rupees to 2dp. Stored values are integer paisa (1 PKR = 100 paisa).',
-  });
-  meta.addRow({
-    key: 'Timestamps',
-    value:
-      'Columns marked (PKT) are Asia/Karachi wall-clock. All others are UTC, as stored.',
+  const session = await getSession();
+
+  const info = wb.addWorksheet(INFO_SHEET_NAME);
+  writeInfoSheet(info, {
+    businessName,
+    businessId,
+    generatedAt: new Date(),
+    period: 'All Time',
+    generatedBy: session?.full_name ?? session?.email ?? 'Unknown',
   });
 
   // Per table
@@ -654,9 +650,7 @@ export async function generateExcelBackup(): Promise<GeneratedBackup> {
     if (spec.autoSize) autoSizeColumns(ws);
   }
 
-  // Written now that every sheet exists, so it counts what the workbook
-  // actually contains rather than what SHEETS was expected to produce.
-  metaSheetCountRow.getCell('value').value = wb.worksheets.length;
+  setInfoSheetCount(info, wb.worksheets.length);
 
   const ab = await wb.xlsx.writeBuffer();
   const buffer = Buffer.from(ab);
