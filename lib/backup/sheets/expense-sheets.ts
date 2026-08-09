@@ -4,6 +4,10 @@ import { inRange } from '@/lib/backup/dataset';
 import { addSheet } from '@/lib/backup/sheet-writer';
 import { TAB, paintStatus } from '@/lib/backup/xlsx-style';
 import { DASH, titleCase } from '@/lib/backup/sheets/labels';
+import {
+  EXPENSE_PERIODS, EXPENSE_PERIOD_LABEL, buildExpenseSummary,
+  type ExpenseSummaryRow,
+} from '@/lib/backup/expense-summary';
 
 /** What the business spent, line by line. */
 
@@ -40,6 +44,40 @@ export function addExpensesSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
         paint: (cell, e) => paintStatus(cell, e.include_in_pnl ? 'none' : 'warn'),
       },
       { header: 'Receipt?', value: (e) => (e.receipt_url ? 'Yes' : 'No') },
+    ],
+  });
+}
+
+/**
+ * One row per asset, a column per period, grouped by category with subtotals —
+ * the sheet that answers "is this car costing me more than last month?".
+ *
+ * Always all-time in its base data, whatever range the rest of the workbook
+ * uses: the period columns are the comparison, so narrowing them first would
+ * leave nothing to compare.
+ */
+export function addExpenseSummarySheet(
+  wb: ExcelJS.Workbook,
+  d: BackupDataset,
+  now: Date,
+): void {
+  const rows = buildExpenseSummary(d.expenses, now);
+
+  addSheet(wb, {
+    name: 'Expense Summary',
+    tab: TAB.summary,
+    businessName: d.businessName,
+    rows,
+    emptyNote: 'No expenses recorded.',
+    rowStyle: (r) => (r.kind === 'asset' ? 'normal' : r.kind),
+    columns: [
+      { header: 'Category', value: (r) => (r.kind === 'grand' ? '' : r.category) },
+      { header: 'Asset', value: (r) => r.asset, width: 28 },
+      ...EXPENSE_PERIODS.map((period) => ({
+        header: EXPENSE_PERIOD_LABEL[period],
+        kind: 'money' as const,
+        value: (r: ExpenseSummaryRow) => r.periods[period],
+      })),
     ],
   });
 }

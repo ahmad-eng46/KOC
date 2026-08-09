@@ -103,7 +103,7 @@ function karachiToday(now: Date): string {
 }
 
 /** First day of the month `back` months before the Karachi month of `now`. */
-function monthStart(now: Date, back: number): string {
+export function karachiMonthStart(now: Date, back: number): string {
   const year = Number(formatInTimeZone(now, KARACHI, 'yyyy'));
   const month = Number(formatInTimeZone(now, KARACHI, 'MM')); // 1-12
   const total = year * 12 + (month - 1) - back;
@@ -117,11 +117,11 @@ export function resolveRange(range: BackupOptions['range'], now: Date): Resolved
 
   switch (range.preset) {
     case 'this_month': {
-      const from = monthStart(now, 0);
+      const from = karachiMonthStart(now, 0);
       return { from, to: today, label: `This Month (${pretty(from)} – ${pretty(today)})` };
     }
     case 'last_3_months': {
-      const from = monthStart(now, 2);
+      const from = karachiMonthStart(now, 2);
       return { from, to: today, label: `Last 3 Months (${pretty(from)} – ${pretty(today)})` };
     }
     case 'custom': {

@@ -27,7 +27,7 @@ import { addProductsSheet, addStockMovementsSheet } from '@/lib/backup/sheets/in
 import {
   addStockPurchasesSheet, addSupplierPaymentsSheet, addSuppliersSheet,
 } from '@/lib/backup/sheets/purchase-sheets';
-import { addExpensesSheet } from '@/lib/backup/sheets/expense-sheets';
+import { addExpenseSummarySheet, addExpensesSheet } from '@/lib/backup/sheets/expense-sheets';
 import {
   addAuditSheet, addBrandsSheet, addLocationsSheet, addUsersSheet,
 } from '@/lib/backup/sheets/reference-sheets';
@@ -121,7 +121,10 @@ function addSheets(wb: ExcelJS.Workbook, data: BackupDataset, generatedAt: Date)
   }
   if (has('payments')) addPaymentsSheet(wb, data);
   if (has('returns')) addReturnsSheet(wb, data);
-  if (has('expenses')) addExpensesSheet(wb, data);
+  if (has('expenses')) {
+    addExpensesSheet(wb, data);
+    addExpenseSummarySheet(wb, data, generatedAt);
+  }
   if (has('suppliers')) {
     addSuppliersSheet(wb, data);
     addStockPurchasesSheet(wb, data);

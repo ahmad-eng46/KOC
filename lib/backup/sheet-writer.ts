@@ -39,6 +39,8 @@ export type SheetSpec<T> = {
   emptyNote?: string;
   /** Shown in the print footer of every page. */
   businessName?: string;
+  /** Emphasises rows the sheet builds itself, such as per-group subtotals. */
+  rowStyle?: (row: T) => 'normal' | 'subtotal' | 'grand';
 };
 
 export function addSheet<T>(wb: ExcelJS.Workbook, spec: SheetSpec<T>): ExcelJS.Worksheet {
@@ -68,6 +70,18 @@ export function addSheet<T>(wb: ExcelJS.Workbook, spec: SheetSpec<T>): ExcelJS.W
       writeCell(cell, col.kind ?? 'text', col.value(row, index));
       col.paint?.(cell, row);
     });
+
+    const emphasis = spec.rowStyle?.(row) ?? 'normal';
+    if (emphasis !== 'normal') {
+      columns.forEach((_col, i) => {
+        const cell = excelRow.getCell(i + 1);
+        fill(cell, emphasis === 'grand' ? THEME.headerFill : THEME.totalFill);
+        cell.font = {
+          bold: true,
+          color: { argb: emphasis === 'grand' ? THEME.headerFont : THEME.headerFill },
+        };
+      });
+    }
     excelRow.commit();
   });
 

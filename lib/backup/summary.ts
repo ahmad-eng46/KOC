@@ -1,4 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz';
+import { karachiMonthStart } from '@/lib/backup/options';
 import type {
   CustomerRow, CustomerStats, ExpenseRow, InvoiceRow, ProductRow,
   SupplierRow, SupplierStats,
@@ -40,7 +41,7 @@ function karachiDay(d: Date): string {
 
 /** First day of the Karachi month `now` falls in. */
 export function monthStartDay(now: Date): string {
-  return `${formatInTimeZone(now, KARACHI, 'yyyy-MM')}-01`;
+  return karachiMonthStart(now, 0);
 }
 
 /** Inclusive start of the trailing 30-day window ending today. */
