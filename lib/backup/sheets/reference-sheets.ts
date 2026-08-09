@@ -23,6 +23,7 @@ export function addLocationsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void 
   addSheet(wb, {
     name: 'Locations',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No locations yet.',
@@ -50,6 +51,7 @@ export function addBrandsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Brands',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows,
     emptyNote: 'No brands yet.',
     columns: [
@@ -69,6 +71,7 @@ export function addUsersSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Users',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows,
     emptyNote: 'No users linked to this business.',
     columns: [
@@ -90,6 +93,7 @@ export function addAuditSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Audit Log',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows: d.auditLog,
     emptyNote: 'No audit entries.',
     columns: [

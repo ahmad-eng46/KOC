@@ -23,6 +23,7 @@ export function addCustomersSheet(wb: ExcelJS.Workbook, d: BackupDataset): void 
   addSheet(wb, {
     name: 'Customers',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No customers yet.',
@@ -60,6 +61,7 @@ export function addInvoicesSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Invoices',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No invoices in the selected period.',
@@ -105,6 +107,7 @@ export function addInvoiceItemsSheet(wb: ExcelJS.Workbook, d: BackupDataset): vo
   addSheet(wb, {
     name: 'Invoice Items',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No invoice lines in the selected period.',
@@ -148,6 +151,7 @@ export function addPaymentsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Payments',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No payments in the selected period.',
@@ -194,6 +198,7 @@ export function addReturnsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Returns',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No returns in the selected period.',
@@ -300,6 +305,7 @@ export function addLedgerSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Ledger',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows,
     emptyNote: 'No ledger activity in the selected period.',
     columns: [

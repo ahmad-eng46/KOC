@@ -2,7 +2,7 @@ import type ExcelJS from 'exceljs';
 import { formatKarachi } from '@/lib/date';
 import type { BackupDataset } from '@/lib/backup/dataset';
 import { buildSummary, type SummaryBlock } from '@/lib/backup/summary';
-import { INT_FMT, TAB, THEME, writeMoney } from '@/lib/backup/xlsx-style';
+import { INT_FMT, TAB, THEME, applyPrintSetup, writeMoney } from '@/lib/backup/xlsx-style';
 
 /**
  * The one page an owner or his accountant can read on its own: sales,
@@ -47,6 +47,8 @@ export function addSummarySheet(
   note.font = { italic: true, size: 9, color: { argb: THEME.idFont } };
 
   ws.views = [{ state: 'frozen', ySplit: 3 }];
+  applyPrintSetup(ws, data.businessName);
+  ws.pageSetup.orientation = 'portrait';
   return ws;
 }
 

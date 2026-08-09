@@ -15,6 +15,7 @@ export function addExpensesSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Expenses',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No expenses in the selected period.',

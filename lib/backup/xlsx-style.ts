@@ -120,6 +120,30 @@ export function paintStatus(cell: ExcelJS.Cell, tone: 'good' | 'bad' | 'warn' | 
   cell.font = { color: { argb: fg }, bold: true };
 }
 
+/**
+ * Landscape, scaled to one page wide with the header repeated on every sheet
+ * of paper. The owner prints these and takes them to his accountant; a table
+ * that spills its last three columns onto a second stack of pages is not a
+ * report.
+ */
+export function applyPrintSetup(ws: ExcelJS.Worksheet, businessName: string): void {
+  ws.pageSetup = {
+    orientation: 'landscape',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    horizontalCentered: true,
+    margins: {
+      left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3,
+    },
+    printTitlesRow: '1:1',
+  };
+  ws.headerFooter = {
+    oddFooter: `&L${businessName} — ${ws.name}&R Page &P of &N`,
+    evenFooter: `&L${businessName} — ${ws.name}&R Page &P of &N`,
+  };
+}
+
 const WIDTH_MIN = 10;
 const WIDTH_MAX = 46;
 

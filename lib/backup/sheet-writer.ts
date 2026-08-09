@@ -1,6 +1,6 @@
 import type ExcelJS from 'exceljs';
 import {
-  INT_FMT, QTY_FMT, THEME, autoSizeColumns, fill,
+  INT_FMT, QTY_FMT, THEME, applyPrintSetup, autoSizeColumns, fill,
   writeDate, writeDateTime, writeMoney, type TabColor,
 } from '@/lib/backup/xlsx-style';
 
@@ -37,6 +37,8 @@ export type SheetSpec<T> = {
   totals?: boolean;
   /** Printed under the header when there are no rows. */
   emptyNote?: string;
+  /** Shown in the print footer of every page. */
+  businessName?: string;
 };
 
 export function addSheet<T>(wb: ExcelJS.Workbook, spec: SheetSpec<T>): ExcelJS.Worksheet {
@@ -57,8 +59,12 @@ export function addSheet<T>(wb: ExcelJS.Workbook, spec: SheetSpec<T>): ExcelJS.W
 
   spec.rows.forEach((row, index) => {
     const excelRow = ws.getRow(index + 2);
+    const banded = index % 2 === 1;
     columns.forEach((col, i) => {
       const cell = excelRow.getCell(i + 1);
+      // Banding first: writeCell and paint both override it deliberately, so
+      // a status or balance colour always wins over the stripe.
+      if (banded) fill(cell, THEME.bandFill);
       writeCell(cell, col.kind ?? 'text', col.value(row, index));
       col.paint?.(cell, row);
     });
@@ -82,6 +88,7 @@ export function addSheet<T>(wb: ExcelJS.Workbook, spec: SheetSpec<T>): ExcelJS.W
   columns.forEach((col, i) => {
     if (col.width) ws.getColumn(i + 1).width = col.width;
   });
+  applyPrintSetup(ws, spec.businessName ?? '');
 
   return ws;
 }

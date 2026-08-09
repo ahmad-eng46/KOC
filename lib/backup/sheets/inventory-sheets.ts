@@ -16,6 +16,7 @@ export function addProductsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   addSheet(wb, {
     name: 'Products',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No products yet.',
@@ -67,6 +68,7 @@ export function addStockMovementsSheet(wb: ExcelJS.Workbook, d: BackupDataset): 
   addSheet(wb, {
     name: 'Stock Movements',
     tab: TAB.reference,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No stock movements in the selected period.',

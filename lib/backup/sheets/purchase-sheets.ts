@@ -18,6 +18,7 @@ export function addSuppliersSheet(wb: ExcelJS.Workbook, d: BackupDataset): void 
   addSheet(wb, {
     name: 'Suppliers',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: d.showCost,
     emptyNote: 'No suppliers yet.',
@@ -55,6 +56,7 @@ export function addStockPurchasesSheet(wb: ExcelJS.Workbook, d: BackupDataset): 
   addSheet(wb, {
     name: 'Stock Purchases',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No purchases in the selected period.',
@@ -86,6 +88,7 @@ export function addSupplierPaymentsSheet(wb: ExcelJS.Workbook, d: BackupDataset)
   addSheet(wb, {
     name: 'Supplier Payments',
     tab: TAB.data,
+    businessName: d.businessName,
     rows,
     totals: true,
     emptyNote: 'No supplier payments in the selected period.',
