@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
+import { formatPKR } from '@/lib/money';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { expenseCreateSchema, type ExpenseCreateInput } from '@/lib/validators/expense';
 
@@ -48,6 +50,14 @@ export async function createExpense(input: ExpenseCreateInput): Promise<CreateRe
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Insert failed.' };
+
+  await logActivity({
+    action: 'expense.created',
+    entityType: 'expense',
+    entityId: data.id,
+    description: `${parsed.data.type === 'business' ? 'Business' : 'Home'} expense: ${parsed.data.category}${parsed.data.description ? ` — ${parsed.data.description}` : ''} ${formatPKR(parsed.data.amount_paisa)}`,
+    metadata: { category: parsed.data.category, type: parsed.data.type, amount_paisa: parsed.data.amount_paisa },
+  });
 
   revalidatePath('/expenses');
   return { ok: true, id: data.id };

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
 import {
   brandSchema,
   assignBrandSchema,
@@ -70,6 +71,14 @@ export async function createBrand(input: BrandInput): Promise<CreateResult> {
   if (error) return { ok: false, error: writeError(error, parsed.data.name.trim()) };
 
   revalidateAll();
+  await logActivity({
+    action: 'brand.created',
+    entityType: 'brand',
+    entityId: data.id,
+    description: `Added brand ${data.name}`,
+    metadata: { name: data.name },
+  });
+
   return { ok: true, id: data.id, name: data.name };
 }
 

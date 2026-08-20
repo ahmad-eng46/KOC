@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { returnCreateSchema, type ReturnCreateInput } from '@/lib/validators/return';
 
@@ -26,6 +27,14 @@ export async function createReturn(input: ReturnCreateInput): Promise<CreateRetu
 
   if (error) return { ok: false, error: error.message };
   if (!returnId) return { ok: false, error: 'Return creation returned no id.' };
+
+  await logActivity({
+    action: 'return.processed',
+    entityType: 'return',
+    entityId: returnId as string,
+    description: `Processed a return of ${parsed.data.items.length} item${parsed.data.items.length === 1 ? '' : 's'}`,
+    metadata: { invoice_id: parsed.data.invoice_id, items: parsed.data.items.length },
+  });
 
   revalidatePath('/invoices');
   revalidatePath(`/invoices/${parsed.data.invoice_id}`);

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { adminClient } from '@/lib/supabase/admin';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
 import {
   countActiveAdmins,
   demotionWouldRemoveLastAdmin,
@@ -431,7 +432,31 @@ export async function changeOwnPassword(
     .eq('id', session.id);
 
   await logAuthAudit('UPDATE', session.id, session.id, null, { action: 'self_password_change' });
+  await logActivity({
+    action: 'user.password_changed',
+    entityType: 'user',
+    entityId: session.id,
+    description: 'Changed their password',
+  });
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────
+// 10. recordLogin — called by the login page once sign-in succeeds.
+//     Best-effort, like all activity logging: a failure here must not stop
+//     someone getting into the app.
+// ─────────────────────────────────────────────
+export async function recordLogin(): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+
+  await adminClient
+    .from('users')
+    .update({ last_login_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .then(undefined, () => undefined);
+
+  await logActivity({ action: 'user.login', entityType: 'user', entityId: session.id, description: 'Signed in' });
 }
 
 // ─────────────────────────────────────────────

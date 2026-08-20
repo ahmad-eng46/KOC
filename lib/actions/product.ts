@@ -6,6 +6,7 @@ import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { productSchema, type ProductInput } from '@/lib/validators/product';
+import { logActivity } from '@/lib/actions/activity-log';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -46,6 +47,14 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
     .single();
 
   if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    action: 'product.created',
+    entityType: 'product',
+    entityId: data.id,
+    description: `Added product ${values.name}`,
+    metadata: { name: values.name, sku: values.sku ?? null },
+  });
 
   revalidatePath('/products');
   return { ok: true, id: data.id };

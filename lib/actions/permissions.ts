@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { adminClient } from '@/lib/supabase/admin';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
 import { getActiveBusinessId } from '@/lib/business';
 import {
   ALL_PERMISSIONS, UNOVERRIDABLE, type Permission, type Role,
@@ -123,6 +124,14 @@ export async function setPermissionOverride(
     );
   if (error) return { ok: false, error: error.message };
 
+  await logActivity({
+    action: 'permission.changed',
+    entityType: 'user',
+    entityId: userId,
+    description: `${granted ? 'Granted' : 'Denied'} "${parsed.data.permission}" for a user`,
+    metadata: { permission: parsed.data.permission, granted },
+  });
+
   revalidatePath('/settings/users');
   revalidatePath(`/settings/users/${userId}`);
   return { ok: true };
@@ -145,6 +154,14 @@ export async function removePermissionOverride(
     .eq('user_id', userId)
     .eq('permission', permission);
   if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    action: 'permission.changed',
+    entityType: 'user',
+    entityId: userId,
+    description: `Reset "${permission}" to the role default for a user`,
+    metadata: { permission, granted: null },
+  });
 
   revalidatePath('/settings/users');
   revalidatePath(`/settings/users/${userId}`);

@@ -6,6 +6,7 @@ import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
+import { logActivity } from '@/lib/actions/activity-log';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -31,6 +32,14 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
     .single();
 
   if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    action: 'customer.created',
+    entityType: 'customer',
+    entityId: data.id,
+    description: `Added customer ${parsed.data.name}`,
+    metadata: { name: parsed.data.name },
+  });
 
   revalidatePath('/customers');
   return { ok: true, id: data.id };

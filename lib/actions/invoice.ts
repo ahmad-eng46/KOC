@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
+import { formatPKR } from '@/lib/money';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { invoiceCreateSchema, type InvoiceCreateInput } from '@/lib/validators/invoice';
 import { computeInvoiceTotals } from '@/lib/invoice';
@@ -111,6 +113,26 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
 
   if (error) return { ok: false, error: error.message };
   if (!invoiceId) return { ok: false, error: 'Invoice creation returned no id.' };
+
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('name')
+    .eq('id', data.customer_id)
+    .single();
+  const customerName = (customer as { name: string } | null)?.name ?? 'a customer';
+
+  await logActivity({
+    action: 'invoice.created',
+    entityType: 'invoice',
+    entityId: invoiceId as string,
+    description: `Created an invoice for ${customerName} (${formatPKR(totals.total_paisa)})`,
+    metadata: {
+      customer_id: data.customer_id,
+      customer_name: customerName,
+      total_paisa: totals.total_paisa,
+      items: data.items.length,
+    },
+  });
 
   revalidatePath('/invoices');
   revalidatePath('/stock');

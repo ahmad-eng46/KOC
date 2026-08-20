@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { recordLogin } from '@/lib/actions/user';
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -37,6 +38,7 @@ export default function LoginPage() {
       return;
     }
 
+    await recordLogin();
     router.push('/dashboard');
     router.refresh();
   }

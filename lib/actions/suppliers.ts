@@ -5,6 +5,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
+import { logActivity } from '@/lib/actions/activity-log';
+import { formatPKR } from '@/lib/money';
 import {
   supplierSchema,
   stockPurchaseSchema,
@@ -50,6 +52,14 @@ export async function createSupplier(input: SupplierInput): Promise<NamedCreateR
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Insert failed.' };
+
+  await logActivity({
+    action: 'supplier.created',
+    entityType: 'supplier',
+    entityId: data.id,
+    description: `Added supplier ${data.name}`,
+    metadata: { name: data.name },
+  });
 
   revalidatePath('/suppliers');
   revalidatePath('/stock');
@@ -183,6 +193,19 @@ export async function createStockPurchase(
     return { ok: false, error: 'Purchase was not created.' };
   }
 
+  await logActivity({
+    action: 'stock.purchased',
+    entityType: 'stock_purchase',
+    entityId: data,
+    description: `Recorded a stock purchase of ${parsed.data.quantity} unit${parsed.data.quantity === 1 ? '' : 's'} (${formatPKR(Math.round(parsed.data.quantity * parsed.data.unit_price_paisa))})`,
+    metadata: {
+      supplier_id: parsed.data.supplier_id,
+      product_id: parsed.data.product_id,
+      quantity: parsed.data.quantity,
+      unit_price_paisa: parsed.data.unit_price_paisa,
+    },
+  });
+
   revalidatePath('/suppliers');
   revalidatePath(`/suppliers/${parsed.data.supplier_id}`);
   revalidatePath('/stock');
@@ -239,6 +262,18 @@ export async function createSupplierPayment(
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Insert failed.' };
+
+  await logActivity({
+    action: 'payment.recorded',
+    entityType: 'supplier_payment',
+    entityId: data.id,
+    description: `Paid a supplier ${formatPKR(parsed.data.amount_paisa)} (${parsed.data.payment_method})`,
+    metadata: {
+      supplier_id: parsed.data.supplier_id,
+      amount_paisa: parsed.data.amount_paisa,
+      method: parsed.data.payment_method,
+    },
+  });
 
   revalidatePath('/suppliers');
   revalidatePath(`/suppliers/${parsed.data.supplier_id}`);

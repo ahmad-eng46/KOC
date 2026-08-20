@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
 import {
   locationSchema,
   assignLocationSchema,
@@ -54,6 +55,14 @@ export async function createLocation(input: LocationInput): Promise<CreateResult
 
   revalidatePath('/locations');
   revalidatePath('/customers');
+  await logActivity({
+    action: 'location.created',
+    entityType: 'location',
+    entityId: data.id,
+    description: `Added location ${data.name}`,
+    metadata: { name: data.name },
+  });
+
   return { ok: true, id: data.id, name: data.name };
 }
 

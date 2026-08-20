@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { logActivity } from '@/lib/actions/activity-log';
+import { formatPKR } from '@/lib/money';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { paymentCreateSchema, type PaymentCreateInput } from '@/lib/validators/payment';
 
@@ -81,6 +83,14 @@ export async function createPayment(input: PaymentCreateInput): Promise<CreateRe
         .eq('id', data.invoice_id);
     }
   }
+
+  await logActivity({
+    action: 'payment.recorded',
+    entityType: 'payment',
+    entityId: pay.id,
+    description: `Recorded a payment of ${formatPKR(data.amount_paisa)} (${data.method})`,
+    metadata: { customer_id: data.customer_id, invoice_id: data.invoice_id ?? null, amount_paisa: data.amount_paisa, method: data.method },
+  });
 
   revalidatePath('/payments');
   revalidatePath(`/customers/${data.customer_id}`);

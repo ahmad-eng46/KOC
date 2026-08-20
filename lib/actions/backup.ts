@@ -12,6 +12,7 @@ import {
   backupScheduleSchema, type BackupSchedule, DEFAULT_SCHEDULE,
 } from '@/lib/backup/schedule';
 import { setSetting, getSetting } from '@/lib/settings';
+import { logActivity } from '@/lib/actions/activity-log';
 
 type ManualBackupResult =
   | { ok: true; base64: string; filename: string; size_bytes: number; backup_id: string }
@@ -181,5 +182,14 @@ export async function getBackupSignedUrl(backupId: string): Promise<{ ok: true; 
     .from('backups')
     .createSignedUrl(row.storage_path, 60 * 60); // 1 hour
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not sign URL.' };
+
+  await logActivity({
+    action: 'backup.downloaded',
+    entityType: 'backup',
+    entityId: backupId,
+    description: 'Downloaded a backup file',
+    metadata: { backup_id: backupId },
+  });
+
   return { ok: true, url: data.signedUrl };
 }

@@ -6,6 +6,7 @@ import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { stockMovementSchema, type StockMovementInput } from '@/lib/validators/stock';
+import { logActivity } from '@/lib/actions/activity-log';
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -57,6 +58,14 @@ export async function addStockMovement(input: StockMovementInput): Promise<Actio
   });
 
   if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    action: 'stock.adjusted',
+    entityType: 'product',
+    entityId: parsed.data.product_id,
+    description: `Stock ${parsed.data.type === 'in' ? 'added' : 'removed'}: ${Math.abs(parsed.data.quantity)} unit${Math.abs(parsed.data.quantity) === 1 ? '' : 's'}${parsed.data.note ? ` — ${parsed.data.note}` : ''}`,
+    metadata: { product_id: parsed.data.product_id, type: parsed.data.type, quantity: parsed.data.quantity },
+  });
 
   revalidatePath('/stock');
   revalidatePath('/products');
