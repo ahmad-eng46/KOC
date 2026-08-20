@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { BarChart3, Package, PackageX } from 'lucide-react';
-import { FilterBar, rangeForPreset, type DatePreset, type DateRange } from '@/components/reports/shared';
+import { FilterBar, ExportButtons, rangeForPreset, type DatePreset, type DateRange } from '@/components/reports/shared';
+import { exportSalesAnalyticsPdf, exportSalesAnalyticsExcel } from '@/lib/actions/sales-report';
 import { useSalesOverview, useSalesByProduct, useProductRows } from '@/lib/queries/sales-analytics';
 import { useBrands } from '@/lib/queries/brands';
 import { useLocations } from '@/lib/queries/locations';
@@ -43,6 +44,12 @@ export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
   const { data: brands = [] } = useBrands();
   const { data: locations = [] } = useLocations();
 
+  const exportFilters = {
+    range,
+    brandId: tableFilters.brandId,
+    locationId: tableFilters.locationId,
+  };
+
   const prev = previousRange(range);
   const comparisonLabel = `${prev.from} to ${prev.to}`;
 
@@ -53,6 +60,17 @@ export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
         range={range}
         onPresetChange={setPreset}
         onRangeChange={setRange}
+        extras={
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-gray-500">
+              Exports carry the filters showing here — brand, location and range.
+            </p>
+            <ExportButtons
+              onExportPdf={() => exportSalesAnalyticsPdf(exportFilters)}
+              onExportExcel={() => exportSalesAnalyticsExcel(exportFilters)}
+            />
+          </div>
+        }
       />
 
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
