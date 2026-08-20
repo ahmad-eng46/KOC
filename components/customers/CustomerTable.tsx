@@ -2,11 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { useCustomers, useDeleteCustomer } from '@/lib/queries/customers';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { useLocations } from '@/lib/queries/locations';
 import { LocationBadge } from '@/components/locations/LocationBadge';
+import { useCustomerCategories } from '@/lib/queries/customer-categories';
+import { CategoryBadge } from './CategoryBadge';
+import { CategoryFilterChips, UNCATEGORISED } from './CategoryFilterChips';
 import { formatPKR } from '@/lib/money';
 
 /**
@@ -32,14 +36,47 @@ function BalanceCell({ accountingPaisa, muted }: { accountingPaisa: number; mute
   );
 }
 
-export function CustomerTable() {
+type Props = {
+  /** Initial category filter, read from ?category= on the server. */
+  initialCategory?: string;
+};
+
+export function CustomerTable({ initialCategory = '' }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Every customer is fetched once and filtered here, so the chips can show a
+  // count per category and the location filter can narrow the same set. Passing
+  // the category into useCustomers would fetch only the matching rows and leave
+  // every other chip reading zero.
   const { data: customers = [], isLoading } = useCustomers();
   const { data: withBalance = [] } = useCustomersWithBalance();
   const { data: locations = [] } = useLocations();
+  const { data: categories = [] } = useCustomerCategories();
   const deleteMutation = useDeleteCustomer();
   const [search, setSearch] = useState('');
   // '' = all, 'unassigned' = no location, else a location id
   const [locationFilter, setLocationFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory);
+
+  // The filter lives in the URL so a filtered list survives a refresh and can
+  // be sent to someone. replace, not push, so Back leaves the page rather than
+  // stepping through every chip that was tried.
+  function changeCategory(next: string) {
+    setCategoryFilter(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set('category', next);
+    else params.delete('category');
+    const query = params.toString();
+    router.replace(query ? `/customers?${query}` : '/customers', { scroll: false });
+  }
+
+  const categoryCounts = new Map<string, number>();
+  let uncategorisedCount = 0;
+  for (const c of customers) {
+    if (c.category_id) categoryCounts.set(c.category_id, (categoryCounts.get(c.category_id) ?? 0) + 1);
+    else uncategorisedCount += 1;
+  }
 
   const balanceById = new Map(
     withBalance.map((c) => [c.id, c.current_balance_paisa]),
@@ -50,6 +87,11 @@ export function CustomerTable() {
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.phone ?? '').includes(search),
     )
+    .filter((c) => {
+      if (!categoryFilter) return true;
+      if (categoryFilter === UNCATEGORISED) return c.category_id === null;
+      return c.category_id === categoryFilter;
+    })
     .filter((c) => {
       if (!locationFilter) return true;
       if (locationFilter === 'unassigned') return c.location_id === null;
@@ -101,6 +143,14 @@ export function CustomerTable() {
         </Link>
       </div>
 
+      <CategoryFilterChips
+        categories={categories}
+        value={categoryFilter}
+        onChange={changeCategory}
+        counts={categoryCounts}
+        uncategorisedCount={uncategorisedCount}
+      />
+
       {/* Table — desktop */}
       <div className="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
@@ -119,7 +169,9 @@ export function CustomerTable() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="text-center py-10 text-gray-400 text-sm">
-                  {search || locationFilter ? 'No customers match your filters.' : 'No customers yet.'}
+                  {search || locationFilter || categoryFilter
+                    ? 'No customers match your filters.'
+                    : 'No customers yet.'}
                 </td>
               </tr>
             )}
@@ -133,8 +185,12 @@ export function CustomerTable() {
                 <td className="px-4 py-3">
                   <LocationBadge name={c.locations?.name} />
                 </td>
-                <td className="px-4 py-3 text-gray-500">
-                  {c.customer_categories?.name ?? '—'}
+                <td className="px-4 py-3">
+                  <CategoryBadge
+                    name={c.customer_categories?.name}
+                    color={c.customer_categories?.color}
+                    id={c.category_id}
+                  />
                 </td>
                 <td className="px-4 py-3 text-gray-500">{c.phone ?? '—'}</td>
                 <td className="px-4 py-3 text-right font-mono">
@@ -187,11 +243,14 @@ export function CustomerTable() {
           >
             <div>
               <p className="font-medium text-gray-900 text-sm">{c.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {c.phone ?? '—'} · {c.customer_categories?.name ?? 'No category'}
-              </p>
-              <p className="mt-1">
+              <p className="text-xs text-gray-500 mt-0.5">{c.phone ?? '—'}</p>
+              <p className="mt-1 flex items-center gap-1.5 flex-wrap">
                 <LocationBadge name={c.locations?.name} />
+                <CategoryBadge
+                  name={c.customer_categories?.name}
+                  color={c.customer_categories?.color}
+                  id={c.category_id}
+                />
               </p>
             </div>
             <div className="text-right shrink-0 ml-3">
