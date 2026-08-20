@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   toSalesLine, toProductPeriodRow, summarise, percentChange, previousRange,
   byBrand, byCustomer, byLocation, trendSeries, trendSeriesByBrand,
-  trendOf, productTrend, deadStock, lastSaleByKey,
+  trendOf, productTrend, deadStock, lastSaleByKey, productPeriodsFromLines,
   type SalesLine, type ProductPeriodRow,
 } from '@/lib/sales-analytics';
 
@@ -289,5 +289,82 @@ describe('deadStock', () => {
   it('excludes a product with no stock even if it has never sold', () => {
     const none = deadStock([product({ stock_on_hand: 0, last_sale_date: null, days_since_last_sale: null })], 30);
     expect(none).toHaveLength(0);
+  });
+});
+
+describe('productPeriodsFromLines', () => {
+  const TODAY = new Date('2026-08-20T12:00:00Z');
+  const daysAgo = (n: number) =>
+    new Date(Date.UTC(2026, 7, 20) - n * 86_400_000).toISOString().slice(0, 10);
+
+  it('places each line in every window that contains it', () => {
+    const rows = productPeriodsFromLines(
+      [
+        line({ issue_date: daysAgo(2),   net_quantity: 1, net_amount_paisa: 1000 }),
+        line({ issue_date: daysAgo(10),  net_quantity: 2, net_amount_paisa: 2000 }),
+        line({ issue_date: daysAgo(45),  net_quantity: 4, net_amount_paisa: 4000 }),
+        line({ issue_date: daysAgo(200), net_quantity: 8, net_amount_paisa: 8000 }),
+      ],
+      [],
+      TODAY,
+    );
+    const r = rows[0];
+    expect(r.qty_7d).toBe(1);
+    expect(r.qty_15d).toBe(3);
+    expect(r.qty_30d).toBe(3);
+    expect(r.qty_90d).toBe(7);
+    expect(r.qty_365d).toBe(15);
+    expect(r.qty_all).toBe(15);
+  });
+
+  it('puts a 45-day-old sale in the previous 30-day window, not the current one', () => {
+    const rows = productPeriodsFromLines(
+      [line({ issue_date: daysAgo(45), net_quantity: 4, net_amount_paisa: 4000 })],
+      [], TODAY,
+    );
+    expect(rows[0].qty_30d).toBe(0);
+    expect(rows[0].qty_prev_30d).toBe(4);
+  });
+
+  it('agrees with the database windows: a sale exactly 30 days old is outside the 30-day window', () => {
+    const rows = productPeriodsFromLines(
+      [line({ issue_date: daysAgo(30), net_quantity: 5, net_amount_paisa: 5000 })],
+      [], TODAY,
+    );
+    expect(rows[0].qty_30d).toBe(0);
+    expect(rows[0].qty_prev_30d).toBe(5);
+  });
+
+  it('takes stock and price from the rollup, which lines do not carry', () => {
+    const rows = productPeriodsFromLines(
+      [line({ product_id: 'p1', net_quantity: 1, net_amount_paisa: 1000 })],
+      [product({ product_id: 'p1', stock_on_hand: 138, sale_price_paisa: 65000 })],
+      TODAY,
+    );
+    expect(rows[0].stock_on_hand).toBe(138);
+    expect(rows[0].sale_price_paisa).toBe(65000);
+  });
+
+  it('still produces a row when the product is missing from the rollup', () => {
+    const rows = productPeriodsFromLines([line({ product_id: 'ghost' })], [], TODAY);
+    expect(rows[0].product_id).toBe('ghost');
+    expect(rows[0].stock_on_hand).toBe(0);
+  });
+
+  it('reports profit as null when cost is invisible', () => {
+    const rows = productPeriodsFromLines([line({ profit_paisa: null })], [], TODAY);
+    expect(rows[0].profit_all_paisa).toBeNull();
+  });
+
+  it('counts distinct invoices, not lines', () => {
+    const rows = productPeriodsFromLines(
+      [
+        line({ issue_date: daysAgo(1), invoice_id: 'i1' }),
+        line({ issue_date: daysAgo(1), invoice_id: 'i1' }),
+        line({ issue_date: daysAgo(1), invoice_id: 'i2' }),
+      ],
+      [], TODAY,
+    );
+    expect(rows[0].invoices_7d).toBe(2);
   });
 });

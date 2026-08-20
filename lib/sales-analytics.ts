@@ -385,3 +385,96 @@ export function deadStock(rows: readonly ProductPeriodRow[], days: number): Dead
 function sum<T>(items: readonly T[], of: (item: T) => number): number {
   return items.reduce((total, item) => total + of(item), 0);
 }
+
+// ───────────────────────────────────────────────
+// Period columns from lines
+//
+// product_sales_periods_view has no location dimension — it rolls up every line
+// for a product regardless of who bought it. So when the table is filtered to a
+// location, the same windows are rebuilt here from the lines that survive the
+// filter. Identical window definitions, one source of truth for the boundaries.
+// ───────────────────────────────────────────────
+export const WINDOW_DAYS = {
+  d7: 7, d15: 15, d30: 30, d90: 90, d180: 180, d365: 365,
+} as const;
+
+function daysBetween(fromISO: string, to: Date): number {
+  const from = new Date(`${fromISO}T00:00:00Z`);
+  const toUTC = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  return Math.floor((toUTC - from.getTime()) / 86_400_000);
+}
+
+/**
+ * Rebuild per-product period rows from raw lines. `base` supplies the facts that
+ * lines do not carry — stock on hand, sale price, active flag — so a filtered
+ * table still shows real stock rather than guessing at it.
+ */
+export function productPeriodsFromLines(
+  lines: readonly SalesLine[],
+  base: readonly ProductPeriodRow[],
+  today: Date = new Date(),
+): ProductPeriodRow[] {
+  const baseById = new Map(base.map((b) => [b.product_id, b]));
+  const grouped = new Map<string, SalesLine[]>();
+
+  for (const l of lines) {
+    const list = grouped.get(l.product_id) ?? [];
+    list.push(l);
+    grouped.set(l.product_id, list);
+  }
+
+  const out: ProductPeriodRow[] = [];
+
+  for (const [productId, productLines] of grouped) {
+    const b = baseById.get(productId);
+    const within = (days: number) => productLines.filter((l) => daysBetween(l.issue_date, today) < days);
+    const qty = (ls: SalesLine[]) => sum(ls, (l) => l.net_quantity);
+    const amt = (ls: SalesLine[]) => sum(ls, (l) => l.net_amount_paisa);
+    const invoices = (ls: SalesLine[]) => new Set(ls.map((l) => l.invoice_id)).size;
+
+    const d7 = within(7), d15 = within(15), d30 = within(30);
+    const d90 = within(90), d180 = within(180), d365 = within(365);
+    const prev30 = productLines.filter((l) => {
+      const age = daysBetween(l.issue_date, today);
+      return age >= 30 && age < 60;
+    });
+
+    const costVisible = productLines.some((l) => l.profit_paisa !== null);
+    const lastSale = productLines.reduce<string | null>(
+      (latest, l) => (latest === null || l.issue_date > latest ? l.issue_date : latest),
+      null,
+    );
+    const first = productLines[0];
+
+    out.push({
+      product_id: productId,
+      product_name: b?.product_name ?? first.product_name,
+      product_sku: b?.product_sku ?? first.product_sku,
+      product_unit: b?.product_unit ?? first.product_unit,
+      pack_size: b?.pack_size ?? 1,
+      pack_name: b?.pack_name ?? null,
+      is_active: b?.is_active ?? true,
+      sale_price_paisa: b?.sale_price_paisa ?? 0,
+      purchase_price_paisa: b?.purchase_price_paisa ?? null,
+      brand_id: b?.brand_id ?? first.brand_id,
+      brand_name: b?.brand_name ?? first.brand_name,
+      brand_type: b?.brand_type ?? first.brand_type,
+      stock_on_hand: b?.stock_on_hand ?? 0,
+      qty_7d: qty(d7), sales_7d_paisa: amt(d7), invoices_7d: invoices(d7),
+      qty_15d: qty(d15), sales_15d_paisa: amt(d15), invoices_15d: invoices(d15),
+      qty_30d: qty(d30), sales_30d_paisa: amt(d30), invoices_30d: invoices(d30),
+      qty_prev_30d: qty(prev30), sales_prev_30d_paisa: amt(prev30),
+      qty_90d: qty(d90), sales_90d_paisa: amt(d90), invoices_90d: invoices(d90),
+      qty_180d: qty(d180), sales_180d_paisa: amt(d180),
+      qty_365d: qty(d365), sales_365d_paisa: amt(d365),
+      qty_all: qty(productLines), sales_all_paisa: amt(productLines), invoices_all: invoices(productLines),
+      profit_all_paisa: costVisible ? sum(productLines, (l) => l.profit_paisa ?? 0) : null,
+      profit_30d_paisa: costVisible ? sum(d30, (l) => l.profit_paisa ?? 0) : null,
+      last_sale_date: lastSale,
+      days_since_last_sale: lastSale === null ? null : daysBetween(lastSale, today),
+      avg_daily_qty_30d: Math.round((qty(d30) / 30) * 100) / 100,
+    });
+  }
+
+  return out.sort((a, b) => b.sales_30d_paisa - a.sales_30d_paisa);
+}

@@ -3,10 +3,14 @@
 import { useState } from 'react';
 import { BarChart3, Package, PackageX } from 'lucide-react';
 import { FilterBar, rangeForPreset, type DatePreset, type DateRange } from '@/components/reports/shared';
-import { useSalesOverview, useSalesByProduct } from '@/lib/queries/sales-analytics';
-import { previousRange } from '@/lib/sales-analytics';
+import { useSalesOverview, useSalesByProduct, useProductRows } from '@/lib/queries/sales-analytics';
+import { useBrands } from '@/lib/queries/brands';
+import { useLocations } from '@/lib/queries/locations';
+import { previousRange, type ProductPeriodRow } from '@/lib/sales-analytics';
 import { OverviewCards } from './analytics/OverviewCards';
 import { BrandPerformance } from './analytics/BrandPerformance';
+import { ProductSalesTable, type ProductTableFilters } from './analytics/ProductSalesTable';
+import { ProductDetailPanel } from './analytics/ProductDetailPanel';
 
 type Tab = 'overview' | 'products' | 'dead-stock';
 
@@ -18,12 +22,24 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
 
 export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
   const [tab, setTab] = useState<Tab>('overview');
+  const [detailProduct, setDetailProduct] = useState<ProductPeriodRow | null>(null);
   const [preset, setPreset] = useState<DatePreset>('month');
   const [range, setRange] = useState<DateRange>(rangeForPreset('month'));
-  const [brandId, setBrandId] = useState<string | null>(null);
+  const [tableFilters, setTableFilters] = useState<ProductTableFilters>({
+    brandId: null, locationId: null, status: 'active',
+  });
+  const brandId = tableFilters.brandId;
+  const setBrandId = (id: string | null) => setTableFilters((f) => ({ ...f, brandId: id }));
 
   const overview = useSalesOverview(range, brandId ? { brandId } : {});
   const products = useSalesByProduct(brandId ? { brandId } : {});
+  const productRows = useProductRows({
+    brandId: tableFilters.brandId ?? undefined,
+    locationId: tableFilters.locationId,
+    status: tableFilters.status,
+  });
+  const { data: brands = [] } = useBrands();
+  const { data: locations = [] } = useLocations();
 
   const prev = previousRange(range);
   const comparisonLabel = `${prev.from} to ${prev.to}`;
@@ -92,11 +108,30 @@ export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
       )}
 
       {tab === 'products' && (
-        <p className="text-sm text-gray-400 py-8 text-center">Product table lands in the next commit.</p>
+        productRows.isLoading ? <Spinner />
+          : productRows.error ? <ErrorBox error={productRows.error} />
+          : (
+            <ProductSalesTable
+              rows={productRows.data ?? []}
+              filters={tableFilters}
+              onFiltersChange={setTableFilters}
+              brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+              locations={locations.map((l) => ({ id: l.location_id, name: l.location_name }))}
+              onSelectProduct={(row) => setDetailProduct(row)}
+            />
+          )
       )}
 
       {tab === 'dead-stock' && (
         <p className="text-sm text-gray-400 py-8 text-center">Dead stock lands in a later commit.</p>
+      )}
+
+      {detailProduct && (
+        <ProductDetailPanel
+          product={detailProduct}
+          canSeeCost={canSeeCost}
+          onClose={() => setDetailProduct(null)}
+        />
       )}
     </div>
   );

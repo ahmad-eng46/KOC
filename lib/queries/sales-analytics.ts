@@ -7,7 +7,7 @@ import type { DateRange } from '@/components/reports/shared';
 import {
   type SalesLine, type ProductPeriodRow,
   toSalesLine, toProductPeriodRow,
-  summarise, byBrand, byCustomer, byLocation, trendSeries, deadStock,
+  summarise, byBrand, byCustomer, byLocation, trendSeries, deadStock, productPeriodsFromLines,
   previousRange, type TrendPeriod,
 } from '@/lib/sales-analytics';
 
@@ -182,5 +182,41 @@ export function useDeadStock(days: number) {
   return {
     ...products,
     data: products.data ? deadStock(products.data, days) : undefined,
+  };
+}
+
+// ───────────────────────────────────────────────
+// 10. Product rows honouring a location filter
+//
+// The rollup view has no location dimension, so a location filter cannot be
+// pushed into it. Rather than disable the filter, the same windows are rebuilt
+// from the lines that survive it, with stock and price merged back in from the
+// rollup — see productPeriodsFromLines.
+// ───────────────────────────────────────────────
+export function useProductRows(filters: ProductFilters & { locationId?: string | null }) {
+  const activeId = useBusinessStore((s) => s.activeId);
+  const base = useSalesByProduct({ brandId: filters.brandId, status: filters.status });
+
+  const scoped = useQuery({
+    queryKey: ['product-rows-by-location', activeId, filters.brandId, filters.locationId, filters.status],
+    enabled: !!activeId && !!filters.locationId && !!base.data,
+    queryFn: async () => {
+      const from = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+      const to = new Date().toISOString().slice(0, 10);
+      const lines = await fetchLines(activeId!, {
+        range: { from, to },
+        brandId: filters.brandId,
+        locationId: filters.locationId!,
+      });
+      return productPeriodsFromLines(lines, base.data ?? []);
+    },
+  });
+
+  if (!filters.locationId) return base;
+  return {
+    ...scoped,
+    isLoading: base.isLoading || scoped.isLoading,
+    error: base.error ?? scoped.error,
+    data: scoped.data,
   };
 }
