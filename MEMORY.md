@@ -138,7 +138,19 @@
 
 ⚠️ **`0052_sales_analytics.sql` is a prerequisite for the analytics page only.** Unlike 0051 it degrades locally: without it the page errors, the rest of the app is fine.
 
-**Migrations pending, in order:** **0051 (user management), then 0052 (sales analytics).** 0046–0050 are all applied (0050 verified live on 2026-08-20). 0051 is the dangerous one — see the warning above.
+**Round 12 — customer categories with quick-create** (session 23)
+- **The table was not new.** `customer_categories` has existed since 0005, `customers.category_id` since the same migration, RLS since 0017, and there is live data in both — the oil business already files customers under Petrol Station / Transport / Retail. So 0053 **ALTERs**: a CREATE TABLE would have failed outright, and dropping to recreate would have taken real customers' categories with it.
+- 0053 adds description, color, sort_order, is_active, deleted_at, the case-insensitive uniqueness index, and a hex CHECK on colour. It also **replaces the SELECT policy to hide soft-deleted rows** — without that, `deleted_at` is decoration and every read still returns them.
+- **The default list is seeded only into businesses that have none.** Seeding it everywhere would sit "Retailer" beside "Retail" and "Petrol Pump" beside "Petrol Station" in the live data, leaving the owner deduplicating by hand.
+- **Neither bug the brief expected was there.** `BrandPicker` already awaits invalidation before selecting, with a comment explaining why; and `createCustomer`/`updateCustomer` already persist `category_id`, because they spread `parsed.data` and the field is in `customerSchema`. Three tests now pin the second so it cannot regress quietly.
+- **A bug the tests did find:** the category update schema was built with `.partial()`, which leaves `.default()` in place — renaming a category would also have reset its sort order to 0 and reactivated a disabled one. Rebuilt field by field with no defaults.
+- `deleteCustomerCategory` detaches customers **first**, soft-deletes second: if the delete then fails, customers are merely uncategorised, which is recoverable — the other order leaves rows pointing at a category no read can see.
+- The duplicate `useCustomerCategories` in `queries/customers.ts` is gone. Two caches for the same data under different keys is exactly how a dropdown goes stale right after a quick-create.
+- List filtering stays **client-side on purpose**: pushing the category into the query would return only matching rows and leave every other chip reading zero. Chips AND with the location filter and search, and live in `?category=` via `router.replace`.
+- Backup gains a Customer Categories sheet plus a Category column on Customers; the Info sheet's count is derived from `worksheets.length` and picked it up by itself.
+- Verified on a throwaway Postgres 16 seeded to the pre-0053 shape: a new business gets the seven defaults, the oil business keeps its three, case-insensitive duplicates and bad colours are refused, both hex forms pass, a soft-deleted name frees itself for reuse, and the file re-runs clean. 269/269 vitest (29 new), tsc + ESLint + `next build` clean.
+
+**Migrations pending, in order:** **0051 (user management), 0052 (sales analytics), 0053 (customer categories).** 0046–0050 are all applied (0050 verified live on 2026-08-20). **0051 is the dangerous one** — see the warning above; 0052 and 0053 only affect their own screens.
 
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked. Exception taken in round 8: a push that would break production waits for its migration.
 
