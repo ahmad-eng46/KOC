@@ -162,13 +162,14 @@ export function UserTable({ currentUserId }: Props) {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Businesses</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Password Set</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Last Login</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-10 text-gray-400 text-sm">No users match.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-sm">No users match.</td></tr>
                 )}
                 {filtered.map((u) => (
                   <tr key={u.id} className={[
@@ -201,7 +202,13 @@ export function UserTable({ currentUserId }: Props) {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge user={u} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge user={u} />
+                        <PendingBadge user={u} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3"><PasswordAge user={u} /></td>
                     <td className="px-4 py-3 text-xs text-gray-500 tabular-nums">
                       {u.last_login_at ? format(parseISO(u.last_login_at), 'dd MMM yyyy HH:mm') : 'Never'}
                     </td>
@@ -237,10 +244,14 @@ export function UserTable({ currentUserId }: Props) {
                       {u.full_name}{u.id === currentUserId && <span className="ml-1.5 text-xs text-blue-600">(you)</span>}
                     </p>
                     <p className="text-xs text-gray-500 truncate font-mono">{u.email}</p>
-                    <div className="flex items-center gap-1.5 mt-1.5">
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                       <RoleBadge role={u.role} />
                       <StatusBadge user={u} />
+                      <PendingBadge user={u} />
                     </div>
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Password set: <PasswordAge user={u} />
+                    </p>
                   </div>
                   <KebabMenu
                     user={u} isSelf={u.id === currentUserId}
@@ -423,7 +434,9 @@ function ResetPasswordModal({
     <Modal title={`Reset password for ${user.full_name}`} onClose={onClose}>
       <div className="space-y-3">
         <p className="text-sm text-gray-600">
-          The user&apos;s existing sessions will be signed out immediately. You&apos;ll see the new password once after success.
+          The user&apos;s existing sessions will be signed out immediately, and they&apos;ll be
+          asked to set their own password the next time they sign in. You&apos;ll see the
+          temporary password once after success.
         </p>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">New password</label>
@@ -651,6 +664,30 @@ function StatusBadge({ user }: { user: UserListRow }) {
     return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Disabled</span>;
   }
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">Active</span>;
+}
+
+function PendingBadge({ user }: { user: UserListRow }) {
+  if (!user.must_change_password || user.deleted_at) return null;
+  return (
+    <span
+      title="Still using the temporary password an admin set"
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700"
+    >
+      Pending
+    </span>
+  );
+}
+
+/** "05 Aug 2026", or the red warning when they have never set their own. */
+function PasswordAge({ user }: { user: UserListRow }) {
+  if (user.password_changed_at) {
+    return (
+      <span className="text-xs text-gray-500 tabular-nums">
+        {format(parseISO(user.password_changed_at), 'dd MMM yyyy')}
+      </span>
+    );
+  }
+  return <span className="text-xs text-red-600">Never changed</span>;
 }
 
 // helper icons re-imported for ResetPasswordModal
