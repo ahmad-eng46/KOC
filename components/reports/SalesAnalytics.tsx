@@ -1,0 +1,123 @@
+'use client';
+
+import { useState } from 'react';
+import { BarChart3, Package, PackageX } from 'lucide-react';
+import { FilterBar, rangeForPreset, type DatePreset, type DateRange } from '@/components/reports/shared';
+import { useSalesOverview, useSalesByProduct } from '@/lib/queries/sales-analytics';
+import { previousRange } from '@/lib/sales-analytics';
+import { OverviewCards } from './analytics/OverviewCards';
+import { BrandPerformance } from './analytics/BrandPerformance';
+
+type Tab = 'overview' | 'products' | 'dead-stock';
+
+const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
+  { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'products', label: 'Products', icon: Package },
+  { id: 'dead-stock', label: 'Dead Stock', icon: PackageX },
+];
+
+export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
+  const [tab, setTab] = useState<Tab>('overview');
+  const [preset, setPreset] = useState<DatePreset>('month');
+  const [range, setRange] = useState<DateRange>(rangeForPreset('month'));
+  const [brandId, setBrandId] = useState<string | null>(null);
+
+  const overview = useSalesOverview(range, brandId ? { brandId } : {});
+  const products = useSalesByProduct(brandId ? { brandId } : {});
+
+  const prev = previousRange(range);
+  const comparisonLabel = `${prev.from} to ${prev.to}`;
+
+  return (
+    <div className="space-y-4">
+      <FilterBar
+        preset={preset}
+        range={range}
+        onPresetChange={setPreset}
+        onRangeChange={setRange}
+      />
+
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={[
+              'inline-flex items-center gap-1.5 h-11 px-4 text-sm font-medium border-b-2 -mb-px whitespace-nowrap',
+              tab === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700',
+            ].join(' ')}
+          >
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {brandId && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Filtered to one brand.</span>
+          <button
+            onClick={() => setBrandId(null)}
+            className="text-xs font-medium text-blue-700 hover:underline"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {tab === 'overview' && (
+        <section className="space-y-4">
+          {overview.isLoading ? (
+            <Spinner />
+          ) : overview.error ? (
+            <ErrorBox error={overview.error} />
+          ) : overview.data ? (
+            <OverviewCards
+              current={overview.data.current}
+              previous={overview.data.previous}
+              comparisonLabel={comparisonLabel}
+              showProfit={canSeeCost}
+            />
+          ) : null}
+
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 mb-2">Brand Performance</h2>
+            <p className="text-xs text-gray-500 mb-2">
+              Fixed windows ending today — independent of the date range above.
+            </p>
+            {products.isLoading ? <Spinner />
+              : products.error ? <ErrorBox error={products.error} />
+              : <BrandPerformance rows={products.data ?? []} onSelectBrand={setBrandId} />}
+          </div>
+        </section>
+      )}
+
+      {tab === 'products' && (
+        <p className="text-sm text-gray-400 py-8 text-center">Product table lands in the next commit.</p>
+      )}
+
+      {tab === 'dead-stock' && (
+        <p className="text-sm text-gray-400 py-8 text-center">Dead stock lands in a later commit.</p>
+      )}
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div className="flex items-center justify-center h-32">
+      <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+    </div>
+  );
+}
+
+function ErrorBox({ error }: { error: unknown }) {
+  const message =
+    typeof (error as { message?: unknown } | null)?.message === 'string'
+      ? (error as { message: string }).message
+      : 'Could not load sales analytics.';
+  return (
+    <div className="rounded-xl bg-red-50 border border-red-200 p-4">
+      <p className="text-sm text-red-700">{message}</p>
+    </div>
+  );
+}
