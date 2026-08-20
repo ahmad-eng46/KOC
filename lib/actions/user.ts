@@ -338,6 +338,17 @@ export async function listUsersWithBusinesses(includeDeleted = false): Promise<
   return { ok: true, data: rows };
 }
 
+export async function getUserById(id: string): Promise<Result<UserListRow>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.ok) return adminCheck;
+
+  const r = await listUsersWithBusinesses(true);
+  if (!r.ok) return r;
+  const found = r.data.find((u) => u.id === id);
+  if (!found) return { ok: false, error: 'User not found.' };
+  return { ok: true, data: found };
+}
+
 // ─────────────────────────────────────────────
 // 7. getUserLoginHistory — best-effort
 //    Tries auth.sessions (service role can read it).

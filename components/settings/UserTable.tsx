@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import {
   Plus, Search, MoreVertical, Pencil, Key, Power, Trash2, RotateCcw,
-  Clock, ScrollText, X as XIcon, Copy, CheckCircle2,
+  Clock, ScrollText, X as XIcon, Copy, CheckCircle2, ShieldCheck,
 } from 'lucide-react';
 import {
   useUsers, useCreateUser, useUpdateUser, useResetUserPassword,
@@ -178,7 +179,9 @@ export function UserTable({ currentUserId }: Props) {
                     u.id === currentUserId ? 'bg-blue-50/30' : '',
                   ].join(' ')}>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{u.full_name}</span>
+                      <Link href={`/settings/users/${u.id}`} className="font-medium text-gray-900 hover:text-blue-700 hover:underline">
+                        {u.full_name}
+                      </Link>
                       {u.id === currentUserId && <span className="ml-1.5 text-xs text-blue-600">(you)</span>}
                       {u.phone && <p className="text-xs text-gray-500">{u.phone}</p>}
                     </td>
@@ -223,6 +226,7 @@ export function UserTable({ currentUserId }: Props) {
                         onRestore={() => restoreMut.mutate(u.id)}
                         onHistory={() => setHistoryTarget(u)}
                         onAudit={() => router.push(`/reports/audit?userId=${u.id}`)}
+                        onPermissions={() => router.push(`/settings/users/${u.id}`)}
                       />
                     </td>
                   </tr>
@@ -241,7 +245,8 @@ export function UserTable({ currentUserId }: Props) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-gray-900 text-sm truncate">
-                      {u.full_name}{u.id === currentUserId && <span className="ml-1.5 text-xs text-blue-600">(you)</span>}
+                      <Link href={`/settings/users/${u.id}`} className="hover:text-blue-700 hover:underline">{u.full_name}</Link>
+                      {u.id === currentUserId && <span className="ml-1.5 text-xs text-blue-600">(you)</span>}
                     </p>
                     <p className="text-xs text-gray-500 truncate font-mono">{u.email}</p>
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -260,6 +265,7 @@ export function UserTable({ currentUserId }: Props) {
                     onDelete={() => setDeleteTarget(u)} onRestore={() => restoreMut.mutate(u.id)}
                     onHistory={() => setHistoryTarget(u)}
                     onAudit={() => router.push(`/reports/audit?userId=${u.id}`)}
+                    onPermissions={() => router.push(`/settings/users/${u.id}`)}
                   />
                 </div>
               </div>
@@ -372,11 +378,12 @@ export function UserTable({ currentUserId }: Props) {
 //    between mousedown and mouseup, so every action's onClick was dead)
 // ─────────────────────────────────────────────
 function KebabMenu({
-  user, isSelf, onEdit, onReset, onToggleActive, onDelete, onRestore, onHistory, onAudit,
+  user, isSelf, onEdit, onReset, onToggleActive, onDelete, onRestore, onHistory, onAudit, onPermissions,
 }: {
   user: UserListRow; isSelf: boolean;
   onEdit: () => void; onReset: () => void; onToggleActive: () => void;
   onDelete: () => void; onRestore: () => void; onHistory: () => void; onAudit: () => void;
+  onPermissions: () => void;
 }) {
   const isDeleted = !!user.deleted_at;
 
@@ -387,6 +394,7 @@ function KebabMenu({
           {!isDeleted && (
             <>
               <DropdownMenuItem icon={Pencil} onClick={onEdit} close={close}>Edit user</DropdownMenuItem>
+              <DropdownMenuItem icon={ShieldCheck} onClick={onPermissions} close={close}>Permissions</DropdownMenuItem>
               <DropdownMenuItem icon={Key} onClick={onReset} close={close}>Reset password</DropdownMenuItem>
               <DropdownMenuItem
                 icon={Power} onClick={onToggleActive} close={close}

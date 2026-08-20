@@ -9,6 +9,7 @@ import {
   softDeleteUser as softDeleteUserAction,
   restoreUser as restoreUserAction,
   getUserLoginHistory,
+  getUserById,
   type UserListRow,
   type LoginHistoryRow,
 } from '@/lib/actions/user';
@@ -19,6 +20,18 @@ export function useUsers(includeDeleted: boolean) {
     queryKey: ['users', includeDeleted],
     queryFn: async () => {
       const r = await listUsersWithBusinesses(includeDeleted);
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    },
+  });
+}
+
+export function useUser(userId: string) {
+  return useQuery<UserListRow>({
+    queryKey: ['user', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const r = await getUserById(userId);
       if (!r.ok) throw new Error(r.error);
       return r.data;
     },
