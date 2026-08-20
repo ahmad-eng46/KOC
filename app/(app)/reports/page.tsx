@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
+import { type Permission } from '@/lib/auth/permissions';
 
 export const metadata = { title: 'Reports — KOC' };
 
@@ -14,7 +15,7 @@ type ReportTile = {
   title: string;
   description: string;
   icon: React.ElementType;
-  permission?: Parameters<typeof can>[1];
+  permission?: Permission;
   adminOnly?: boolean;
 };
 
@@ -37,9 +38,23 @@ export default async function ReportsPage() {
   const session = await getSession();
   const role = session?.role ?? 'viewer';
 
+  // Sequential awaits would be fine here (a handful of tiles), but resolving the
+  // distinct permissions once keeps it to one lookup each.
+  const allowed = new Set(
+    (
+      await Promise.all(
+        [...new Set(TILES.flatMap((t) => (t.permission ? [t.permission] : [])))].map(
+          async (p) => [p, await currentUserCan(p)] as const,
+        ),
+      )
+    )
+      .filter(([, ok]) => ok)
+      .map(([p]) => p),
+  );
+
   const visible = TILES.filter((t) => {
     if (t.adminOnly) return role === 'admin';
-    if (t.permission) return can(role, t.permission);
+    if (t.permission) return allowed.has(t.permission);
     return true;
   });
 

@@ -15,7 +15,7 @@ import { computeInvoiceTotals } from '@/lib/invoice-totals';
 import { formatEnteredQuantity } from '@/lib/pack';
 import { formatPKR } from '@/lib/money';
 import { softDeleteInvoice, markInvoicePaid } from '@/lib/actions/invoice-detail';
-import { can, type Role } from '@/lib/auth/permissions';
+import { type Role } from '@/lib/auth/permissions';
 import { InvoicePDF } from './InvoicePDF';
 
 // react-pdf is heavy and uses browser-only APIs — load only on client.
@@ -24,9 +24,15 @@ const PDFDownloadLink = dynamic(
   { ssr: false, loading: () => <PDFButton label="Loading…" disabled /> },
 );
 
-type Props = { invoiceId: string; role: Role };
+type Props = {
+  invoiceId: string;
+  role: Role;
+  /** Resolved server-side from role + this user's overrides. */
+  canMarkPaid: boolean;
+  canReturn: boolean;
+};
 
-export function InvoiceDetail({ invoiceId, role }: Props) {
+export function InvoiceDetail({ invoiceId, role, canMarkPaid: mayMarkPaid, canReturn }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
@@ -67,8 +73,7 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
   const totals = computeInvoiceTotals(invoice);
   const balance = invoice.total_paisa - invoice.paid_paisa;
   const canDelete = role === 'admin';
-  const canMarkPaid = can(role, 'payments.create') && balance > 0 && invoice.status !== 'cancelled';
-  const canReturn = can(role, 'returns.create');
+  const canMarkPaid = mayMarkPaid && balance > 0 && invoice.status !== 'cancelled';
 
   const finalLabel = totals.isCreditBalance
     ? 'Credit Balance'

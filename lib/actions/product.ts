@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
-import { can, type Role } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { productSchema, type ProductInput } from '@/lib/validators/product';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
@@ -24,8 +24,8 @@ function normalisePack(data: ProductInput): ProductInput {
 }
 
 export async function createProduct(input: ProductInput): Promise<ActionResult> {
-  const { profile } = await requireAuth();
-  if (!can(profile.role as Role, 'products.create')) {
+  await requireAuth();
+  if (!(await currentUserCan('products.create'))) {
     throw new Error('Permission denied: products.create');
   }
 
@@ -52,8 +52,8 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
 }
 
 export async function updateProduct(id: string, input: ProductInput): Promise<ActionResult> {
-  const { profile } = await requireAuth();
-  if (!can(profile.role as Role, 'products.update')) {
+  await requireAuth();
+  if (!(await currentUserCan('products.update'))) {
     throw new Error('Permission denied: products.update');
   }
 

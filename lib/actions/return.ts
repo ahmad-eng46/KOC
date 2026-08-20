@@ -3,14 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { returnCreateSchema, type ReturnCreateInput } from '@/lib/validators/return';
 
 type CreateReturnResult = { ok: true; id: string } | { ok: false; error: string };
 
 export async function createReturn(input: ReturnCreateInput): Promise<CreateReturnResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'returns.create')) {
+  if (!session || !(await currentUserCan('returns.create'))) {
     return { ok: false, error: 'Only admin or accountant can process returns.' };
   }
 

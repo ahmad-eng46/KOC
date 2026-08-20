@@ -1,14 +1,12 @@
 import { requireRole } from '@/lib/auth/guards';
-import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { InvoiceTable } from '@/components/invoices/InvoiceTable';
 
 export const metadata = { title: 'Invoices — KOC' };
 
 export default async function InvoicesPage() {
   await requireRole('admin', 'accountant', 'staff', 'viewer');
-  const session = await getSession();
-  const canReturn = can(session?.role ?? 'viewer', 'returns.create');
+  const canReturn = await currentUserCan('returns.create');
 
   return (
     <div className="p-4 md:p-6 space-y-4">

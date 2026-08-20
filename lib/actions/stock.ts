@@ -4,14 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { stockMovementSchema, type StockMovementInput } from '@/lib/validators/stock';
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 export async function addStockMovement(input: StockMovementInput): Promise<ActionResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'stock.update')) {
+  if (!session || !(await currentUserCan('stock.update'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 

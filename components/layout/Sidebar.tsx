@@ -8,13 +8,13 @@ import {
   FileText, CreditCard, Receipt, TrendingUp,
   Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, X,
 } from 'lucide-react';
-import { can, type Role } from '@/lib/auth/permissions';
+import { can, type Permission, type Role } from '@/lib/auth/permissions';
 
 type NavItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  permission?: Parameters<typeof can>[1];
+  permission?: Permission;
   adminOnly?: boolean;
   /** Show only for these roles; checked before `permission`. */
   roles?: Role[];
@@ -41,17 +41,26 @@ const NAV_ITEMS: NavItem[] = [
 
 type Props = {
   role: Role;
+  /**
+   * The user's effective permissions — role defaults with their overrides
+   * applied, resolved on the server. Absent means "role only", which is what
+   * `can()` answers.
+   */
+  permissions?: Permission[];
   open: boolean;
   onClose: () => void;
 };
 
-export function Sidebar({ role, open, onClose }: Props) {
+export function Sidebar({ role, permissions, open, onClose }: Props) {
   const pathname = usePathname();
+
+  const effective = permissions ? new Set<Permission>(permissions) : null;
+  const allows = (p: Permission) => (effective ? effective.has(p) : can(role, p));
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly) return role === 'admin';
     if (item.roles) return item.roles.includes(role);
-    if (item.permission) return can(role, item.permission);
+    if (item.permission) return allows(item.permission);
     return true;
   });
 

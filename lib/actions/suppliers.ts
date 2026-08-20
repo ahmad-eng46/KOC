@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import {
   supplierSchema,
   stockPurchaseSchema,
@@ -24,7 +24,7 @@ type SimpleResult = { ok: true } | { ok: false; error: string };
 
 export async function createSupplier(input: SupplierInput): Promise<NamedCreateResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'suppliers.create')) {
+  if (!session || !(await currentUserCan('suppliers.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 
@@ -61,7 +61,7 @@ export async function updateSupplier(
   input: SupplierInput,
 ): Promise<NamedCreateResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'suppliers.update')) {
+  if (!session || !(await currentUserCan('suppliers.update'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 
@@ -149,7 +149,7 @@ export async function createStockPurchase(
   input: StockPurchaseInput,
 ): Promise<CreateResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'purchases.create')) {
+  if (!session || !(await currentUserCan('purchases.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 
@@ -195,7 +195,7 @@ export async function createSupplierPayment(
   input: SupplierPaymentInput,
 ): Promise<CreateResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'supplier_payments.create')) {
+  if (!session || !(await currentUserCan('supplier_payments.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { invoiceCreateSchema, type InvoiceCreateInput } from '@/lib/validators/invoice';
 import { computeInvoiceTotals } from '@/lib/invoice';
 import { findStockShortages, formatShortageError } from '@/lib/stock';
@@ -16,7 +16,7 @@ export type CreateInvoiceResult =
 export async function createInvoice(input: InvoiceCreateInput): Promise<CreateInvoiceResult> {
   // 1. Auth
   const session = await getSession();
-  if (!session || !can(session.role, 'invoices.create')) {
+  if (!session || !(await currentUserCan('invoices.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 

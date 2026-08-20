@@ -1,6 +1,6 @@
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { StockList } from '@/components/stock/StockList';
 
 export const metadata = { title: 'Stock — KOC' };
@@ -8,10 +8,12 @@ export const metadata = { title: 'Stock — KOC' };
 export default async function StockPage() {
   await requireRole('admin', 'accountant', 'staff');
   const session = await getSession();
-  const canUpdate = session ? can(session.role, 'stock.update') : false;
   const canAdjust = session?.role === 'admin';
-  const canPurchase = session ? can(session.role, 'purchases.create') : false;
-  const canCreateSupplier = session ? can(session.role, 'suppliers.create') : false;
+  const [canUpdate, canPurchase, canCreateSupplier] = await Promise.all([
+    currentUserCan('stock.update'),
+    currentUserCan('purchases.create'),
+    currentUserCan('suppliers.create'),
+  ]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">

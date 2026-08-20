@@ -2,8 +2,8 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
-import { can } from '@/lib/auth/permissions';
 import { getSession } from '@/lib/auth/session';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { ProductForm } from '@/components/products/ProductForm';
@@ -28,8 +28,10 @@ export default async function ProductDetailPage({ params }: Props) {
 
   const canSeePurchasePrice =
     session?.role === 'admin' || session?.role === 'accountant';
-  const canPurchase = session ? can(session.role, 'purchases.create') : false;
-  const canCreateSupplier = session ? can(session.role, 'suppliers.create') : false;
+  const [canPurchase, canCreateSupplier] = await Promise.all([
+    currentUserCan('purchases.create'),
+    currentUserCan('suppliers.create'),
+  ]);
 
   const supabase = await createServerClient();
   const { data, error } = await supabase

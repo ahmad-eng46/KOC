@@ -8,15 +8,17 @@ import { BusinessProvider } from '@/components/providers/BusinessProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { type SessionUser } from '@/lib/auth/session';
 import { type Business } from '@/lib/business-shared';
+import { type Permission } from '@/lib/auth/permissions';
 
 type Props = {
   session: SessionUser;
   businesses: Business[];
   activeId: string;
+  permissions: Permission[];
   children: React.ReactNode;
 };
 
-export function AppShell({ session, businesses, activeId, children }: Props) {
+export function AppShell({ session, businesses, activeId, permissions, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -26,6 +28,7 @@ export function AppShell({ session, businesses, activeId, children }: Props) {
         <div className="flex h-full min-h-screen bg-gray-50">
           <Sidebar
             role={session.role}
+            permissions={permissions}
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
           />

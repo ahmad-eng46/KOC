@@ -1,6 +1,6 @@
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { SupplierTable } from '@/components/suppliers/SupplierTable';
 
 export const metadata = { title: 'Suppliers — KOC' };
@@ -10,7 +10,7 @@ export default async function SuppliersPage() {
   const session = await getSession();
   const role = session?.role;
 
-  const canCreate = role ? can(role, 'suppliers.create') : false;
+  const canCreate = await currentUserCan('suppliers.create');
   const canDelete = role === 'admin';
   const canSeeMoney = role === 'admin' || role === 'accountant';
 

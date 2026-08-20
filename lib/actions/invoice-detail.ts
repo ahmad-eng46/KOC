@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -67,7 +67,7 @@ export async function softDeleteInvoice(
  */
 export async function markInvoicePaid(id: string): Promise<ActionResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'payments.create')) {
+  if (!session || !(await currentUserCan('payments.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 

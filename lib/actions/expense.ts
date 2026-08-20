@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { expenseCreateSchema, type ExpenseCreateInput } from '@/lib/validators/expense';
 
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
@@ -12,7 +12,7 @@ type SimpleResult = { ok: true } | { ok: false; error: string };
 
 export async function createExpense(input: ExpenseCreateInput): Promise<CreateResult> {
   const session = await getSession();
-  if (!session || !can(session.role, 'expenses.create')) {
+  if (!session || !(await currentUserCan('expenses.create'))) {
     return { ok: false, error: 'Insufficient permissions.' };
   }
 

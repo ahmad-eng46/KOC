@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
-import { can } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { SupplierDetailView } from '@/components/suppliers/SupplierDetailView';
@@ -36,9 +36,11 @@ export default async function SupplierDetailPage({ params }: Props) {
   const supplier = data as Supplier;
 
   const role = session?.role;
-  const canEdit = role ? can(role, 'suppliers.update') : false;
-  const canCreatePurchase = role ? can(role, 'purchases.create') : false;
-  const canCreatePayment = role ? can(role, 'supplier_payments.create') : false;
+  const [canEdit, canCreatePurchase, canCreatePayment] = await Promise.all([
+    currentUserCan('suppliers.update'),
+    currentUserCan('purchases.create'),
+    currentUserCan('supplier_payments.create'),
+  ]);
   const canSeeMoney = role === 'admin' || role === 'accountant';
 
   return (

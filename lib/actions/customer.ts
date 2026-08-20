@@ -4,14 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
-import { can, type Role } from '@/lib/auth/permissions';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
 export async function createCustomer(input: CustomerInput): Promise<ActionResult> {
-  const { profile } = await requireAuth();
-  if (!can(profile.role as Role, 'customers.create')) {
+  await requireAuth();
+  if (!(await currentUserCan('customers.create'))) {
     throw new Error('Permission denied: customers.create');
   }
 
@@ -40,8 +40,8 @@ export async function updateCustomer(
   id: string,
   input: CustomerInput,
 ): Promise<ActionResult> {
-  const { profile } = await requireAuth();
-  if (!can(profile.role as Role, 'customers.update')) {
+  await requireAuth();
+  if (!(await currentUserCan('customers.update'))) {
     throw new Error('Permission denied: customers.update');
   }
 
