@@ -12,6 +12,7 @@ import { BrandPerformance } from './analytics/BrandPerformance';
 import { ProductSalesTable, type ProductTableFilters } from './analytics/ProductSalesTable';
 import { ProductDetailPanel } from './analytics/ProductDetailPanel';
 import { SalesCharts } from './analytics/SalesCharts';
+import { DeadStockTable } from './analytics/DeadStockTable';
 
 type Tab = 'overview' | 'products' | 'dead-stock';
 
@@ -127,9 +128,7 @@ export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
           )
       )}
 
-      {tab === 'dead-stock' && (
-        <p className="text-sm text-gray-400 py-8 text-center">Dead stock lands in a later commit.</p>
-      )}
+      {tab === 'dead-stock' && <DeadStockTable canSeeCost={canSeeCost} />}
 
       {detailProduct && (
         <ProductDetailPanel
