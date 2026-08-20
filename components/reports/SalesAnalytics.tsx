@@ -11,6 +11,7 @@ import { OverviewCards } from './analytics/OverviewCards';
 import { BrandPerformance } from './analytics/BrandPerformance';
 import { ProductSalesTable, type ProductTableFilters } from './analytics/ProductSalesTable';
 import { ProductDetailPanel } from './analytics/ProductDetailPanel';
+import { SalesCharts } from './analytics/SalesCharts';
 
 type Tab = 'overview' | 'products' | 'dead-stock';
 
@@ -104,6 +105,10 @@ export function SalesAnalytics({ canSeeCost }: { canSeeCost: boolean }) {
               : products.error ? <ErrorBox error={products.error} />
               : <BrandPerformance rows={products.data ?? []} onSelectBrand={setBrandId} />}
           </div>
+
+          {overview.data && (
+            <SalesCharts lines={overview.data.lines} onSelectBrand={setBrandId} />
+          )}
         </section>
       )}
 
