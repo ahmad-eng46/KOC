@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   TrendingUp, ShoppingCart, Users, Wallet, BarChart3,
-  AlertTriangle, Package, BookOpen, ScrollText, MapPin, Receipt,
+  AlertTriangle, Package, BookOpen, ScrollText, MapPin, Receipt, PieChart,
 } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
@@ -21,6 +21,7 @@ type ReportTile = {
 
 const TILES: ReportTile[] = [
   { href: '/reports/sales', title: 'Sales', description: 'Invoices by day, top customers', icon: TrendingUp, permission: 'reports.view_basic' },
+  { href: '/reports/sales-analytics', title: 'Sales Analytics', description: 'Per brand and per product, with trends and dead stock', icon: PieChart, permission: 'reports.view' },
   { href: '/reports/purchase', title: 'Purchase', description: 'Stock-in movements with cost', icon: ShoppingCart, permission: 'reports.view' },
   { href: '/reports/customer', title: 'Customer', description: 'Per-customer invoiced / paid / balance', icon: Users, permission: 'reports.view_basic' },
   { href: '/reports/balance', title: 'Receivables', description: 'Customers with balance > 0, aging buckets', icon: Wallet, permission: 'reports.view_basic' },

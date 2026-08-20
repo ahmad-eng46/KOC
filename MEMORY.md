@@ -125,7 +125,20 @@
 
 ⚠️ **`0051_user_management.sql` is a hard prerequisite and is NOT yet applied.** `getSession()` selects `must_change_password`, so until 0051 runs, that select 400s, `getSession()` returns null and **every user is bounced to /login — a total outage**. The round-10 commits are therefore **held unpushed**; `main` auto-deploys. Push only once 0051 is confirmed applied.
 
-**Migrations pending, in order:** **0051 (user management) — the only one unapplied.** 0046–0050 are all applied (0050 verified live on 2026-08-20).
+**Round 11 — sales analytics per brand and per product** (session 23)
+- Two read-only views, no table touched. `sales_analytics_view` is one row per invoice line; `product_sales_periods_view` rolls it up per product over 7/15/30/90/180/365-day and all-time windows, plus the previous 30 days so **trend is a fact the database states** rather than something the UI derives twice.
+- **Four things the brief's draft SQL assumed that the schema does not have:** `invoice_items` has no `deleted_at` (lines die with their invoice); the cost snapshot is `purchase_price_at_sale_paisa`, which is the only honest profit basis — today's cost would rewrite the margin on every historical line; `cancelled` is excluded alongside `draft`, matching `lib/queries/reports.ts`, because two sales reports disagreeing is worse than either choice; and **returns are netted per line** via `return_items.invoice_item_id`, which the draft ignored.
+- The rollup is `products LEFT JOIN` the lines, so a **never-sold product still appears** — that is exactly what dead stock reads.
+- **The location filter needed a real decision.** The rollup has no location dimension, so the filter cannot be pushed into it. Rather than grey the control out, `productPeriodsFromLines()` rebuilds the same windows from the lines that survive the filter and merges stock and price back from the rollup. 7 tests pin its boundaries to the SQL's, including that a sale exactly 30 days old belongs to the *previous* window.
+- `lib/sales-analytics.ts` holds every figure the page, the PDF and the Excel all use, so the three cannot disagree. **Profit is `null`, never 0, when cost is invisible** — zero reads as "no margin" instead of "not your business". `percentChange` refuses a zero baseline; growth from nothing is a new thing happening, not infinite percent.
+- Dead stock sorts by **money standing still**, not by how long — the question is how much is tied up.
+- **Iron rule #3 end to end:** both views NULL cost via `user_role()`, and the UI/PDF/Excel omit those columns entirely rather than blanking them.
+- Verified on a throwaway Postgres 16 with real numbers: discount shares 80,000+20,000 add back to the 100,000 invoice discount; a 1-of-4 return nets 4 units to 3 and Rs. 7,200 to Rs. 5,200; draft/cancelled/soft-deleted invoices never appear; staff sees NULL cost; a never-sold product with 138 in stock shows zeros. Plus a rendered 3-page PDF and a re-opened 5-sheet workbook (money as rupees with `#,##0.00`, green/red on rise/fall). 247/247 vitest (53 new), tsc + `next build` clean.
+- **Pre-existing, untouched:** `lib/auth/guards.ts` redirects to `/unauthorized`, which does not exist — every `requireRole` rejection 404s. The real route is `/no-access`, which the new page uses. Worth a one-line fix, but it changes behaviour for every guarded page, so it was not slipped in here.
+
+⚠️ **`0052_sales_analytics.sql` is a prerequisite for the analytics page only.** Unlike 0051 it degrades locally: without it the page errors, the rest of the app is fine.
+
+**Migrations pending, in order:** **0051 (user management), then 0052 (sales analytics).** 0046–0050 are all applied (0050 verified live on 2026-08-20). 0051 is the dangerous one — see the warning above.
 
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked. Exception taken in round 8: a push that would break production waits for its migration.
 

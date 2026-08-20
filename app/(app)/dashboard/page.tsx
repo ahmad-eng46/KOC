@@ -6,6 +6,8 @@ import { formatPKR } from '@/lib/money';
 import { formatKarachi } from '@/lib/date';
 import { getSession } from '@/lib/auth/session';
 import { RecentActivityWidget } from '@/components/settings/RecentActivityWidget';
+import { SalesThisMonthCard } from '@/components/reports/analytics/SalesThisMonthCard';
+import { currentUserCan } from '@/lib/auth/can-user';
 
 export const metadata = { title: 'Dashboard — KOC' };
 
@@ -23,6 +25,7 @@ export default async function DashboardPage() {
   await requireAuth();
   const [data, session] = await Promise.all([fetchDashboardData(), getSession()]);
   const canSeeActivity = session?.role === 'admin' || session?.role === 'accountant';
+  const canSeeAnalytics = await currentUserCan('reports.view');
 
   const cards = [
     {
@@ -183,6 +186,8 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
+
+      {canSeeAnalytics && <SalesThisMonthCard />}
 
       {canSeeActivity && <RecentActivityWidget />}
     </div>
