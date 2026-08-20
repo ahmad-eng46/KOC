@@ -65,6 +65,30 @@ export function addBrandsSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   });
 }
 
+export function addCustomerCategoriesSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
+  const customerCount = (id: string) => d.customers.filter((c) => c.category_id === id).length;
+  // The owner's own order, as the app shows it — not alphabetical.
+  const rows = [...d.customerCategories].sort(
+    (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+  );
+
+  addSheet(wb, {
+    name: 'Customer Categories',
+    tab: TAB.reference,
+    businessName: d.businessName,
+    rows,
+    emptyNote: 'No customer categories yet.',
+    columns: [
+      { header: '#', kind: 'int', value: (_c, i) => i + 1, width: 6 },
+      { header: 'Category', value: (c) => c.name },
+      { header: 'Description', value: (c) => c.description ?? DASH, width: 32 },
+      { header: 'Colour', value: (c) => c.color ?? DASH },
+      { header: 'Customers', kind: 'int', value: (c) => customerCount(c.id) },
+      { header: 'Shown in dropdown', value: (c) => (c.is_active ? 'Yes' : 'No') },
+    ],
+  });
+}
+
 export function addUsersSheet(wb: ExcelJS.Workbook, d: BackupDataset): void {
   const rows = [...d.users].sort((a, b) => (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email));
 

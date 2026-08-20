@@ -32,6 +32,10 @@ export function addCustomersSheet(wb: ExcelJS.Workbook, d: BackupDataset): void 
       { header: 'Name', value: (c) => c.name },
       { header: 'Phone', value: (c) => c.phone ?? DASH },
       { header: 'Location', value: (c) => (c.location_id ? d.locationName.get(c.location_id) ?? DASH : DASH) },
+      {
+        header: 'Category',
+        value: (c) => (c.category_id ? d.customerCategoryName.get(c.category_id) ?? DASH : DASH),
+      },
       { header: 'Total Sales', kind: 'money', total: true, value: (c) => stat(c).sales },
       { header: 'Total Paid', kind: 'money', total: true, value: (c) => stat(c).paid },
       { header: 'Returns', kind: 'money', total: true, value: (c) => stat(c).returned },

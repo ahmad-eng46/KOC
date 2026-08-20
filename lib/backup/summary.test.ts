@@ -93,7 +93,7 @@ describe('buildSummary', () => {
 
   it('counts only positive balances as receivables', () => {
     const customers: CustomerRow[] = ['c1', 'c2', 'c3'].map((id) => ({
-      id, name: id, phone: null, address: null, location_id: null,
+      id, name: id, phone: null, address: null, location_id: null, category_id: null,
       opening_balance_paisa: 0, credit_limit_paisa: null,
       is_defaulter: false, is_active: true,
     }));

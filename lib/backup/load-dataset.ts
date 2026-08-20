@@ -3,7 +3,7 @@ import type { BackupSection, ResolvedRange } from '@/lib/backup/options';
 import {
   bool, nnum, nstr, num, str,
   computeCustomerStats, computeStock, computeSupplierStats,
-  type AuditRow, type BackupDataset, type BrandRow, type CustomerRow,
+  type AuditRow, type BackupDataset, type BrandRow, type CustomerCategoryRow, type CustomerRow,
   type ExpenseAssetRow, type ExpenseRow, type InvoiceItemRow, type InvoiceRow,
   type LedgerRow, type LocationRow, type PaymentRow, type ProductRow,
   type ReturnItemRow, type ReturnRow, type StockMovementRow,
@@ -121,13 +121,18 @@ export async function loadBackupDataset(input: {
   // Entity tables are never date-filtered: a balance is an all-time number,
   // and a product list narrowed to one month is not a product list.
   const [
-    rawLocations, rawBrands, rawCustomers, rawProducts, rawSuppliers,
+    rawLocations, rawBrands, rawCategories, rawCustomers, rawProducts, rawSuppliers,
   ] = await Promise.all([
     fetchPaged('locations', 'id, name, short_code', live, 'name'),
     fetchPaged('brands', 'id, name, brand_type, contact_person, phone', live, 'name'),
     fetchPaged(
+      'customer_categories',
+      'id, name, description, color, sort_order, is_active',
+      live, 'sort_order',
+    ),
+    fetchPaged(
       'customers',
-      'id, name, phone, address, location_id, opening_balance_paisa, credit_limit_paisa, is_defaulter, is_active',
+      'id, name, phone, address, location_id, category_id, opening_balance_paisa, credit_limit_paisa, is_defaulter, is_active',
       live, 'name',
     ),
     fetchPaged(
@@ -239,9 +244,13 @@ export async function loadBackupDataset(input: {
     id: str(r.id), name: str(r.name), brand_type: str(r.brand_type),
     contact_person: nstr(r.contact_person), phone: nstr(r.phone),
   }));
+  const customerCategories: CustomerCategoryRow[] = rawCategories.map((r) => ({
+    id: str(r.id), name: str(r.name), description: nstr(r.description),
+    color: nstr(r.color), sort_order: num(r.sort_order), is_active: bool(r.is_active),
+  }));
   const customers: CustomerRow[] = rawCustomers.map((r) => ({
     id: str(r.id), name: str(r.name), phone: nstr(r.phone), address: nstr(r.address),
-    location_id: nstr(r.location_id),
+    location_id: nstr(r.location_id), category_id: nstr(r.category_id),
     opening_balance_paisa: num(r.opening_balance_paisa),
     credit_limit_paisa: nnum(r.credit_limit_paisa),
     is_defaulter: bool(r.is_defaulter), is_active: bool(r.is_active),
@@ -330,12 +339,13 @@ export async function loadBackupDataset(input: {
     range,
     showCost: input.showCost,
     sections,
-    locations, brands, customers, products, invoices, invoiceItems,
+    locations, brands, customerCategories, customers, products, invoices, invoiceItems,
     returns, returnItems, payments, expenses, expenseAssets, suppliers,
     stockPurchases, supplierPayments, stockMovements, ledger,
     users: rawUsers, auditLog,
 
     locationName: indexBy(locations, (l) => l.id, (l) => l.name),
+    customerCategoryName: indexBy(customerCategories, (c) => c.id, (c) => c.name),
     brandName: indexBy(brands, (b) => b.id, (b) => b.name),
     customerName: indexBy(customers, (c) => c.id, (c) => c.name),
     productById: new Map(products.map((p) => [p.id, p])),

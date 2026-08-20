@@ -29,7 +29,7 @@ import {
 } from '@/lib/backup/sheets/purchase-sheets';
 import { addExpenseSummarySheet, addExpensesSheet } from '@/lib/backup/sheets/expense-sheets';
 import {
-  addAuditSheet, addBrandsSheet, addLocationsSheet, addUsersSheet,
+  addAuditSheet, addBrandsSheet, addCustomerCategoriesSheet, addLocationsSheet, addUsersSheet,
 } from '@/lib/backup/sheets/reference-sheets';
 
 export type GeneratedBackup = {
@@ -134,6 +134,7 @@ function addSheets(wb: ExcelJS.Workbook, data: BackupDataset, generatedAt: Date)
   // Reference sheets are small and make the rest readable, so they are never
   // optional.
   addLocationsSheet(wb, data);
+  addCustomerCategoriesSheet(wb, data);
   addBrandsSheet(wb, data);
   addUsersSheet(wb, data);
 

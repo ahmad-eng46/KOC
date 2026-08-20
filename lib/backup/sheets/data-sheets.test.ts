@@ -3,10 +3,12 @@ import ExcelJS from 'exceljs';
 import type { BackupDataset } from '@/lib/backup/dataset';
 import { addCustomersSheet, addInvoicesSheet } from '@/lib/backup/sheets/sales-sheets';
 import { addProductsSheet } from '@/lib/backup/sheets/inventory-sheets';
+import { addCustomerCategoriesSheet } from '@/lib/backup/sheets/reference-sheets';
 
 const CUSTOMER_ID = 'aaaaaaaa-1111-2222-3333-444444444444';
 const LOCATION_ID = 'bbbbbbbb-1111-2222-3333-444444444444';
 const BRAND_ID = 'cccccccc-1111-2222-3333-444444444444';
+const CATEGORY_ID = 'eeeeeeee-1111-2222-3333-444444444444';
 const PRODUCT_ID = 'dddddddd-1111-2222-3333-444444444444';
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -18,9 +20,13 @@ function dataset(over: Partial<BackupDataset> = {}): BackupDataset {
     sections: new Set(['customers', 'products', 'invoices']),
     locations: [{ id: LOCATION_ID, name: 'Lahore', short_code: 'LHR' }],
     brands: [{ id: BRAND_ID, name: 'Shell', brand_type: 'multinational', contact_person: null, phone: null }],
+    customerCategories: [{
+      id: CATEGORY_ID, name: 'Retailer', description: null, color: '#FF5733',
+      sort_order: 1, is_active: true,
+    }],
     customers: [{
       id: CUSTOMER_ID, name: 'Al-Noor Traders', phone: '0300-1234567', address: null,
-      location_id: LOCATION_ID, opening_balance_paisa: 0, credit_limit_paisa: null,
+      location_id: LOCATION_ID, category_id: CATEGORY_ID, opening_balance_paisa: 0, credit_limit_paisa: null,
       is_defaulter: false, is_active: true,
     }],
     products: [{
@@ -37,6 +43,7 @@ function dataset(over: Partial<BackupDataset> = {}): BackupDataset {
     expenseAssets: [], suppliers: [], stockPurchases: [], supplierPayments: [],
     stockMovements: [], ledger: [], users: [], auditLog: [],
     locationName: new Map([[LOCATION_ID, 'Lahore']]),
+    customerCategoryName: new Map([[CATEGORY_ID, 'Retailer']]),
     brandName: new Map([[BRAND_ID, 'Shell']]),
     customerName: new Map([[CUSTOMER_ID, 'Al-Noor Traders']]),
     productById: new Map(),
@@ -76,30 +83,43 @@ describe('Customers sheet', () => {
 
   it('uses business columns, not database columns', () => {
     expect(headers(ws)).toEqual([
-      '#', 'Name', 'Phone', 'Location', 'Total Sales', 'Total Paid', 'Returns', 'Balance', 'Status',
+      '#', 'Name', 'Phone', 'Location', 'Category',
+      'Total Sales', 'Total Paid', 'Returns', 'Balance', 'Status',
     ]);
   });
 
-  it('prints the location name and never a UUID', () => {
+  it('prints the location and category names, never a UUID', () => {
     expect(ws.getCell('D2').value).toBe('Lahore');
+    expect(ws.getCell('E2').value).toBe('Retailer');
     expect(allText(ws)).not.toMatch(UUID);
   });
 
   it('writes money as rupees a formula can sum, grouped the Pakistani way', () => {
-    const balance = ws.getCell('H2');
+    const balance = ws.getCell('I2');
     expect(balance.value).toBe(1_00_000); // Rs. 1,00,000.00, from 1_00_000_00 paisa
     expect(balance.numFmt).toContain('#\\,##\\,##0.00');
   });
 
   it('colours a debt red and flags the status', () => {
-    expect(ws.getCell('I2').value).toBe('Owes');
-    const fill = ws.getCell('H2').fill;
+    expect(ws.getCell('J2').value).toBe('Owes');
+    const fill = ws.getCell('I2').fill;
     expect(fill.type === 'pattern' && fill.fgColor?.argb).toBe('FFFCE4E4');
   });
 
   it('carries a totals row', () => {
     expect(ws.getCell('A3').value).toBe('TOTAL');
-    expect(ws.getCell('E3').value).toBe(1_50_000);
+    expect(ws.getCell('F3').value).toBe(1_50_000);
+  });
+
+  it('says so plainly when a customer has no category', () => {
+    const ws2 = sheet(addCustomersSheet, dataset({
+      customers: [{
+        id: CUSTOMER_ID, name: 'Unfiled', phone: null, address: null,
+        location_id: null, category_id: null, opening_balance_paisa: 0,
+        credit_limit_paisa: null, is_defaulter: false, is_active: true,
+      }],
+    }));
+    expect(ws2.getCell('E2').value).toBe('—');
   });
 });
 
@@ -128,5 +148,41 @@ describe('Invoices sheet', () => {
     expect(ws.getCell('C2').numFmt).toBe('dd mmm yyyy');
     expect(ws.getCell('J2').value).toBe(1_00_000);
     expect(ws.getCell('K2').value).toBe('Partially Paid');
+  });
+});
+
+describe('Customer Categories sheet', () => {
+  it('names the category, counts its customers, and prints no UUID', () => {
+    const ws = sheet(addCustomerCategoriesSheet, dataset());
+    expect(headers(ws)).toEqual([
+      '#', 'Category', 'Description', 'Colour', 'Customers', 'Shown in dropdown',
+    ]);
+    expect(ws.getCell('B2').value).toBe('Retailer');
+    expect(ws.getCell('E2').value).toBe(1);
+    expect(allText(ws)).not.toMatch(UUID);
+  });
+
+  it('lists categories in the owner order, not alphabetically', () => {
+    const ws = sheet(addCustomerCategoriesSheet, dataset({
+      customerCategories: [
+        { id: 'c-a', name: 'Zebra', description: null, color: null, sort_order: 1, is_active: true },
+        { id: 'c-b', name: 'Apple', description: null, color: null, sort_order: 2, is_active: true },
+      ],
+    }));
+    expect([ws.getCell('B2').value, ws.getCell('B3').value]).toEqual(['Zebra', 'Apple']);
+  });
+
+  it('says which categories are hidden from the dropdown', () => {
+    const ws = sheet(addCustomerCategoriesSheet, dataset({
+      customerCategories: [
+        { id: 'c-a', name: 'Retired', description: null, color: null, sort_order: 1, is_active: false },
+      ],
+    }));
+    expect(ws.getCell('F2').value).toBe('No');
+  });
+
+  it('counts zero for a category nobody is filed under', () => {
+    const ws = sheet(addCustomerCategoriesSheet, dataset({ customers: [] }));
+    expect(ws.getCell('E2').value).toBe(0);
   });
 });

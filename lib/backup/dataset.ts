@@ -41,9 +41,13 @@ export type BrandRow = {
   id: string; name: string; brand_type: string;
   contact_person: string | null; phone: string | null;
 };
+export type CustomerCategoryRow = {
+  id: string; name: string; description: string | null; color: string | null;
+  sort_order: number; is_active: boolean;
+};
 export type CustomerRow = {
   id: string; name: string; phone: string | null; address: string | null;
-  location_id: string | null; opening_balance_paisa: number;
+  location_id: string | null; category_id: string | null; opening_balance_paisa: number;
   credit_limit_paisa: number | null; is_defaulter: boolean; is_active: boolean;
 };
 export type ProductRow = {
@@ -135,6 +139,7 @@ export type BackupDataset = {
 
   locations: LocationRow[];
   brands: BrandRow[];
+  customerCategories: CustomerCategoryRow[];
   customers: CustomerRow[];
   products: ProductRow[];
   invoices: InvoiceRow[];
@@ -155,6 +160,7 @@ export type BackupDataset = {
   /** Name lookups, so no sheet ever prints a UUID in a business column. */
   locationName: Map<string, string>;
   brandName: Map<string, string>;
+  customerCategoryName: Map<string, string>;
   customerName: Map<string, string>;
   productById: Map<string, ProductRow>;
   supplierName: Map<string, string>;
