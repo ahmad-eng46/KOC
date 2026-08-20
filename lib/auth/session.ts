@@ -7,6 +7,8 @@ export type SessionUser = {
   full_name: string;
   role: Role;
   is_active: boolean;
+  must_change_password: boolean;
+  password_changed_at: string | null;
 };
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -16,7 +18,7 @@ export async function getSession(): Promise<SessionUser | null> {
 
   const { data } = await supabase
     .from('users')
-    .select('id, email, full_name, role, is_active')
+    .select('id, email, full_name, role, is_active, must_change_password, password_changed_at')
     .eq('id', user.id)
     .single();
 

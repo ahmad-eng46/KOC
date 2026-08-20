@@ -27,8 +27,10 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isAppRoute = request.nextUrl.pathname.startsWith('/');
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login');
+  const path = request.nextUrl.pathname;
+  const isAppRoute = path.startsWith('/');
+  const isAuthRoute = path.startsWith('/login');
+  const isChangePassword = path.startsWith('/change-password');
 
   if (!user && isAppRoute && !isAuthRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
@@ -38,5 +40,26 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
+  // A user still on the temporary password their admin set goes nowhere but
+  // /change-password. Checked here rather than in a layout so no route — page,
+  // server action target or API handler — can be reached around it.
+  if (user && !isChangePassword && !isServerAsset(path)) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('must_change_password')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.must_change_password) {
+      return NextResponse.redirect(new URL('/change-password', request.url));
+    }
+  }
+
   return response;
+}
+
+// Next's own endpoints and the auth callback must stay reachable, or the
+// redirect above would break the very session it depends on.
+function isServerAsset(path: string): boolean {
+  return path.startsWith('/_next') || path.startsWith('/api/auth') || path === '/logout';
 }

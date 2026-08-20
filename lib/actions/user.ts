@@ -90,9 +90,18 @@ export async function createUser(input: UserCreateInput): Promise<Result<{ userI
 
   // Trigger fires automatically and inserts into public.users.
   // Apply business assignments + ensure phone landed even if trigger missed it.
+  // must_change_password: the admin knows this password, so it is temporary by
+  // definition. The middleware pins the user to /change-password until they
+  // replace it.
   await admin
     .from('users')
-    .update({ phone: data.phone || null, full_name: data.fullName, role: data.role })
+    .update({
+      phone: data.phone || null,
+      full_name: data.fullName,
+      role: data.role,
+      must_change_password: true,
+      invited_at: new Date().toISOString(),
+    })
     .eq('id', newId);
 
   await setUserBusinesses(newId, data.businessIds);
@@ -190,6 +199,9 @@ export async function resetUserPassword(id: string, newPassword: string): Promis
   const { error } = await admin.auth.admin.updateUserById(id, { password: parsed.data.newPassword });
   if (error) return { ok: false, error: error.message };
 
+  // An admin-set password is temporary again, whatever it was before.
+  await admin.from('users').update({ must_change_password: true }).eq('id', id);
+
   await logAuthAudit('UPDATE', id, adminCheck.userId, null, { action: 'password_reset' });
   // Force sign-out so any existing sessions die.
   await admin.auth.admin.signOut(id, 'global').catch(() => {});
@@ -274,6 +286,9 @@ export type UserListRow = {
   deleted_at: string | null;
   last_login_at: string | null;
   created_at: string;
+  must_change_password: boolean;
+  password_changed_at: string | null;
+  invited_at: string | null;
   businesses: Array<{ id: string; name: string }>;
 };
 
@@ -287,7 +302,7 @@ export async function listUsersWithBusinesses(includeDeleted = false): Promise<
   let q = admin
     .from('users')
     .select(
-      'id, email, full_name, phone, role, is_active, deleted_at, last_login_at, created_at, user_businesses(business_id, businesses(id, name))',
+      'id, email, full_name, phone, role, is_active, deleted_at, last_login_at, created_at, must_change_password, password_changed_at, invited_at, user_businesses(business_id, businesses(id, name))',
     )
     .order('created_at', { ascending: false });
   if (!includeDeleted) q = q.is('deleted_at', null);
@@ -313,6 +328,9 @@ export async function listUsersWithBusinesses(includeDeleted = false): Promise<
       deleted_at: u.deleted_at,
       last_login_at: u.last_login_at,
       created_at: u.created_at,
+      must_change_password: u.must_change_password,
+      password_changed_at: u.password_changed_at,
+      invited_at: u.invited_at,
       businesses,
     };
   });
@@ -395,6 +413,11 @@ export async function changeOwnPassword(
     password: parsed.data.newPassword,
   });
   if (error) return { ok: false, error: error.message };
+
+  await admin
+    .from('users')
+    .update({ must_change_password: false, password_changed_at: new Date().toISOString() })
+    .eq('id', session.id);
 
   await logAuthAudit('UPDATE', session.id, session.id, null, { action: 'self_password_change' });
   return { ok: true };

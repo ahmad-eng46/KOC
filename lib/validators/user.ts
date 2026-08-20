@@ -41,6 +41,23 @@ export const ownPasswordChangeSchema = z
   });
 export type OwnPasswordChangeInput = z.infer<typeof ownPasswordChangeSchema>;
 
+/** First login: no current password is echoed back, so confirm must match. */
+export const firstPasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(8, 'New password must be at least 8 characters').max(128),
+    confirmPassword: z.string().min(1, 'Confirm your new password'),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+  .refine((d) => d.currentPassword !== d.newPassword, {
+    message: 'New password must differ from the temporary one',
+    path: ['newPassword'],
+  });
+export type FirstPasswordInput = z.infer<typeof firstPasswordSchema>;
+
 export const ownProfileSchema = z.object({
   fullName: z.string().min(2).max(200).optional(),
   phone: z.string().regex(phoneRegex, 'Enter a valid Pakistani phone').optional().or(z.literal('')),
