@@ -18,24 +18,35 @@ export type Customer = {
   category_id: string | null;
   location_id: string | null;
   created_at: string;
-  customer_categories: { name: string } | null;
+  customer_categories: { name: string; color: string | null } | null;
   locations: { name: string } | null;
 };
 
-export function useCustomers() {
+/**
+ * `categoryId` narrows the read server-side; 'uncategorised' means the rows with
+ * no category at all. Left undefined, every customer comes back, which is what
+ * the list does by default so search and the location chips keep working on the
+ * full set.
+ */
+export function useCustomers(categoryId?: string) {
   const activeId = useBusinessStore((s) => s.activeId);
 
   return useQuery({
-    queryKey: ['customers', activeId],
+    queryKey: ['customers', activeId, categoryId ?? 'all'],
     enabled: !!activeId,
     queryFn: async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
+      let q = supabase
         .from('customers')
-        .select('*, customer_categories(name), locations(name)')
+        .select('*, customer_categories(name, color), locations(name)')
         .eq('business_id', activeId!)
         .is('deleted_at', null)
         .order('name');
+
+      if (categoryId === 'uncategorised') q = q.is('category_id', null);
+      else if (categoryId) q = q.eq('category_id', categoryId);
+
+      const { data, error } = await q;
       if (error) throw error;
       return data as Customer[];
     },
@@ -52,7 +63,7 @@ export function useCustomer(id: string) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('customers')
-        .select('*, customer_categories(name), locations(name)')
+        .select('*, customer_categories(name, color), locations(name)')
         .eq('id', id)
         .eq('business_id', activeId!)
         .is('deleted_at', null)
@@ -75,21 +86,6 @@ export function useDeleteCustomer() {
   });
 }
 
-export function useCustomerCategories() {
-  const activeId = useBusinessStore((s) => s.activeId);
-
-  return useQuery({
-    queryKey: ['customer_categories', activeId],
-    enabled: !!activeId,
-    queryFn: async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('customer_categories')
-        .select('id, name')
-        .eq('business_id', activeId!)
-        .order('name');
-      if (error) throw error;
-      return data as { id: string; name: string }[];
-    },
-  });
-}
+// useCustomerCategories moved to lib/queries/customer-categories.ts, where the
+// writes and cache invalidation live. Two copies reading different columns and
+// keyed differently is how a dropdown ends up stale after a quick-create.

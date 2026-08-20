@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
-import { useCustomerCategories } from '@/lib/queries/customers';
+import { useCustomerCategories } from '@/lib/queries/customer-categories';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
 import { LocationPicker } from './LocationPicker';
