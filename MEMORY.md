@@ -113,7 +113,9 @@
 
 ⚠️ **`0050_product_pack_size.sql` is a hard prerequisite for the app code.** Until it is applied, product create/edit, the invoice detail page and the return form all fail with "column … does not exist" (confirmed against the live database). The seven commits were held unpushed for that reason — `main` auto-deploys — but they are **on `origin/main` as of session 22**, so either 0050 has been applied or production is already running code that needs it. Round 9's backup reads `pack_size` / `pack_name` / `entered_quantity` too, and so adds no schema dependency `main` does not already carry; it was pushed on that basis. **Confirm 0046–0050 are applied.**
 
-**Migrations pending, in order:** 0046 (brand delete), 0047 (location delete), 0048 (return pricing — costs money on every discounted return), 0049 (supplier delete), 0050 (packs).
+**Migrations pending, in order:** **0050 (packs) — the only one still unapplied.** Probed live on 2026-08-20: 0046–0049 are applied; `products.pack_size` / `pack_name`, `invoice_items.entered_quantity` and `convert_to_units()` do not exist. That is exactly what breaks the invoice detail page — the `invoice_items` read asks for `products.pack_name`, PostgREST answers 42703, and `useInvoiceDetail` throws, which the page renders as "Invoice not found or you don't have access."
+
+⚠️ **0050 was patched before applying:** its `create_invoice_atomic` was rebuilt from 0020, which silently dropped 0037's negative-stock guard and product row lock. Both are back in the migration file. Do not apply an older copy of 0050.
 
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked. Exception taken in round 8: a push that would break production waits for its migration.
 

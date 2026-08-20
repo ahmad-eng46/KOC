@@ -45,9 +45,18 @@ export function InvoiceDetail({ invoiceId, role }: Props) {
     );
   }
   if (error || !invoice) {
+    // The query fails for two very different reasons — no such invoice, and a
+    // broken read (missing column, RLS). Showing the raw message turns the
+    // second into something diagnosable instead of a wrong "not found".
+    // PostgrestError is a plain object, not an Error — narrow on the shape.
+    const detail =
+      typeof (error as { message?: unknown } | null)?.message === 'string'
+        ? (error as { message: string }).message
+        : null;
     return (
       <div className="rounded-xl bg-red-50 border border-red-200 p-4">
         <p className="text-sm text-red-700">Invoice not found or you don&apos;t have access.</p>
+        {detail && <p className="mt-1 text-xs text-red-600 break-words">{detail}</p>}
       </div>
     );
   }

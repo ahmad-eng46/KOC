@@ -185,9 +185,9 @@ COMMENT ON VIEW public.stock_purchases_for_role IS
    for those roles (iron rule #3). Supplier/product names denormalised for single-round-trip reads.';
 
 -- ─────────────────────────────────────────────
--- 6. create_invoice_atomic — 0020's function, with the three display columns
---    carried through. quantity is still units and every total is still
---    recomputed from line_total_paisa; nothing else differs.
+-- 6. create_invoice_atomic — 0037's function (stock guard and row lock intact),
+--    with the three display columns carried through. quantity is still units
+--    and every total is still recomputed from line_total_paisa.
 -- ─────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.create_invoice_atomic(p_input JSONB)
 RETURNS UUID
@@ -211,6 +211,10 @@ DECLARE
   v_line_total     BIGINT;
   v_count          INT;
   v_items_count    INT;
+  v_product_id     UUID;
+  v_quantity       NUMERIC;
+  v_on_hand        NUMERIC;
+  v_product_name   TEXT;
 BEGIN
   -- Authorisation: caller must belong to this business
   IF v_user_id IS NULL THEN
@@ -274,15 +278,32 @@ BEGIN
   -- 2. Insert items + 3. stock_movements
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_input->'items')
   LOOP
-    -- Snapshot purchase_price (server only — staff cannot read this column via RLS)
-    SELECT COALESCE(purchase_price_paisa, 0) INTO v_purchase_price
+    v_product_id := (v_item->>'product_id')::UUID;
+    v_quantity   := (v_item->>'quantity')::NUMERIC;
+
+    -- Snapshot purchase_price (server only — staff cannot read this column via
+    -- RLS). Locking the product row serialises concurrent invoices for the same
+    -- product; without it both could read the same on-hand value and pass.
+    SELECT COALESCE(purchase_price_paisa, 0), name
+      INTO v_purchase_price, v_product_name
       FROM public.products
-     WHERE id = (v_item->>'product_id')::UUID
+     WHERE id = v_product_id
        AND business_id = v_business_id
-       AND deleted_at IS NULL;
+       AND deleted_at IS NULL
+     FOR UPDATE;
 
     IF NOT FOUND THEN
-      RAISE EXCEPTION 'Product % not found in this business', v_item->>'product_id';
+      RAISE EXCEPTION 'Product % not found in this business', v_product_id;
+    END IF;
+
+    -- Stock guard (0037). Movements inserted by earlier iterations of this loop
+    -- are visible here, so the same product on several lines is checked against
+    -- the running balance rather than the opening one.
+    v_on_hand := public.product_stock_on_hand(v_business_id, v_product_id);
+    IF v_quantity > v_on_hand THEN
+      RAISE EXCEPTION 'Not enough stock for %: % on hand, % requested',
+        v_product_name, v_on_hand, v_quantity
+        USING ERRCODE = 'check_violation';
     END IF;
 
     v_line_total := (v_item->>'line_total_paisa')::BIGINT;
@@ -293,8 +314,8 @@ BEGIN
       entered_quantity, entry_mode, pack_size_snapshot
     ) VALUES (
       v_invoice_id,
-      (v_item->>'product_id')::UUID,
-      (v_item->>'quantity')::NUMERIC,
+      v_product_id,
+      v_quantity,
       (v_item->>'unit_price_paisa')::BIGINT,
       v_purchase_price,
       COALESCE((v_item->>'discount_paisa')::BIGINT, 0),
@@ -308,10 +329,10 @@ BEGIN
       business_id, product_id, invoice_id, type, quantity, note
     ) VALUES (
       v_business_id,
-      (v_item->>'product_id')::UUID,
+      v_product_id,
       v_invoice_id,
       'out',
-      (v_item->>'quantity')::NUMERIC,
+      v_quantity,
       'Invoice ' || v_invoice_number
     );
   END LOOP;
