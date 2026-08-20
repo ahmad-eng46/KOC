@@ -6,22 +6,23 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
-import { useCustomerCategories } from '@/lib/queries/customer-categories';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
 import { LocationPicker } from './LocationPicker';
-
-/** A "— None —" select option submits '' — the schema wants null. */
-const emptyToNull = (v: unknown) => (v === '' ? null : v);
+import { CategoryPicker } from './CategoryPicker';
 
 type Props = {
   customer?: Customer;
+  /**
+   * Quick-creating a category needs admin or accountant, so the answer comes
+   * from the server page that knows the role. Staff still pick from the list.
+   */
+  canCreateCategory?: boolean;
 };
 
-export function CustomerForm({ customer }: Props) {
+export function CustomerForm({ customer, canCreateCategory = false }: Props) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
-  const { data: categories = [] } = useCustomerCategories();
 
   const {
     register,
@@ -46,6 +47,7 @@ export function CustomerForm({ customer }: Props) {
   });
 
   const locationId = useWatch({ control, name: 'location_id' });
+  const categoryId = useWatch({ control, name: 'category_id' });
 
   async function onSubmit(values: CustomerInput) {
     setServerError(null);
@@ -88,18 +90,12 @@ export function CustomerForm({ customer }: Props) {
       </Field>
 
       {/* Category */}
-      <Field label="Category" error={errors.category_id?.message}>
-        <select
-          className={inputCls(false)}
-          {...register('category_id', { setValueAs: emptyToNull })}
-        >
-          <option value="">— None —</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+      <Field label="Category (optional)" error={errors.category_id?.message}>
+        <CategoryPicker
+          value={categoryId ?? null}
+          onChange={(id) => setValue('category_id', id, { shouldDirty: true })}
+          canCreate={canCreateCategory}
+        />
       </Field>
 
       {/* Location */}

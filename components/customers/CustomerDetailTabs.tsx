@@ -11,9 +11,10 @@ type Tab = 'details' | 'ledger';
 type Props = {
   customer: Customer;
   businessName: string;
+  canCreateCategory?: boolean;
 };
 
-export function CustomerDetailTabs({ customer, businessName }: Props) {
+export function CustomerDetailTabs({ customer, businessName, canCreateCategory = false }: Props) {
   const [tab, setTab] = useState<Tab>('details');
 
   return (
@@ -29,7 +30,9 @@ export function CustomerDetailTabs({ customer, businessName }: Props) {
         </nav>
       </div>
 
-      {tab === 'details' && <CustomerForm customer={customer} />}
+      {tab === 'details' && (
+        <CustomerForm customer={customer} canCreateCategory={canCreateCategory} />
+      )}
       {tab === 'ledger' && (
         <CustomerLedger
           customerId={customer.id}

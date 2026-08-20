@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { CustomerDetailTabs } from '@/components/customers/CustomerDetailTabs';
+import { currentUserCan } from '@/lib/auth/can-user';
 import { LocationBadge } from '@/components/locations/LocationBadge';
 import { type Customer } from '@/lib/queries/customers';
 
@@ -14,6 +15,7 @@ type Props = { params: Promise<{ id: string }> };
 
 export default async function CustomerDetailPage({ params }: Props) {
   await requireRole('admin', 'accountant', 'staff', 'viewer');
+  const canCreateCategory = await currentUserCan('customers.update');
 
   const { id } = await params;
   const businessId = await getActiveBusinessId().catch(() => null);
@@ -57,7 +59,7 @@ export default async function CustomerDetailPage({ params }: Props) {
           </p>
         </div>
       </div>
-      <CustomerDetailTabs customer={customer} businessName={businessName} />
+      <CustomerDetailTabs customer={customer} businessName={businessName} canCreateCategory={canCreateCategory} />
     </div>
   );
 }
