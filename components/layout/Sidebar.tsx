@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, MapPin, Users, Package, Warehouse, Truck,
   FileText, CreditCard, Receipt, TrendingUp,
-  Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, X,
+  Banknote, BookOpen, BarChart3, UserCog, HardDrive, Settings, Activity, X,
 } from 'lucide-react';
 import { can, type Permission, type Role } from '@/lib/auth/permissions';
 
@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings',    href: '/settings',         icon: Settings,  adminOnly: true },
   { label: 'Users',       href: '/settings/users',   icon: UserCog,   adminOnly: true },
   { label: 'Backup',      href: '/settings/backup',  icon: HardDrive, adminOnly: true },
+  { label: 'Activity Log', href: '/settings/activity-log', icon: Activity, roles: ['admin', 'accountant'] },
 ];
 
 type Props = {

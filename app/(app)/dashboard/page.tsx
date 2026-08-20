@@ -4,6 +4,8 @@ import { requireAuth } from '@/lib/auth/guards';
 import { fetchDashboardData } from '@/lib/dashboard';
 import { formatPKR } from '@/lib/money';
 import { formatKarachi } from '@/lib/date';
+import { getSession } from '@/lib/auth/session';
+import { RecentActivityWidget } from '@/components/settings/RecentActivityWidget';
 
 export const metadata = { title: 'Dashboard — KOC' };
 
@@ -19,7 +21,8 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> 
 
 export default async function DashboardPage() {
   await requireAuth();
-  const data = await fetchDashboardData();
+  const [data, session] = await Promise.all([fetchDashboardData(), getSession()]);
+  const canSeeActivity = session?.role === 'admin' || session?.role === 'accountant';
 
   const cards = [
     {
@@ -180,6 +183,8 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
+
+      {canSeeActivity && <RecentActivityWidget />}
     </div>
   );
 }

@@ -2,15 +2,17 @@
 
 import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
-import { ShieldCheck, KeyRound } from 'lucide-react';
+import { ShieldCheck, KeyRound, Activity } from 'lucide-react';
 import type { UserListRow } from '@/lib/actions/user';
 import { PermissionMatrix } from './PermissionMatrix';
+import { UserActivityPanel } from './UserActivityPanel';
 
-type Tab = 'overview' | 'permissions';
+type Tab = 'overview' | 'permissions' | 'activity';
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'overview', label: 'Overview', icon: KeyRound },
   { id: 'permissions', label: 'Permissions', icon: ShieldCheck },
+  { id: 'activity', label: 'Activity', icon: Activity },
 ];
 
 export function UserDetail({ user }: { user: UserListRow }) {
@@ -37,6 +39,7 @@ export function UserDetail({ user }: { user: UserListRow }) {
 
       {tab === 'overview' && <Overview user={user} />}
       {tab === 'permissions' && <PermissionMatrix userId={user.id} userName={user.full_name} />}
+      {tab === 'activity' && <UserActivityPanel userId={user.id} userName={user.full_name} />}
     </div>
   );
 }
