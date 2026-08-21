@@ -28,6 +28,16 @@ async function roundTrip(sheetCount = 7): Promise<ExcelJS.Worksheet> {
 }
 
 describe('info sheet', () => {
+  it('writes exactly two cells on the Sheet Count row, so nothing can sit in C', async () => {
+    // Reported five times now. The cell-value check below can be argued with
+    // ("maybe it reads B but writes C"); a count of the cells the row actually
+    // holds cannot — a value in C would make this three.
+    const ws = await roundTrip(23);
+    const row = ws.getRow(INFO_ROW.sheetCount);
+    expect(row.actualCellCount).toBe(2);
+    expect(row.cellCount).toBe(2);
+  });
+
   it('puts Sheet Count in column B, never column C', async () => {
     const ws = await roundTrip(23);
     expect(ws.getCell(`A${INFO_ROW.sheetCount}`).value).toBe('Sheet Count');
