@@ -5,6 +5,9 @@ import { Eye, EyeOff, X } from 'lucide-react';
 import { useBusinessStore } from '@/lib/store/business';
 import { userRoles, type UserRole } from '@/lib/validators/user';
 import type { UserListRow } from '@/lib/actions/user';
+import { PageAccessChecklist, defaultsForRole, type ChecklistState } from './PageAccessChecklist';
+import type { PageDefinition } from '@/lib/auth/page-access-rules';
+import type { Role } from '@/lib/auth/permissions';
 
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: 'Admin',
@@ -14,6 +17,8 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 export type UserFormValues = {
+  /** The page checklist as the admin left it, saved right after the user is. */
+  pageAccess?: Record<string, boolean>;
   fullName: string;
   email: string;
   phone: string;
@@ -30,15 +35,29 @@ type Props = {
   serverError?: string | null;
   onCancel: () => void;
   onSubmit: (values: UserFormValues) => void | Promise<void>;
+  /** The master page list. Empty hides the checklist, which is what a
+   *  non-admin caller gets. */
+  pages?: PageDefinition[];
 };
 
-export function UserForm({ mode, initial, busy, serverError, onCancel, onSubmit }: Props) {
+export function UserForm({ mode, initial, busy, serverError, onCancel, onSubmit, pages = [] }: Props) {
   const allBusinesses = useBusinessStore((s) => s.businesses);
 
   const [fullName, setFullName] = useState(initial?.full_name ?? '');
   const [email, setEmail] = useState(initial?.email ?? '');
   const [phone, setPhone] = useState(initial?.phone ?? '');
   const [role, setRole] = useState<UserRole>((initial?.role as UserRole) ?? 'staff');
+  const [pageAccess, setPageAccess] = useState<ChecklistState>(() =>
+    defaultsForRole(pages, ((initial?.role as UserRole) ?? 'staff') as Role),
+  );
+
+  // A role carries its own defaults, so switching role refills the checklist.
+  // Any customisation is deliberately discarded — keeping a staff tick list
+  // against an accountant would mean neither the role nor the list is true.
+  function changeRole(next: UserRole) {
+    setRole(next);
+    setPageAccess(defaultsForRole(pages, next as Role));
+  }
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
@@ -85,6 +104,7 @@ export function UserForm({ mode, initial, busy, serverError, onCancel, onSubmit 
       password,
       isActive,
       businessIds,
+      pageAccess: pages.length > 0 ? pageAccess : undefined,
     });
   }
 
@@ -127,7 +147,7 @@ export function UserForm({ mode, initial, busy, serverError, onCancel, onSubmit 
       <Field label="Role" required>
         <select
           value={role}
-          onChange={(e) => setRole(e.target.value as UserRole)}
+          onChange={(e) => changeRole(e.target.value as UserRole)}
           className="w-full h-11 px-3 rounded-xl border border-gray-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {userRoles.map((r) => (
@@ -175,6 +195,18 @@ export function UserForm({ mode, initial, busy, serverError, onCancel, onSubmit 
             </span>
           </span>
         </label>
+      )}
+
+      {pages.length > 0 && (
+        <div className="pt-2 border-t border-gray-100">
+          <PageAccessChecklist
+            pages={pages}
+            role={role as Role}
+            value={pageAccess}
+            onChange={setPageAccess}
+            disabled={busy}
+          />
+        </div>
       )}
 
       <Field label="Business Access">

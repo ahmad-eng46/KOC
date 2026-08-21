@@ -24,6 +24,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
 type Props = { currentUserId: string };
 
 export function UserTable({ currentUserId }: Props) {
+  const { showToast } = useToast();
+  const { data: pages = [] } = usePageDefinitions();
+  const { data: summaries = {} } = useAccessSummaries();
   const router = useRouter();
   const [includeDeleted, setIncludeDeleted] = useState(false);
   const [search, setSearch] = useState('');
@@ -65,6 +68,17 @@ export function UserTable({ currentUserId }: Props) {
       role: values.role, password: values.password, businessIds: values.businessIds,
     });
     if (!r.ok) return;
+
+    // The user exists now, so the checklist can be saved against them. Done
+    // here rather than inside createUser because a failure to save access must
+    // not undo a user who was created successfully.
+    if (values.pageAccess) {
+      const access = await setUserPageAccess(r.data.userId, values.pageAccess);
+      if (!access.ok) {
+        showToast(`User created, but page access was not saved: ${access.error}`, 'error');
+      }
+    }
+
     setCreatedPassword({ email: values.email, password: values.password });
     setCreateOpen(false);
   }
@@ -72,6 +86,11 @@ export function UserTable({ currentUserId }: Props) {
   // ── Edit ──
   async function handleEdit(values: UserFormValues) {
     if (!editTarget) return;
+    if (values.pageAccess && editTarget.role !== 'admin') {
+      const access = await setUserPageAccess(editTarget.id, values.pageAccess);
+      if (!access.ok) showToast(access.error, 'error');
+    }
+
     const r = await updateMut.mutateAsync({
       id: editTarget.id,
       input: {
@@ -163,6 +182,7 @@ export function UserTable({ currentUserId }: Props) {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Businesses</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Page Access</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Password Set</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Last Login</th>
                   <th className="px-4 py-3" />
@@ -170,7 +190,7 @@ export function UserTable({ currentUserId }: Props) {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-sm">No users match.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-gray-400 text-sm">No users match.</td></tr>
                 )}
                 {filtered.map((u) => (
                   <tr key={u.id} className={[
@@ -210,6 +230,9 @@ export function UserTable({ currentUserId }: Props) {
                         <StatusBadge user={u} />
                         <PendingBadge user={u} />
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <AccessSummary role={u.role} summary={summaries[u.id]} />
                     </td>
                     <td className="px-4 py-3"><PasswordAge user={u} /></td>
                     <td className="px-4 py-3 text-xs text-gray-500 tabular-nums">
@@ -257,6 +280,7 @@ export function UserTable({ currentUserId }: Props) {
                     <p className="text-xs text-gray-500 mt-1.5">
                       Password set: <PasswordAge user={u} />
                     </p>
+                    <p className="mt-1"><AccessSummary role={u.role} summary={summaries[u.id]} /></p>
                   </div>
                   <KebabMenu
                     user={u} isSelf={u.id === currentUserId}
@@ -300,6 +324,7 @@ export function UserTable({ currentUserId }: Props) {
         <Modal title="Add User" onClose={() => setCreateOpen(false)}>
           <UserForm
             mode="create"
+            pages={pages}
             busy={createMut.isPending}
             serverError={createMut.data && !createMut.data.ok ? createMut.data.error : null}
             onCancel={() => setCreateOpen(false)}
@@ -312,6 +337,7 @@ export function UserTable({ currentUserId }: Props) {
         <Modal title={`Edit ${editTarget.full_name}`} onClose={() => setEditTarget(null)}>
           <UserForm
             mode="edit"
+            pages={pages}
             initial={editTarget}
             busy={updateMut.isPending}
             serverError={updateMut.data && !updateMut.data.ok ? updateMut.data.error : null}
@@ -674,6 +700,34 @@ function StatusBadge({ user }: { user: UserListRow }) {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">Active</span>;
 }
 
+/** "7 of 12" with a bar, or "All pages" for an admin, who always sees everything. */
+function AccessSummary({
+  role, summary,
+}: {
+  role: UserRole;
+  summary?: { allowed: number; total: number };
+}) {
+  if (role === 'admin') {
+    return <span className="text-xs text-gray-500">All pages</span>;
+  }
+  if (!summary) return <span className="text-xs text-gray-400">—</span>;
+
+  const pct = summary.total === 0 ? 0 : (summary.allowed / summary.total) * 100;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden" aria-hidden>
+        <span
+          className="block h-full bg-blue-500"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="text-xs text-gray-600 tabular-nums">
+        {summary.allowed} of {summary.total}
+      </span>
+    </span>
+  );
+}
+
 function PendingBadge({ user }: { user: UserListRow }) {
   if (!user.must_change_password || user.deleted_at) return null;
   return (
@@ -700,3 +754,6 @@ function PasswordAge({ user }: { user: UserListRow }) {
 
 // helper icons re-imported for ResetPasswordModal
 import { Eye, EyeOff } from 'lucide-react';
+import { usePageDefinitions, useAccessSummaries } from '@/lib/queries/page-access';
+import { setUserPageAccess } from '@/lib/actions/page-access';
+import { useToast } from '@/components/ui/Toast';
