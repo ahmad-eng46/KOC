@@ -1,538 +1,532 @@
-// React-PDF documents for each report. Used server-side via renderToBuffer.
+// React-PDF documents for each report. Rendered server-side via renderToBuffer.
 // (No 'use client'; @react-pdf/renderer is isomorphic for these primitives.)
+//
+// Every document is assembled from components/reports/pdf-kit.tsx, so all of
+// them carry the same company header, the same filter block, the same repeating
+// table header, the same totals row and a Page X of Y footer. Before this they
+// each hand-rolled a table and several omitted their KPI cards entirely — see
+// docs/pdf-export-audit.md §3.4 and §3.5.
 
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View } from '@react-pdf/renderer';
 import { format, parseISO } from 'date-fns';
 import { formatPKR } from '@/lib/money';
 import type {
   SalesData, PurchaseData, CustomerReportData, BalanceData, PLData,
-  LocationReportData,
+  LocationReportData, DefaultersData, StockData, CashBookData, AuditData,
+  ReportIdentity,
 } from '@/lib/reports/data';
+import {
+  s, ReportHeader, FilterBlock, SummaryGrid, ReportFooter, DataTable,
+  money, qty, text, percent, sumMoney, sumQty, DASH,
+  type Column, type FilterEntry, type SummaryStat,
+} from '@/components/reports/pdf-kit';
 
-const s = StyleSheet.create({
-  page: { padding: 32, fontSize: 10, fontFamily: 'Helvetica' },
-  title: { fontSize: 16, fontWeight: 700 },
-  meta: { fontSize: 9, color: '#666', marginTop: 2, marginBottom: 16 },
-  h2: { fontSize: 12, fontWeight: 700, marginTop: 14, marginBottom: 6 },
-  thRow: { flexDirection: 'row', backgroundColor: '#f0f0f0', paddingVertical: 5, paddingHorizontal: 4 },
-  tdRow: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: '#eee' },
-  th: { fontSize: 9, fontWeight: 700 },
-  td: { fontSize: 9 },
-  totalRow: { flexDirection: 'row', backgroundColor: '#fafafa', paddingVertical: 6, paddingHorizontal: 4, borderTopWidth: 1, borderTopColor: '#000', marginTop: 4 },
-  totalText: { fontSize: 10, fontWeight: 700 },
-  kpiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  kpi: { borderWidth: 0.5, borderColor: '#ccc', borderRadius: 4, padding: 8, minWidth: 120 },
-  kpiLabel: { fontSize: 8, color: '#666' },
-  kpiValue: { fontSize: 11, fontWeight: 700, marginTop: 2 },
-});
+type Base = { identity: ReportIdentity };
 
 function rangeStr(from: string, to: string) {
   return `${format(parseISO(from), 'dd MMM yyyy')} — ${format(parseISO(to), 'dd MMM yyyy')}`;
 }
 
-// ──────────────── SALES ────────────────
-export function SalesReportPDF({ data, range, businessName }: {
-  data: SalesData; range: { from: string; to: string }; businessName: string;
+function dateCell(v: string | null | undefined): string {
+  if (!v) return DASH;
+  try { return format(parseISO(v), 'dd MMM yyyy'); } catch { return DASH; }
+}
+
+/**
+ * Every report is the same document with different contents, so the shell is
+ * declared once. `wrap` lets the table flow across pages while the header and
+ * footer repeat.
+ */
+function ReportDoc({
+  docTitle, identity, title, subtitle, filters, recordCount, stats, landscape, children, note,
+}: {
+  docTitle: string;
+  identity: ReportIdentity;
+  title: string;
+  subtitle?: string;
+  filters: FilterEntry[];
+  recordCount: number;
+  stats: SummaryStat[];
+  landscape?: boolean;
+  note?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <Document title="Sales Report">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>
-          Sales Report{data.scopeLabel ? ` — ${data.scopeLabel}` : ''} — {businessName}
-        </Text>
-        <Text style={s.meta}>
-          {rangeStr(range.from, range.to)}
-          {data.scopeLabel
-            ? ' · Filtered: paid and outstanding are per invoice and are not shown'
-            : ''}
-        </Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Sales</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_paisa)}</Text>
-          </View>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Invoice Count</Text>
-            <Text style={s.kpiValue}>{data.rows.length}</Text>
-          </View>
-        </View>
-
-        <Text style={s.h2}>Top 10 Customers</Text>
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '60%' }]}>Customer</Text>
-          <Text style={[s.th, { width: '15%', textAlign: 'right' }]}>Invoices</Text>
-          <Text style={[s.th, { width: '25%', textAlign: 'right' }]}>Total</Text>
-        </View>
-        {data.top_customers.map((r) => (
-          <View key={r.customer_name} style={s.tdRow}>
-            <Text style={[s.td, { width: '60%' }]}>{r.customer_name}</Text>
-            <Text style={[s.td, { width: '15%', textAlign: 'right' }]}>{r.invoice_count}</Text>
-            <Text style={[s.td, { width: '25%', textAlign: 'right' }]}>{formatPKR(r.total_paisa)}</Text>
-          </View>
-        ))}
-
-        <Text style={s.h2}>Invoices</Text>
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '15%' }]}>Date</Text>
-          <Text style={[s.th, { width: '20%' }]}>Number</Text>
-          <Text style={[s.th, { width: '40%' }]}>Customer</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Total</Text>
-          <Text style={[s.th, { width: '13%', textAlign: 'right' }]}>Paid</Text>
-        </View>
-        {data.rows.map((r) => (
-          <View key={r.invoice_number} style={s.tdRow}>
-            <Text style={[s.td, { width: '15%' }]}>{format(parseISO(r.issue_date), 'dd MMM yyyy')}</Text>
-            <Text style={[s.td, { width: '20%' }]}>{r.invoice_number}</Text>
-            <Text style={[s.td, { width: '40%' }]}>{r.customer_name}</Text>
-            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{formatPKR(r.total_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '13%', textAlign: 'right' }]}>{formatPKR(r.paid_paisa, { showSymbol: false })}</Text>
-          </View>
-        ))}
+    <Document title={docTitle}>
+      <Page size="A4" orientation={landscape ? 'landscape' : 'portrait'} style={s.page} wrap>
+        <ReportHeader company={identity.company} title={title} subtitle={subtitle} />
+        <FilterBlock
+          filters={filters}
+          generatedAt={identity.generatedAt}
+          generatedBy={identity.generatedBy}
+          recordCount={recordCount}
+        />
+        {stats.length > 0 && (
+          <>
+            <Text style={s.h2}>Summary</Text>
+            <SummaryGrid stats={stats} />
+          </>
+        )}
+        {children}
+        <ReportFooter note={note} />
       </Page>
     </Document>
+  );
+}
+
+// ──────────────── SALES ────────────────
+export function SalesReportPDF({ data, range, identity }: Base & {
+  data: SalesData; range: { from: string; to: string };
+}) {
+  type Row = SalesData['rows'][number];
+  const paid = data.rows.reduce((t, r) => t + r.paid_paisa, 0);
+  const outstanding = data.total_paisa - paid;
+  const filtered = !!data.scopeLabel;
+
+  const columns: Column<Row>[] = [
+    { header: 'Invoice', flex: 1.4, value: (r) => text(r.invoice_number) },
+    { header: 'Date', flex: 1.4, value: (r) => dateCell(r.issue_date) },
+    { header: 'Customer', flex: 3, value: (r) => text(r.customer_name) },
+    { header: 'Total', flex: 1.6, align: 'right', value: (r) => money(r.total_paisa), total: (rows) => sumMoney(rows, (r) => r.total_paisa) },
+    { header: 'Paid', flex: 1.6, align: 'right', value: (r) => money(r.paid_paisa), total: (rows) => sumMoney(rows, (r) => r.paid_paisa) },
+    { header: 'Balance', flex: 1.6, align: 'right', value: (r) => money(r.total_paisa - r.paid_paisa), total: (rows) => sumMoney(rows, (r) => r.total_paisa - r.paid_paisa) },
+  ];
+
+  const stats: SummaryStat[] = [
+    { label: 'Total Sales', value: formatPKR(data.total_paisa) },
+    { label: 'Invoices', value: String(data.rows.length) },
+    { label: 'Trading Days', value: String(data.by_day.length) },
+  ];
+  // Paid and outstanding are invoice-level and cannot be attributed to one
+  // product line, so a filtered report omits them rather than implying a split.
+  if (!filtered) {
+    stats.push(
+      { label: 'Total Paid', value: formatPKR(paid), tone: 'good' },
+      { label: 'Outstanding', value: formatPKR(outstanding), tone: outstanding > 0 ? 'bad' : undefined },
+    );
+  }
+
+  return (
+    <ReportDoc
+      docTitle="Sales Report"
+      identity={identity}
+      title={data.scopeLabel ? `Sales Report — ${data.scopeLabel}` : 'Sales Report'}
+      subtitle={rangeStr(range.from, range.to)}
+      filters={[
+        { label: 'Period', value: rangeStr(range.from, range.to) },
+        { label: 'Scope', value: data.scopeLabel ?? 'All brands and products' },
+      ]}
+      recordCount={data.rows.length}
+      stats={stats}
+      note={filtered ? 'Filtered: paid and outstanding are per invoice and are not shown.' : undefined}
+      landscape
+    >
+      <Text style={s.h2}>Invoices</Text>
+      <DataTable columns={columns} rows={data.rows} />
+
+      {data.top_customers.length > 0 && (
+        <View break={data.rows.length > 25}>
+          <Text style={s.h2}>Top Customers</Text>
+          <DataTable
+            columns={[
+              { header: 'Customer', flex: 4, value: (c: SalesData['top_customers'][number]) => text(c.customer_name) },
+              { header: 'Invoices', flex: 1.4, align: 'right', value: (c) => String(c.invoice_count) },
+              { header: 'Total', flex: 2, align: 'right', value: (c) => money(c.total_paisa), total: (rows) => sumMoney(rows, (c) => c.total_paisa) },
+            ]}
+            rows={data.top_customers}
+          />
+        </View>
+      )}
+    </ReportDoc>
   );
 }
 
 // ──────────────── PURCHASE ────────────────
-export function PurchaseReportPDF({ data, range, businessName }: {
-  data: PurchaseData; range: { from: string; to: string }; businessName: string;
+export function PurchaseReportPDF({ data, range, identity }: Base & {
+  data: PurchaseData; range: { from: string; to: string };
 }) {
+  type Row = PurchaseData['rows'][number];
+  const columns: Column<Row>[] = [
+    { header: 'Date', flex: 1.5, value: (r) => dateCell(r.movement_date) },
+    { header: 'Product', flex: 3.4, value: (r) => text(r.product_name), detail: (r) => r.sku },
+    { header: 'Qty', flex: 1.2, align: 'right', value: (r) => qty(r.quantity, r.unit), total: (rows) => sumQty(rows, (r) => r.quantity) },
+    { header: 'Unit Cost', flex: 1.6, align: 'right', value: (r) => money(r.purchase_price_paisa) },
+    { header: 'Value', flex: 1.8, align: 'right', value: (r) => money(r.total_value_paisa), total: (rows) => sumMoney(rows, (r) => r.total_value_paisa) },
+    { header: 'Note', flex: 2.4, value: (r) => text(r.note) },
+  ];
+
   return (
-    <Document title="Purchase Report">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>Purchase Report — {businessName}</Text>
-        <Text style={s.meta}>{rangeStr(range.from, range.to)}</Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Value</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_value_paisa)}</Text>
-          </View>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Movements</Text>
-            <Text style={s.kpiValue}>{data.rows.length}</Text>
-          </View>
-        </View>
-
-        <Text style={s.h2}>By Product</Text>
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '60%' }]}>Product</Text>
-          <Text style={[s.th, { width: '20%', textAlign: 'right' }]}>Quantity</Text>
-          <Text style={[s.th, { width: '20%', textAlign: 'right' }]}>Value</Text>
-        </View>
-        {data.by_product.map((r) => (
-          <View key={r.product_name} style={s.tdRow}>
-            <Text style={[s.td, { width: '60%' }]}>{r.product_name}</Text>
-            <Text style={[s.td, { width: '20%', textAlign: 'right' }]}>{r.quantity}</Text>
-            <Text style={[s.td, { width: '20%', textAlign: 'right' }]}>{formatPKR(r.total_value_paisa)}</Text>
-          </View>
-        ))}
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Purchase Report"
+      identity={identity}
+      title="Purchase Report"
+      subtitle={rangeStr(range.from, range.to)}
+      filters={[{ label: 'Period', value: rangeStr(range.from, range.to) }]}
+      recordCount={data.rows.length}
+      stats={[
+        { label: 'Total Purchases', value: formatPKR(data.total_value_paisa) },
+        { label: 'Movements', value: String(data.rows.length) },
+        { label: 'Units In', value: qty(data.rows.reduce((t, r) => t + r.quantity, 0)) },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>Stock Received</Text>
+      <DataTable columns={columns} rows={data.rows} />
+    </ReportDoc>
   );
 }
 
 // ──────────────── CUSTOMER ────────────────
-export function CustomerReportPDF({ data, businessName }: {
-  data: CustomerReportData; businessName: string;
-}) {
-  return (
-    <Document title="Customer Report">
-      <Page size="A4" style={s.page} orientation="landscape">
-        <Text style={s.title}>Customer Report — {businessName}</Text>
-        <Text style={s.meta}>{format(new Date(), 'dd MMM yyyy HH:mm')}</Text>
+export function CustomerReportPDF({ data, identity }: Base & { data: CustomerReportData }) {
+  type Row = CustomerReportData['rows'][number];
 
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '28%' }]}>Customer</Text>
-          <Text style={[s.th, { width: '15%' }]}>Phone</Text>
-          <Text style={[s.th, { width: '14%', textAlign: 'right' }]}>Invoiced</Text>
-          <Text style={[s.th, { width: '14%', textAlign: 'right' }]}>Paid</Text>
-          <Text style={[s.th, { width: '14%', textAlign: 'right' }]}>Balance</Text>
-          <Text style={[s.th, { width: '15%' }]}>Last Activity</Text>
-        </View>
-        {data.rows.map((r) => (
-          <View key={r.customer_name} style={s.tdRow}>
-            <Text style={[s.td, { width: '28%' }]}>{r.customer_name}</Text>
-            <Text style={[s.td, { width: '15%' }]}>{r.phone ?? '—'}</Text>
-            <Text style={[s.td, { width: '14%', textAlign: 'right' }]}>{formatPKR(r.invoiced_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '14%', textAlign: 'right' }]}>{formatPKR(r.paid_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '14%', textAlign: 'right', color: r.balance_paisa > 0 ? '#c00' : '#000' }]}>
-              {formatPKR(r.balance_paisa, { showSymbol: false })}
-            </Text>
-            <Text style={[s.td, { width: '15%' }]}>{r.last_activity ? format(parseISO(r.last_activity), 'dd MMM yyyy') : '—'}</Text>
-          </View>
-        ))}
-      </Page>
-    </Document>
+  const invoiced = data.rows.reduce((t, r) => t + r.invoiced_paisa, 0);
+  const paid = data.rows.reduce((t, r) => t + r.paid_paisa, 0);
+  const outstanding = data.rows.reduce((t, r) => t + Math.max(r.balance_paisa, 0), 0);
+  const owing = data.rows.filter((r) => r.balance_paisa > 0).length;
+
+  const columns: Column<Row>[] = [
+    { header: 'Customer', flex: 3.2, value: (r) => text(r.customer_name) },
+    { header: 'Phone', flex: 1.8, value: (r) => text(r.phone) },
+    { header: 'Invoiced', flex: 1.8, align: 'right', value: (r) => money(r.invoiced_paisa), total: (rows) => sumMoney(rows, (r) => r.invoiced_paisa) },
+    { header: 'Paid', flex: 1.8, align: 'right', value: (r) => money(r.paid_paisa), total: (rows) => sumMoney(rows, (r) => r.paid_paisa) },
+    { header: 'Balance', flex: 1.8, align: 'right', value: (r) => money(r.balance_paisa), total: (rows) => sumMoney(rows, (r) => r.balance_paisa) },
+    { header: 'Last Activity', flex: 1.8, value: (r) => dateCell(r.last_activity) },
+  ];
+
+  return (
+    <ReportDoc
+      docTitle="Customer Report"
+      identity={identity}
+      title="Customer Report"
+      subtitle="Every customer, invoiced against received"
+      filters={[]}
+      recordCount={data.rows.length}
+      // These four were missing entirely before — the screen showed them, the
+      // PDF did not (audit §3.4).
+      stats={[
+        { label: 'Customers', value: String(data.rows.length) },
+        { label: 'Total Invoiced', value: formatPKR(invoiced) },
+        { label: 'Total Received', value: formatPKR(paid), tone: 'good' },
+        { label: 'Outstanding', value: formatPKR(outstanding), tone: outstanding > 0 ? 'bad' : undefined, hint: `${owing} owing` },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>Customers</Text>
+      <DataTable columns={columns} rows={data.rows} />
+    </ReportDoc>
   );
 }
 
-// ──────────────── BALANCE ────────────────
-export function BalanceReportPDF({ data, businessName }: {
-  data: BalanceData; businessName: string;
-}) {
+// ──────────────── RECEIVABLES ────────────────
+export function BalanceReportPDF({ data, identity }: Base & { data: BalanceData }) {
+  type Row = BalanceData['rows'][number];
+  const columns: Column<Row>[] = [
+    { header: 'Customer', flex: 3.2, value: (r) => text(r.customer_name) },
+    { header: 'Phone', flex: 1.8, value: (r) => text(r.phone) },
+    { header: 'Balance', flex: 2, align: 'right', value: (r) => money(r.balance_paisa), total: (rows) => sumMoney(rows, (r) => r.balance_paisa) },
+    { header: 'Last Activity', flex: 1.8, value: (r) => dateCell(r.last_activity) },
+    { header: 'Days', flex: 1, align: 'right', value: (r) => String(r.days_inactive) },
+    { header: 'Bucket', flex: 1.2, value: (r) => r.bucket },
+  ];
+
   return (
-    <Document title="Receivables Report">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>Receivables (Aging) — {businessName}</Text>
-        <Text style={s.meta}>{format(new Date(), 'dd MMM yyyy HH:mm')}</Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Receivable</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_paisa)}</Text>
-          </View>
-          {(['0-30', '31-60', '61-90', '90+'] as const).map((b) => (
-            <View key={b} style={s.kpi}>
-              <Text style={s.kpiLabel}>{b} days</Text>
-              <Text style={s.kpiValue}>{formatPKR(data.by_bucket[b])}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '34%' }]}>Customer</Text>
-          <Text style={[s.th, { width: '17%' }]}>Phone</Text>
-          <Text style={[s.th, { width: '15%' }]}>Last Activity</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Days</Text>
-          <Text style={[s.th, { width: '10%' }]}>Bucket</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Balance</Text>
-        </View>
-        {data.rows
-          .sort((a, b) => b.balance_paisa - a.balance_paisa)
-          .map((r) => (
-            <View key={r.customer_name} style={s.tdRow}>
-              <Text style={[s.td, { width: '34%' }]}>{r.customer_name}</Text>
-              <Text style={[s.td, { width: '17%' }]}>{r.phone ?? '—'}</Text>
-              <Text style={[s.td, { width: '15%' }]}>{r.last_activity ? format(parseISO(r.last_activity), 'dd MMM yyyy') : 'Never'}</Text>
-              <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{r.days_inactive}</Text>
-              <Text style={[s.td, { width: '10%' }]}>{r.bucket}</Text>
-              <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{formatPKR(r.balance_paisa, { showSymbol: false })}</Text>
-            </View>
-          ))}
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Receivables Report"
+      identity={identity}
+      title="Receivables Report"
+      subtitle="Outstanding balances by age"
+      filters={[{ label: 'Scope', value: 'Customers with a balance above zero' }]}
+      recordCount={data.rows.length}
+      stats={[
+        { label: 'Total Receivable', value: formatPKR(data.total_paisa), tone: 'bad' },
+        { label: 'Customers', value: String(data.rows.length) },
+        { label: '0–30 days', value: formatPKR(data.by_bucket['0-30']) },
+        { label: '31–60 days', value: formatPKR(data.by_bucket['31-60']) },
+        { label: '61–90 days', value: formatPKR(data.by_bucket['61-90']), tone: 'warn' },
+        { label: '90+ days', value: formatPKR(data.by_bucket['90+']), tone: 'bad' },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>Outstanding by Customer</Text>
+      <DataTable columns={columns} rows={data.rows} groupBy={{
+        label: (r) => `Age ${r.bucket}`,
+        subtotal: (rows) => sumMoney(rows, (r) => r.balance_paisa),
+      }} />
+    </ReportDoc>
   );
 }
 
-// ──────────────── P&L ────────────────
-export function PLReportPDF({ data }: { data: PLData }) {
+// ──────────────── PROFIT & LOSS ────────────────
+export function PLReportPDF({ data, identity }: Base & { data: PLData }) {
+  type Line = { label: string; amount: number; strong?: boolean };
+  const lines: Line[] = [
+    { label: 'Sales', amount: data.sales_paisa },
+    { label: 'Less: Returns', amount: -data.returns_paisa },
+    { label: 'Net Sales', amount: data.net_sales_paisa, strong: true },
+    { label: 'Cost of Goods Sold', amount: -data.cogs_paisa },
+    { label: 'Add: COGS on Returns', amount: data.cogs_returns_paisa },
+    { label: 'Gross Profit', amount: data.gross_profit_paisa, strong: true },
+    { label: 'Business Expenses', amount: -data.opex_paisa },
+  ];
+  if (data.include_home_in_pnl) lines.push({ label: 'Home Expenses', amount: -data.home_exp_paisa });
+  lines.push({ label: 'Net Profit', amount: data.net_profit_paisa, strong: true });
+
+  const margin = data.net_sales_paisa === 0
+    ? null
+    : (data.gross_profit_paisa / data.net_sales_paisa) * 100;
+
   return (
-    <Document title="Profit & Loss Report">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>Profit & Loss — {data.business_name}</Text>
-        <Text style={s.meta}>{rangeStr(data.range.from, data.range.to)}</Text>
+    <ReportDoc
+      docTitle="Profit & Loss"
+      identity={identity}
+      title="Profit & Loss"
+      subtitle={rangeStr(data.range.from, data.range.to)}
+      filters={[
+        { label: 'Period', value: rangeStr(data.range.from, data.range.to) },
+        { label: 'Home expenses', value: data.include_home_in_pnl ? 'Included' : 'Excluded' },
+      ]}
+      recordCount={data.expenses_by_category.length}
+      // The P&L PDF previously carried no summary at all (audit §3.4).
+      stats={[
+        { label: 'Net Sales', value: formatPKR(data.net_sales_paisa) },
+        { label: 'Gross Profit', value: formatPKR(data.gross_profit_paisa), tone: data.gross_profit_paisa >= 0 ? 'good' : 'bad' },
+        { label: 'Gross Margin', value: percent(margin) },
+        { label: 'Total Expenses', value: formatPKR(data.total_exp_paisa) },
+        { label: 'Net Profit', value: formatPKR(data.net_profit_paisa), tone: data.net_profit_paisa >= 0 ? 'good' : 'bad' },
+      ]}
+    >
+      <Text style={s.h2}>Statement</Text>
+      <DataTable
+        columns={[
+          { header: 'Line', flex: 4, value: (l: Line) => l.label },
+          { header: 'Amount', flex: 2, align: 'right', value: (l) => formatPKR(l.amount) },
+        ]}
+        rows={lines}
+      />
 
-        <Text style={s.h2}>Revenue</Text>
-        <PLLine label="Sales" value={data.sales_paisa} />
-        <PLLine label="Less: Returns" value={-data.returns_paisa} />
-        <PLLine label="Net Sales" value={data.net_sales_paisa} bold />
-
-        <Text style={s.h2}>Cost of Goods Sold</Text>
-        <PLLine label="COGS (sold)" value={data.cogs_paisa} />
-        <PLLine label="Less: COGS reversed by returns" value={-data.cogs_returns_paisa} />
-        <PLLine label="Net COGS" value={data.net_cogs_paisa} bold />
-
-        <View style={s.totalRow}>
-          <Text style={[s.totalText, { flex: 1 }]}>Gross Profit</Text>
-          <Text style={[s.totalText, { textAlign: 'right' }]}>{formatPKR(data.gross_profit_paisa)}</Text>
+      {data.expenses_by_category.length > 0 && (
+        <View>
+          <Text style={s.h2}>Expenses by Category</Text>
+          <DataTable
+            columns={[
+              { header: 'Category', flex: 3, value: (e: PLData['expenses_by_category'][number]) => text(e.category) },
+              { header: 'Type', flex: 1.4, value: (e) => (e.type === 'home' ? 'Home' : 'Business') },
+              { header: 'Amount', flex: 2, align: 'right', value: (e) => money(e.total_paisa), total: (rows) => sumMoney(rows, (e) => e.total_paisa) },
+              {
+                header: '% of Total', flex: 1.6, align: 'right',
+                value: (e) => percent(data.total_exp_paisa === 0 ? null : (e.total_paisa / data.total_exp_paisa) * 100),
+              },
+            ]}
+            rows={data.expenses_by_category}
+          />
         </View>
-
-        <Text style={s.h2}>Expenses</Text>
-        <PLLine label="Operating Expenses (business)" value={data.opex_paisa} />
-        <PLLine
-          label={`Home Expenses (${data.include_home_in_pnl ? 'included' : 'excluded'} per setting)`}
-          value={data.include_home_in_pnl ? data.home_exp_paisa : 0}
-        />
-        <PLLine label="Total Expenses" value={data.total_exp_paisa} bold />
-
-        <View style={s.totalRow}>
-          <Text style={[s.totalText, { flex: 1 }]}>Net Profit</Text>
-          <Text style={[s.totalText, { textAlign: 'right', color: data.net_profit_paisa < 0 ? '#c00' : '#070' }]}>
-            {formatPKR(data.net_profit_paisa)}
-          </Text>
-        </View>
-
-        <Text style={s.h2}>Expenses by Category</Text>
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '50%' }]}>Category</Text>
-          <Text style={[s.th, { width: '20%' }]}>Type</Text>
-          <Text style={[s.th, { width: '30%', textAlign: 'right' }]}>Total</Text>
-        </View>
-        {data.expenses_by_category.map((c, i) => (
-          <View key={`${c.category}-${c.type}-${i}`} style={s.tdRow}>
-            <Text style={[s.td, { width: '50%' }]}>{c.category}</Text>
-            <Text style={[s.td, { width: '20%', textTransform: 'capitalize' }]}>{c.type}</Text>
-            <Text style={[s.td, { width: '30%', textAlign: 'right' }]}>{formatPKR(c.total_paisa)}</Text>
-          </View>
-        ))}
-      </Page>
-    </Document>
-  );
-}
-
-function PLLine({ label, value, bold }: { label: string; value: number; bold?: boolean }) {
-  return (
-    <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
-      <Text style={[bold ? s.totalText : s.td, { flex: 1 }]}>{label}</Text>
-      <Text style={[bold ? s.totalText : s.td, { textAlign: 'right' }]}>
-        {value < 0 ? `(${formatPKR(Math.abs(value))})` : formatPKR(value)}
-      </Text>
-    </View>
+      )}
+    </ReportDoc>
   );
 }
 
 // ──────────────── DEFAULTERS ────────────────
-import type { DefaultersData, StockData, CashBookData, AuditData } from '@/lib/reports/data';
+export function DefaultersReportPDF({ data, identity }: Base & { data: DefaultersData }) {
+  type Row = DefaultersData['rows'][number];
+  const total = data.rows.reduce((t, r) => t + r.balance_paisa, 0);
 
-export function DefaultersReportPDF({ data, businessName }: { data: DefaultersData; businessName: string }) {
-  const total = data.rows.reduce((sum, r) => sum + r.balance_paisa, 0);
   return (
-    <Document title="Defaulter List">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>Defaulter List — {businessName}</Text>
-        <Text style={s.meta}>{format(new Date(), 'dd MMM yyyy HH:mm')} · Threshold: {data.defaulter_days} days</Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Defaulters</Text>
-            <Text style={s.kpiValue}>{data.rows.length}</Text>
-          </View>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Outstanding</Text>
-            <Text style={s.kpiValue}>{formatPKR(total)}</Text>
-          </View>
-        </View>
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '34%' }]}>Customer</Text>
-          <Text style={[s.th, { width: '18%' }]}>Phone</Text>
-          <Text style={[s.th, { width: '18%' }]}>Last Activity</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Days</Text>
-          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Balance</Text>
-        </View>
-        {data.rows.map((r) => (
-          <View key={r.customer_name} style={s.tdRow}>
-            <Text style={[s.td, { width: '34%' }]}>{r.customer_name}</Text>
-            <Text style={[s.td, { width: '18%' }]}>{r.phone ?? '—'}</Text>
-            <Text style={[s.td, { width: '18%' }]}>{r.last_activity ? format(parseISO(r.last_activity), 'dd MMM yyyy') : 'Never'}</Text>
-            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{r.days_inactive}</Text>
-            <Text style={[s.td, { width: '18%', textAlign: 'right', color: '#c00' }]}>{formatPKR(r.balance_paisa, { showSymbol: false })}</Text>
-          </View>
-        ))}
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Defaulters Report"
+      identity={identity}
+      title="Defaulters Report"
+      subtitle={`Customers owing with no activity for ${data.defaulter_days} days or more`}
+      filters={[{ label: 'Inactive for', value: `${data.defaulter_days}+ days` }]}
+      recordCount={data.rows.length}
+      stats={[
+        { label: 'Defaulters', value: String(data.rows.length), tone: data.rows.length > 0 ? 'bad' : 'good' },
+        { label: 'Total Owed', value: formatPKR(total), tone: total > 0 ? 'bad' : undefined },
+        { label: 'Threshold', value: `${data.defaulter_days} days` },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>Defaulters</Text>
+      <DataTable
+        columns={[
+          { header: 'Customer', flex: 3.4, value: (r: Row) => text(r.customer_name) },
+          { header: 'Phone', flex: 2, value: (r) => text(r.phone) },
+          { header: 'Balance', flex: 2, align: 'right', value: (r) => money(r.balance_paisa), total: (rows) => sumMoney(rows, (r) => r.balance_paisa) },
+          { header: 'Last Activity', flex: 2, value: (r) => dateCell(r.last_activity) },
+          { header: 'Days', flex: 1.2, align: 'right', value: (r) => String(r.days_inactive) },
+        ]}
+        rows={data.rows}
+        emptyNote="No customer is overdue by this threshold."
+      />
+    </ReportDoc>
   );
 }
 
 // ──────────────── STOCK ────────────────
-export function StockReportPDF({ data, businessName, includeCost }: {
-  data: StockData; businessName: string; includeCost: boolean;
+export function StockReportPDF({ data, identity, includeCost }: Base & {
+  data: StockData; includeCost: boolean;
 }) {
+  type Row = StockData['rows'][number];
+  const retail = data.rows.reduce((t, r) => t + Math.round(r.quantity_on_hand * r.sale_price_paisa), 0);
+  const lowCount = data.rows.filter((r) => r.is_low).length;
+  const outCount = data.rows.filter((r) => r.quantity_on_hand <= 0).length;
+
+  const columns: Column<Row>[] = [
+    { header: 'Product', flex: 3.4, value: (r) => text(r.product_name), detail: (r) => r.sku },
+    { header: 'Unit', flex: 1, value: (r) => text(r.unit) },
+    { header: 'On Hand', flex: 1.3, align: 'right', value: (r) => qty(r.quantity_on_hand), total: (rows) => sumQty(rows, (r) => r.quantity_on_hand) },
+    { header: 'Sale Price', flex: 1.6, align: 'right', value: (r) => money(r.sale_price_paisa) },
+    { header: 'Retail Value', flex: 1.8, align: 'right', value: (r) => money(Math.round(r.quantity_on_hand * r.sale_price_paisa)), total: (rows) => sumMoney(rows, (r) => Math.round(r.quantity_on_hand * r.sale_price_paisa)) },
+    // Iron rule #3: for staff and viewer these columns are not written at all.
+    ...(includeCost ? [
+      { header: 'Cost', flex: 1.5, align: 'right' as const, value: (r: Row) => money(r.purchase_price_paisa) },
+      { header: 'Cost Value', flex: 1.8, align: 'right' as const, value: (r: Row) => money(r.value_at_cost_paisa), total: (rows: Row[]) => sumMoney(rows, (r) => r.value_at_cost_paisa) },
+    ] : []),
+    { header: 'Status', flex: 1.2, value: (r) => (r.quantity_on_hand <= 0 ? 'Out' : r.is_low ? 'Low' : 'OK') },
+  ];
+
+  const stats: SummaryStat[] = [
+    { label: 'Products', value: String(data.rows.length) },
+    { label: 'Units On Hand', value: qty(data.rows.reduce((t, r) => t + r.quantity_on_hand, 0)) },
+    { label: 'Value at Retail', value: formatPKR(retail) },
+    { label: 'Low Stock', value: String(lowCount), tone: lowCount > 0 ? 'warn' : undefined },
+    { label: 'Out of Stock', value: String(outCount), tone: outCount > 0 ? 'bad' : undefined },
+  ];
+  if (includeCost) {
+    stats.splice(3, 0, { label: 'Value at Cost', value: formatPKR(data.total_value_paisa) });
+  }
+
   return (
-    <Document title="Stock Report">
-      <Page size="A4" style={s.page} orientation="landscape">
-        <Text style={s.title}>Stock Report — {businessName}</Text>
-        <Text style={s.meta}>{format(new Date(), 'dd MMM yyyy HH:mm')}</Text>
-
-        {includeCost && (
-          <View style={s.kpiRow}>
-            <View style={s.kpi}>
-              <Text style={s.kpiLabel}>Total Value (cost)</Text>
-              <Text style={s.kpiValue}>{formatPKR(data.total_value_paisa)}</Text>
-            </View>
-            <View style={s.kpi}>
-              <Text style={s.kpiLabel}>Products</Text>
-              <Text style={s.kpiValue}>{data.rows.length}</Text>
-            </View>
-          </View>
-        )}
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '32%' }]}>Product</Text>
-          <Text style={[s.th, { width: '12%' }]}>SKU</Text>
-          <Text style={[s.th, { width: '8%' }]}>Unit</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>On Hand</Text>
-          <Text style={[s.th, { width: '14%', textAlign: 'right' }]}>Sale Price</Text>
-          {includeCost && <Text style={[s.th, { width: '11%', textAlign: 'right' }]}>Cost</Text>}
-          {includeCost && <Text style={[s.th, { width: '11%', textAlign: 'right' }]}>Value</Text>}
-        </View>
-        {data.rows.map((r) => (
-          <View key={r.product_name} style={[s.tdRow, r.is_low ? { backgroundColor: '#fff7e0' } : {}]}>
-            <Text style={[s.td, { width: '32%' }]}>{r.product_name}{r.is_low ? ' ⚠' : ''}</Text>
-            <Text style={[s.td, { width: '12%' }]}>{r.sku ?? '—'}</Text>
-            <Text style={[s.td, { width: '8%' }]}>{r.unit}</Text>
-            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{r.quantity_on_hand}</Text>
-            <Text style={[s.td, { width: '14%', textAlign: 'right' }]}>{formatPKR(r.sale_price_paisa, { showSymbol: false })}</Text>
-            {includeCost && <Text style={[s.td, { width: '11%', textAlign: 'right' }]}>{r.purchase_price_paisa != null ? formatPKR(r.purchase_price_paisa, { showSymbol: false }) : '—'}</Text>}
-            {includeCost && <Text style={[s.td, { width: '11%', textAlign: 'right' }]}>{formatPKR(r.value_at_cost_paisa, { showSymbol: false })}</Text>}
-          </View>
-        ))}
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Stock Report"
+      identity={identity}
+      title="Stock Report"
+      subtitle="Current quantities and valuation"
+      filters={[{ label: 'Scope', value: 'Active products' }]}
+      recordCount={data.rows.length}
+      stats={stats}
+      note={includeCost ? undefined : 'Cost columns are omitted for your role.'}
+      landscape
+    >
+      <Text style={s.h2}>Stock on Hand</Text>
+      <DataTable columns={columns} rows={data.rows} />
+    </ReportDoc>
   );
 }
 
 // ──────────────── CASH BOOK ────────────────
-export function CashBookReportPDF({ data, range, businessName }: {
-  data: CashBookData; range: { from: string; to: string }; businessName: string;
+export function CashBookReportPDF({ data, range, identity }: Base & {
+  data: CashBookData; range: { from: string; to: string };
 }) {
+  type Row = CashBookData['entries'][number];
   return (
-    <Document title="Daily Cash Book">
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>Daily Cash Book — {businessName}</Text>
-        <Text style={s.meta}>{rangeStr(range.from, range.to)}</Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}><Text style={s.kpiLabel}>Cash In</Text><Text style={[s.kpiValue, { color: '#070' }]}>{formatPKR(data.total_in_paisa)}</Text></View>
-          <View style={s.kpi}><Text style={s.kpiLabel}>Cash Out</Text><Text style={[s.kpiValue, { color: '#c00' }]}>{formatPKR(data.total_out_paisa)}</Text></View>
-          <View style={s.kpi}><Text style={s.kpiLabel}>Closing</Text><Text style={s.kpiValue}>{formatPKR(data.closing_paisa)}</Text></View>
-        </View>
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '15%' }]}>Date</Text>
-          <Text style={[s.th, { width: '55%' }]}>Description</Text>
-          <Text style={[s.th, { width: '15%', textAlign: 'right' }]}>In</Text>
-          <Text style={[s.th, { width: '15%', textAlign: 'right' }]}>Out</Text>
-        </View>
-        {data.entries.map((e, i) => (
-          <View key={i} style={s.tdRow}>
-            <Text style={[s.td, { width: '15%' }]}>{format(parseISO(e.date), 'dd MMM yyyy')}</Text>
-            <Text style={[s.td, { width: '55%' }]}>{e.description}</Text>
-            <Text style={[s.td, { width: '15%', textAlign: 'right', color: '#070' }]}>{e.kind === 'in' ? formatPKR(e.amount_paisa, { showSymbol: false }) : ''}</Text>
-            <Text style={[s.td, { width: '15%', textAlign: 'right', color: '#c00' }]}>{e.kind === 'out' ? formatPKR(e.amount_paisa, { showSymbol: false }) : ''}</Text>
-          </View>
-        ))}
-        <View style={s.totalRow}>
-          <Text style={[s.totalText, { width: '70%' }]}>Closing Balance</Text>
-          <Text style={[s.totalText, { width: '30%', textAlign: 'right' }]}>{formatPKR(data.closing_paisa)}</Text>
-        </View>
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Daily Cash Book"
+      identity={identity}
+      title="Daily Cash Book"
+      subtitle={rangeStr(range.from, range.to)}
+      filters={[
+        { label: 'Period', value: rangeStr(range.from, range.to) },
+        { label: 'Method', value: 'Cash only' },
+      ]}
+      recordCount={data.entries.length}
+      stats={[
+        { label: 'Cash In', value: formatPKR(data.total_in_paisa), tone: 'good' },
+        { label: 'Cash Out', value: formatPKR(data.total_out_paisa), tone: 'bad' },
+        { label: 'Closing Position', value: formatPKR(data.closing_paisa), tone: data.closing_paisa >= 0 ? 'good' : 'bad' },
+        { label: 'Entries', value: String(data.entries.length) },
+      ]}
+    >
+      <Text style={s.h2}>Movements</Text>
+      <DataTable
+        columns={[
+          { header: 'Date', flex: 1.6, value: (r: Row) => dateCell(r.date) },
+          { header: 'Description', flex: 4, value: (r) => text(r.description) },
+          { header: 'In', flex: 1.8, align: 'right', value: (r) => (r.kind === 'in' ? money(r.amount_paisa) : DASH), total: (rows) => sumMoney(rows.filter((r) => r.kind === 'in'), (r) => r.amount_paisa) },
+          { header: 'Out', flex: 1.8, align: 'right', value: (r) => (r.kind === 'out' ? money(r.amount_paisa) : DASH), total: (rows) => sumMoney(rows.filter((r) => r.kind === 'out'), (r) => r.amount_paisa) },
+        ]}
+        rows={data.entries}
+        emptyNote="No cash movements in this period."
+      />
+    </ReportDoc>
   );
 }
 
 // ──────────────── LOCATION ────────────────
-export function LocationReportPDF({ data, range, businessName }: {
-  data: LocationReportData; range: { from: string; to: string }; businessName: string;
+export function LocationReportPDF({ data, range, identity }: Base & {
+  data: LocationReportData; range: { from: string; to: string };
 }) {
+  type Row = LocationReportData['rows'][number];
   return (
-    <Document title="Location Report">
-      {/* Page 1: summary table across all cities */}
-      <Page size="A4" style={s.page}>
-        <Text style={s.title}>{businessName} — Location Report</Text>
-        <Text style={s.meta}>{rangeStr(range.from, range.to)}</Text>
-
-        <View style={s.kpiRow}>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Sales</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_sales_paisa)}</Text>
-          </View>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Total Collected</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_paid_paisa)}</Text>
-          </View>
-          <View style={s.kpi}>
-            <Text style={s.kpiLabel}>Outstanding (all-time)</Text>
-            <Text style={s.kpiValue}>{formatPKR(data.total_outstanding_paisa)}</Text>
-          </View>
-        </View>
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '22%' }]}>Location</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Customers</Text>
-          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Sales</Text>
-          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Paid</Text>
-          <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Outstanding</Text>
-          <Text style={[s.th, { width: '12%', textAlign: 'right' }]}>Collection</Text>
-        </View>
-        {data.rows.map((r) => (
-          <View key={r.location_id ?? 'unassigned'} style={s.tdRow}>
-            <Text style={[s.td, { width: '22%' }]}>{r.location_name}</Text>
-            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>{r.customer_count}</Text>
-            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.sales_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.paid_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(r.outstanding_paisa, { showSymbol: false })}</Text>
-            <Text style={[s.td, { width: '12%', textAlign: 'right' }]}>
-              {r.collection_pct === null ? '—' : `${r.collection_pct}%`}
-            </Text>
-          </View>
-        ))}
-        <View style={s.totalRow}>
-          <Text style={[s.totalText, { width: '34%' }]}>Total</Text>
-          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_sales_paisa, { showSymbol: false })}</Text>
-          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_paid_paisa, { showSymbol: false })}</Text>
-          <Text style={[s.totalText, { width: '18%', textAlign: 'right' }]}>{formatPKR(data.total_outstanding_paisa, { showSymbol: false })}</Text>
-          <Text style={[s.totalText, { width: '12%' }]} />
-        </View>
-      </Page>
-
-      {/* One page per city with its customer breakdown */}
-      {data.rows
-        .filter((r) => r.customer_count > 0)
-        .map((r) => {
-          const customers = data.breakdown.get(r.location_id) ?? [];
-          return (
-            <Page key={`bd-${r.location_id ?? 'unassigned'}`} size="A4" style={s.page}>
-              <Text style={s.title}>{r.location_name}</Text>
-              <Text style={s.meta}>
-                {rangeStr(range.from, range.to)} · {r.customer_count} customers ·
-                {' '}outstanding {formatPKR(r.outstanding_paisa)}
-              </Text>
-
-              <View style={s.thRow}>
-                <Text style={[s.th, { width: '30%' }]}>Customer</Text>
-                <Text style={[s.th, { width: '18%' }]}>Phone</Text>
-                <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Sales</Text>
-                <Text style={[s.th, { width: '16%', textAlign: 'right' }]}>Paid</Text>
-                <Text style={[s.th, { width: '18%', textAlign: 'right' }]}>Balance</Text>
-              </View>
-              {customers.map((c) => (
-                <View key={c.customer_name} style={s.tdRow}>
-                  <Text style={[s.td, { width: '30%' }]}>{c.customer_name}</Text>
-                  <Text style={[s.td, { width: '18%' }]}>{c.phone ?? '—'}</Text>
-                  <Text style={[s.td, { width: '18%', textAlign: 'right' }]}>{formatPKR(c.sales_paisa, { showSymbol: false })}</Text>
-                  <Text style={[s.td, { width: '16%', textAlign: 'right' }]}>{formatPKR(c.paid_paisa, { showSymbol: false })}</Text>
-                  <Text style={[s.td, { width: '18%', textAlign: 'right', color: c.balance_paisa > 0 ? '#c00' : '#000' }]}>
-                    {formatPKR(c.balance_paisa, { showSymbol: false })}
-                  </Text>
-                </View>
-              ))}
-            </Page>
-          );
-        })}
-    </Document>
+    <ReportDoc
+      docTitle="Location Report"
+      identity={identity}
+      title="Location Report"
+      subtitle={rangeStr(range.from, range.to)}
+      filters={[{ label: 'Period', value: rangeStr(range.from, range.to) }]}
+      recordCount={data.rows.length}
+      stats={[
+        { label: 'Locations', value: String(data.rows.length) },
+        { label: 'Customers', value: String(data.rows.reduce((t, r) => t + r.customer_count, 0)) },
+        { label: 'Sales', value: formatPKR(data.rows.reduce((t, r) => t + r.sales_paisa, 0)) },
+        { label: 'Collected', value: formatPKR(data.rows.reduce((t, r) => t + r.paid_paisa, 0)), tone: 'good' },
+        { label: 'Outstanding', value: formatPKR(data.rows.reduce((t, r) => t + r.outstanding_paisa, 0)), tone: 'bad' },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>By Location</Text>
+      <DataTable
+        columns={[
+          { header: 'Location', flex: 2.6, value: (r: Row) => text(r.location_name) },
+          { header: 'Customers', flex: 1.4, align: 'right', value: (r) => String(r.customer_count) },
+          { header: 'Sales', flex: 2, align: 'right', value: (r) => money(r.sales_paisa), total: (rows) => sumMoney(rows, (r) => r.sales_paisa) },
+          { header: 'Collected', flex: 2, align: 'right', value: (r) => money(r.paid_paisa), total: (rows) => sumMoney(rows, (r) => r.paid_paisa) },
+          { header: 'Outstanding', flex: 2, align: 'right', value: (r) => money(r.outstanding_paisa), total: (rows) => sumMoney(rows, (r) => r.outstanding_paisa) },
+        ]}
+        rows={data.rows}
+      />
+    </ReportDoc>
   );
 }
 
 // ──────────────── AUDIT ────────────────
-export function AuditReportPDF({ data, range }: {
+export function AuditReportPDF({ data, range, identity }: Base & {
   data: AuditData; range: { from: string; to: string };
 }) {
+  type Row = AuditData['rows'][number];
   return (
-    <Document title="Audit Log">
-      <Page size="A4" style={s.page} orientation="landscape">
-        <Text style={s.title}>Audit Log</Text>
-        <Text style={s.meta}>{rangeStr(range.from, range.to)} · {data.rows.length} events (last 500)</Text>
-
-        <View style={s.thRow}>
-          <Text style={[s.th, { width: '18%' }]}>Time</Text>
-          <Text style={[s.th, { width: '24%' }]}>User</Text>
-          <Text style={[s.th, { width: '20%' }]}>Table</Text>
-          <Text style={[s.th, { width: '12%' }]}>Action</Text>
-          <Text style={[s.th, { width: '26%' }]}>Row</Text>
-        </View>
-        {data.rows.map((r, i) => (
-          <View key={i} style={s.tdRow}>
-            <Text style={[s.td, { width: '18%' }]}>{format(parseISO(r.at), 'dd MMM HH:mm:ss')}</Text>
-            <Text style={[s.td, { width: '24%' }]}>{r.user_email ?? 'system'}</Text>
-            <Text style={[s.td, { width: '20%' }]}>{r.table_name}</Text>
-            <Text style={[s.td, { width: '12%' }]}>{r.action}</Text>
-            <Text style={[s.td, { width: '26%', fontFamily: 'Courier' }]}>{r.row_id.slice(0, 12)}…</Text>
-          </View>
-        ))}
-      </Page>
-    </Document>
+    <ReportDoc
+      docTitle="Audit Report"
+      identity={identity}
+      title="Audit Report"
+      subtitle={rangeStr(range.from, range.to)}
+      filters={[{ label: 'Period', value: rangeStr(range.from, range.to) }]}
+      recordCount={data.rows.length}
+      stats={[
+        { label: 'Entries', value: String(data.rows.length) },
+        { label: 'Created', value: String(data.rows.filter((r) => r.action === 'INSERT').length) },
+        { label: 'Updated', value: String(data.rows.filter((r) => r.action === 'UPDATE').length) },
+        { label: 'Deleted', value: String(data.rows.filter((r) => r.action === 'DELETE').length), tone: 'bad' },
+      ]}
+      landscape
+    >
+      <Text style={s.h2}>Changes</Text>
+      <DataTable
+        columns={[
+          { header: 'When', flex: 2, value: (r: Row) => (r.at ? format(parseISO(r.at), 'dd MMM yyyy HH:mm') : DASH) },
+          { header: 'User', flex: 2.4, value: (r) => text(r.user_email) },
+          { header: 'Table', flex: 2, value: (r) => text(r.table_name) },
+          { header: 'Action', flex: 1.4, value: (r) => r.action },
+          {
+            header: 'Record', flex: 3,
+            // The log stores before/after JSON, not a sentence. The row id is
+            // what an auditor traces, so that is what is printed.
+            value: (r) => text(r.row_id),
+          },
+        ]}
+        rows={data.rows}
+        emptyNote="No changes recorded in this period."
+      />
+    </ReportDoc>
   );
 }

@@ -44,7 +44,11 @@ async function main() {
     <LocationReportPDF
       data={data}
       range={{ from: '2026-08-01', to: '2026-08-31' }}
-      businessName="Khaliq Oil Company"
+      identity={{
+        company: { name: 'Khaliq Oil Company', address: 'Rajana, Toba Tek Singh', phone: '0300-1234567', ntn: null },
+        generatedAt: '21 Aug 2026, 09:00 PM',
+        generatedBy: 'Talal Naveed',
+      }}
     />,
     `${outDir}/location-report.pdf`,
   );

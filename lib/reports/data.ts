@@ -5,6 +5,8 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSetting, SETTING_KEYS, SETTING_DEFAULTS } from '@/lib/settings';
+import { getSession } from '@/lib/auth/session';
+import { formatKarachi } from '@/lib/date';
 import type { DateRange } from '@/components/reports/shared';
 
 /**
@@ -939,5 +941,41 @@ export async function fetchLocationReportData(range: DateRange): Promise<Locatio
     total_sales_paisa: rows.reduce((s, r) => s + r.sales_paisa, 0),
     total_paid_paisa: rows.reduce((s, r) => s + r.paid_paisa, 0),
     total_outstanding_paisa: rows.reduce((s, r) => s + r.outstanding_paisa, 0),
+  };
+}
+
+// ───────────────────────────────────────────────
+// Report identity: who produced this document, for whom, and when.
+// Every PDF header needs it, so it is fetched once here rather than
+// reassembled per report.
+// ───────────────────────────────────────────────
+export type ReportIdentity = {
+  company: { name: string; address: string | null; phone: string | null; ntn: string | null };
+  generatedAt: string;
+  generatedBy: string;
+};
+
+export async function fetchReportIdentity(): Promise<ReportIdentity> {
+  const supabase = await createServerClient();
+  const businessId = await getActiveBusinessId();
+
+  const [bizRes, address, phone, ntn, session] = await Promise.all([
+    supabase.from('businesses').select('name').eq('id', businessId).single(),
+    getSetting(SETTING_KEYS.business_address, SETTING_DEFAULTS.business_address),
+    getSetting(SETTING_KEYS.business_phone, SETTING_DEFAULTS.business_phone),
+    // Optional: businesses without a tax number simply omit the line.
+    getSetting('business_ntn', ''),
+    getSession(),
+  ]);
+
+  return {
+    company: {
+      name: (bizRes.data as { name: string } | null)?.name ?? 'Business',
+      address: address || null,
+      phone: phone || null,
+      ntn: ntn || null,
+    },
+    generatedAt: formatKarachi(new Date(), 'dd MMM yyyy, hh:mm a'),
+    generatedBy: session?.full_name || session?.email || 'Unknown user',
   };
 }

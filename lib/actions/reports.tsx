@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth/session';
 import {
   fetchSalesData, fetchPurchaseData, fetchCustomerReportData,
   fetchBalanceData, fetchPLData, fetchLocationReportData,
+  fetchReportIdentity,
   type SalesScope, type SalesData,
 } from '@/lib/reports/data';
 import {
@@ -38,13 +39,6 @@ function slugSales(data: SalesData, range: DateRange): string {
   return `sales${scope}-${range.from}-to-${range.to}`;
 }
 
-async function getBusinessName(): Promise<string> {
-  const supabase = await createServerClient();
-  const businessId = await getActiveBusinessId();
-  const { data } = await supabase.from('businesses').select('name').eq('id', businessId).single();
-  return data?.name ?? 'Business';
-}
-
 // ───────────────────────────────────────────────
 // SALES
 // ───────────────────────────────────────────────
@@ -55,8 +49,8 @@ export async function exportSalesPdf(
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchSalesData(range, scope), getBusinessName()]);
-    const buf = await renderToBuffer(<SalesReportPDF data={data} range={range} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchSalesData(range, scope), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<SalesReportPDF data={data} range={range} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `${slugSales(data, range)}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -103,8 +97,8 @@ export async function exportPurchasePdf(range: DateRange): Promise<ExportResult>
   const err = await ensureRole('admin', 'accountant');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchPurchaseData(range), getBusinessName()]);
-    const buf = await renderToBuffer(<PurchaseReportPDF data={data} range={range} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchPurchaseData(range), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<PurchaseReportPDF data={data} range={range} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `purchase-${range.from}-to-${range.to}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -143,8 +137,8 @@ export async function exportCustomerPdf(): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchCustomerReportData(), getBusinessName()]);
-    const buf = await renderToBuffer(<CustomerReportPDF data={data} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchCustomerReportData(), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<CustomerReportPDF data={data} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `customers-${pdfDate()}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -177,8 +171,8 @@ export async function exportBalancePdf(): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchBalanceData(), getBusinessName()]);
-    const buf = await renderToBuffer(<BalanceReportPDF data={data} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchBalanceData(), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<BalanceReportPDF data={data} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `receivables-${pdfDate()}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -211,8 +205,8 @@ export async function exportPLPdf(range: DateRange): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant');
   if (err) return { ok: false, error: err };
   try {
-    const data = await fetchPLData(range);
-    const buf = await renderToBuffer(<PLReportPDF data={data} />);
+    const [data, identity] = await Promise.all([fetchPLData(range), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<PLReportPDF data={data} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `pl-${range.from}-to-${range.to}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -270,8 +264,8 @@ export async function exportDefaultersPdf(): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchDefaultersData(), getBusinessName()]);
-    const buf = await renderToBuffer(<DefaultersReportPDF data={data} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchDefaultersData(), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<DefaultersReportPDF data={data} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `defaulters-${pdfDate()}.pdf` };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
@@ -300,8 +294,8 @@ export async function exportStockPdf(): Promise<ExportResult> {
   try {
     const session = await getSession();
     const includeCost = session?.role === 'admin' || session?.role === 'accountant';
-    const [data, businessName] = await Promise.all([fetchStockData(), getBusinessName()]);
-    const buf = await renderToBuffer(<StockReportPDF data={data} businessName={businessName} includeCost={includeCost} />);
+    const [data, identity] = await Promise.all([fetchStockData(), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<StockReportPDF data={data} identity={identity} includeCost={includeCost} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `stock-${pdfDate()}.pdf` };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
@@ -336,8 +330,8 @@ export async function exportCashBookPdf(range: DateRange): Promise<ExportResult>
   const err = await ensureRole('admin', 'accountant');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchCashBookData(range), getBusinessName()]);
-    const buf = await renderToBuffer(<CashBookReportPDF data={data} range={range} businessName={businessName} />);
+    const [data, identity] = await Promise.all([fetchCashBookData(range), fetchReportIdentity()]);
+    const buf = await renderToBuffer(<CashBookReportPDF data={data} range={range} identity={identity} />);
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `cashbook-${range.from}-to-${range.to}.pdf` };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
@@ -366,8 +360,10 @@ export async function exportAuditPdf(filters: AuditFilters): Promise<ExportResul
   const err = await ensureRole('admin');
   if (err) return { ok: false, error: err };
   try {
-    const data = await fetchAuditData(filters);
-    const buf = await renderToBuffer(<AuditReportPDF data={data} range={{ from: filters.from, to: filters.to }} />);
+    const [data, identity] = await Promise.all([fetchAuditData(filters), fetchReportIdentity()]);
+    const buf = await renderToBuffer(
+      <AuditReportPDF data={data} range={{ from: filters.from, to: filters.to }} identity={identity} />,
+    );
     return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `audit-${filters.from}-to-${filters.to}.pdf` };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
@@ -402,12 +398,12 @@ export async function exportLocationPdf(range: DateRange): Promise<ExportResult>
   const err = await ensureRole('admin', 'accountant');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([
+    const [data, identity] = await Promise.all([
       fetchLocationReportData(range),
-      getBusinessName(),
+      fetchReportIdentity(),
     ]);
     const buf = await renderToBuffer(
-      <LocationReportPDF data={data} range={range} businessName={businessName} />,
+      <LocationReportPDF data={data} range={range} identity={identity} />,
     );
     return {
       ok: true,
