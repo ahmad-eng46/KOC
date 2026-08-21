@@ -7,6 +7,58 @@ import { getActiveBusinessId } from '@/lib/business';
 import { getSetting, SETTING_KEYS, SETTING_DEFAULTS } from '@/lib/settings';
 import type { DateRange } from '@/components/reports/shared';
 
+/**
+ * Supabase caps every PostgREST response at db.max_rows (1000). Without paging,
+ * a report over a larger set is silently cut to 1000 rows — and because the
+ * totals below the table are summed from the rows that arrived, the figures
+ * come out short as well, presented as fact.
+ *
+ * The Excel backup hit this exact bug and was fixed by paging; the report layer
+ * never received that fix. Every read below goes through here.
+ *
+ * The guard is a backstop, not a limit anyone should reach: at the current
+ * scale (~1,150 invoices) no report comes close. If one ever does, it stops and
+ * says so rather than quietly returning a third of the ledger.
+ */
+const PAGE_SIZE = 1000;
+const MAX_ROWS = 250_000;
+
+/**
+ * `.in()` puts every id in the query string, so a year of invoices would build a
+ * URL long enough for the server to reject. Ids go in batches.
+ */
+const ID_CHUNK = 200;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+type Query = {
+  range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+};
+
+export async function fetchAllRows<T>(
+  build: () => Query,
+  label: string,
+): Promise<T[]> {
+  const out: T[] = [];
+
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    const { data, error } = await build().range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(`${label}: ${error.message}`);
+
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) return out;
+  }
+
+  throw new Error(
+    `${label}: more than ${MAX_ROWS.toLocaleString()} rows match. Narrow the date range and export again.`,
+  );
+}
+
 /** Optional brand/product narrowing, matching the Sales Report's dropdowns. */
 export type SalesScope = { brandId?: string; productId?: string };
 
@@ -39,17 +91,19 @@ export async function fetchSalesData(
     return fetchScopedSalesData(supabase, businessId, range, scope);
   }
 
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('invoice_number, issue_date, total_paisa, paid_paisa, customers(name)')
-    .eq('business_id', businessId)
-    .is('deleted_at', null)
-    .neq('status', 'draft')
-    .neq('status', 'cancelled')
-    .gte('issue_date', range.from)
-    .lte('issue_date', range.to)
-    .order('issue_date');
-  if (error) throw error;
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () => supabase
+      .from('invoices')
+      .select('invoice_number, issue_date, total_paisa, paid_paisa, customers(name)')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .neq('status', 'draft')
+      .neq('status', 'cancelled')
+      .gte('issue_date', range.from)
+      .lte('issue_date', range.to)
+      .order('issue_date'),
+    'Sales report',
+  );
 
   type RawCust = { name: string };
   type Raw = {
@@ -109,22 +163,23 @@ async function fetchScopedSalesData(
   range: DateRange,
   scope: SalesScope,
 ): Promise<SalesData> {
-  let q = supabase
-    .from('sales_analytics_view')
-    .select('invoice_number, issue_date, customer_name, product_name, brand_name, net_quantity, net_amount_paisa')
-    .eq('business_id', businessId)
-    .gte('issue_date', range.from)
-    .lte('issue_date', range.to)
-    .order('issue_date')
-    .limit(5000);
+  const build = () => {
+    let q = supabase
+      .from('sales_analytics_view')
+      .select('invoice_number, issue_date, customer_name, product_name, brand_name, net_quantity, net_amount_paisa')
+      .eq('business_id', businessId)
+      .gte('issue_date', range.from)
+      .lte('issue_date', range.to)
+      .order('issue_date');
 
-  // 'unbranded' is not an id — it means the lines whose product has no brand.
-  if (scope.brandId === 'unbranded') q = q.is('brand_id', null);
-  else if (scope.brandId) q = q.eq('brand_id', scope.brandId);
-  if (scope.productId) q = q.eq('product_id', scope.productId);
+    // 'unbranded' is not an id — it means the lines whose product has no brand.
+    if (scope.brandId === 'unbranded') q = q.is('brand_id', null);
+    else if (scope.brandId) q = q.eq('brand_id', scope.brandId);
+    if (scope.productId) q = q.eq('product_id', scope.productId);
+    return q;
+  };
 
-  const { data, error } = await q;
-  if (error) throw error;
+  const data = await fetchAllRows<Record<string, unknown>>(build, 'Filtered sales report');
 
   type Raw = {
     invoice_number: string; issue_date: string; customer_name: string | null;
@@ -200,15 +255,17 @@ export async function fetchPurchaseData(range: DateRange): Promise<PurchaseData>
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
-  const { data, error } = await supabase
-    .from('stock_movements')
-    .select('quantity, note, created_at, products(name, sku, unit, purchase_price_paisa)')
-    .eq('business_id', businessId)
-    .eq('type', 'in')
-    .gte('created_at', range.from)
-    .lte('created_at', `${range.to}T23:59:59`)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () => supabase
+      .from('stock_movements')
+      .select('quantity, note, created_at, products(name, sku, unit, purchase_price_paisa)')
+      .eq('business_id', businessId)
+      .eq('type', 'in')
+      .gte('created_at', range.from)
+      .lte('created_at', `${range.to}T23:59:59`)
+      .order('created_at', { ascending: false }),
+    'Purchase report',
+  );
 
   type RawProd = { name: string; sku: string | null; unit: string; purchase_price_paisa: number | null };
   type Raw = { quantity: number; note: string | null; created_at: string; products: RawProd | RawProd[] | null };
@@ -259,23 +316,30 @@ export async function fetchCustomerReportData(): Promise<CustomerReportData> {
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
-  const [custRes, ledgerRes] = await Promise.all([
-    supabase
-      .from('customers')
-      .select('id, name, phone, opening_balance_paisa')
-      .eq('business_id', businessId)
-      .is('deleted_at', null)
-      .order('name'),
-    supabase
-      .from('ledger_entries')
-      .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
-      .eq('business_id', businessId),
+  // The ledger is the big one here — one row per invoice, payment and return
+  // ever recorded. It is exactly the table the 1000-row cap used to truncate.
+  const [customers, ledger] = await Promise.all([
+    fetchAllRows<{ id: string; name: string; phone: string | null; opening_balance_paisa: number }>(
+      () => supabase
+        .from('customers')
+        .select('id, name, phone, opening_balance_paisa')
+        .eq('business_id', businessId)
+        .is('deleted_at', null)
+        .order('name'),
+      'Customer report (customers)',
+    ),
+    fetchAllRows<{ customer_id: string; ref_type: string; debit_paisa: number; credit_paisa: number; entry_date: string }>(
+      () => supabase
+        .from('ledger_entries')
+        .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
+        .eq('business_id', businessId)
+        .order('entry_date'),
+      'Customer report (ledger)',
+    ),
   ]);
-  if (custRes.error) throw custRes.error;
-  if (ledgerRes.error) throw ledgerRes.error;
 
   const map = new Map<string, { invoiced: number; paid: number; deltaSum: number; lastDate: string | null }>();
-  for (const e of ledgerRes.data ?? []) {
+  for (const e of ledger) {
     const a = map.get(e.customer_id) ?? { invoiced: 0, paid: 0, deltaSum: 0, lastDate: null };
     a.deltaSum += Number(e.debit_paisa) - Number(e.credit_paisa);
     if (e.ref_type === 'invoice') a.invoiced += Number(e.debit_paisa);
@@ -284,7 +348,7 @@ export async function fetchCustomerReportData(): Promise<CustomerReportData> {
     map.set(e.customer_id, a);
   }
 
-  const rows = (custRes.data ?? []).map((c) => {
+  const rows = customers.map((c) => {
     const a = map.get(c.id);
     return {
       customer_name: c.name,
@@ -378,55 +442,67 @@ export async function fetchPLData(range: DateRange): Promise<PLData> {
     .single();
 
   // Sales = Σ invoices.total_paisa in range (not deleted, not draft/cancelled)
-  const { data: invoiceRows, error: invErr } = await supabase
-    .from('invoices')
-    .select('id, total_paisa')
-    .eq('business_id', businessId)
-    .is('deleted_at', null)
-    .neq('status', 'draft')
-    .neq('status', 'cancelled')
-    .gte('issue_date', range.from)
-    .lte('issue_date', range.to);
-  if (invErr) throw invErr;
-  const sales_paisa = (invoiceRows ?? []).reduce((s, r) => s + Number(r.total_paisa), 0);
-  const invoiceIdsInRange = new Set((invoiceRows ?? []).map((r) => r.id));
+  const invoiceRows = await fetchAllRows<{ id: string; total_paisa: number }>(
+    () => supabase
+      .from('invoices')
+      .select('id, total_paisa')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .neq('status', 'draft')
+      .neq('status', 'cancelled')
+      .gte('issue_date', range.from)
+      .lte('issue_date', range.to)
+      .order('id'),
+    'P&L (invoices)',
+  );
+  const sales_paisa = invoiceRows.reduce((s, r) => s + Number(r.total_paisa), 0);
+  const invoiceIdsInRange = new Set(invoiceRows.map((r) => r.id));
 
   // Returns = Σ returns.total_paisa in range
-  const { data: returnRows, error: retErr } = await supabase
-    .from('returns')
-    .select('id, total_paisa')
-    .eq('business_id', businessId)
-    .is('deleted_at', null)
-    .gte('return_date', range.from)
-    .lte('return_date', range.to);
-  if (retErr) throw retErr;
-  const returns_paisa = (returnRows ?? []).reduce((s, r) => s + Number(r.total_paisa), 0);
-  const returnIdsInRange = new Set((returnRows ?? []).map((r) => r.id));
+  const returnRows = await fetchAllRows<{ id: string; total_paisa: number }>(
+    () => supabase
+      .from('returns')
+      .select('id, total_paisa')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .gte('return_date', range.from)
+      .lte('return_date', range.to)
+      .order('id'),
+    'P&L (returns)',
+  );
+  const returns_paisa = returnRows.reduce((s, r) => s + Number(r.total_paisa), 0);
+  const returnIdsInRange = new Set(returnRows.map((r) => r.id));
 
   // COGS for sales: Σ over invoice_items in those invoices: qty * purchase_price_at_sale_paisa
   let cogs_paisa = 0;
-  if (invoiceIdsInRange.size > 0) {
-    const { data: itemRows, error: itErr } = await supabase
-      .from('invoice_items')
-      .select('invoice_id, quantity, purchase_price_at_sale_paisa')
-      .in('invoice_id', Array.from(invoiceIdsInRange));
-    if (itErr) throw itErr;
-    for (const it of itemRows ?? []) {
+  for (const ids of chunk([...invoiceIdsInRange], ID_CHUNK)) {
+    const itemRows = await fetchAllRows<{ quantity: number; purchase_price_at_sale_paisa: number }>(
+      () => supabase
+        .from('invoice_items')
+        .select('invoice_id, quantity, purchase_price_at_sale_paisa')
+        .in('invoice_id', ids)
+        .order('invoice_id'),
+      'P&L (invoice items)',
+    );
+    for (const it of itemRows) {
       cogs_paisa += Math.round(Number(it.quantity) * Number(it.purchase_price_at_sale_paisa));
     }
   }
 
   // COGS reversal for returns: lookup via return_items joined to invoice_items
   let cogs_returns_paisa = 0;
-  if (returnIdsInRange.size > 0) {
-    const { data: retItems, error: rItErr } = await supabase
-      .from('return_items')
-      .select('return_id, quantity, invoice_item_id, invoice_items!inner(purchase_price_at_sale_paisa)')
-      .in('return_id', Array.from(returnIdsInRange));
-    if (rItErr) throw rItErr;
-    type RawInvItem = { purchase_price_at_sale_paisa: number };
-    type RawRet = { return_id: string; quantity: number; invoice_item_id: string; invoice_items: RawInvItem | RawInvItem[] };
-    for (const ri of (retItems as unknown as RawRet[]) ?? []) {
+  type RawInvItem = { purchase_price_at_sale_paisa: number };
+  type RawRet = { quantity: number; invoice_items: RawInvItem | RawInvItem[] };
+  for (const ids of chunk([...returnIdsInRange], ID_CHUNK)) {
+    const retItems = await fetchAllRows<RawRet>(
+      () => supabase
+        .from('return_items')
+        .select('return_id, quantity, invoice_item_id, invoice_items!inner(purchase_price_at_sale_paisa)')
+        .in('return_id', ids)
+        .order('return_id'),
+      'P&L (return items)',
+    );
+    for (const ri of retItems) {
       const ii = Array.isArray(ri.invoice_items) ? ri.invoice_items[0] : ri.invoice_items;
       cogs_returns_paisa += Math.round(Number(ri.quantity) * Number(ii?.purchase_price_at_sale_paisa ?? 0));
     }
@@ -437,14 +513,19 @@ export async function fetchPLData(range: DateRange): Promise<PLData> {
   const gross_profit_paisa = net_sales_paisa - net_cogs_paisa;
 
   // Expenses
-  const { data: expRows, error: expErr } = await supabase
-    .from('expenses')
-    .select('type, category, amount_paisa, include_in_pnl')
-    .eq('business_id', businessId)
-    .is('deleted_at', null)
-    .gte('expense_date', range.from)
-    .lte('expense_date', range.to);
-  if (expErr) throw expErr;
+  const expRows = await fetchAllRows<{
+    type: string; category: string; amount_paisa: number; include_in_pnl: boolean;
+  }>(
+    () => supabase
+      .from('expenses')
+      .select('type, category, amount_paisa, include_in_pnl')
+      .eq('business_id', businessId)
+      .is('deleted_at', null)
+      .gte('expense_date', range.from)
+      .lte('expense_date', range.to)
+      .order('expense_date'),
+    'P&L (expenses)',
+  );
 
   const opex_paisa = (expRows ?? [])
     .filter((e) => e.type === 'business')
@@ -509,10 +590,20 @@ export async function fetchDefaultersData(): Promise<DefaultersData> {
   const businessId = await getActiveBusinessId();
   const days = await getSetting(SETTING_KEYS.defaulter_days, SETTING_DEFAULTS.defaulter_days);
 
-  const [custRes, ledRes] = await Promise.all([
-    supabase.from('customers').select('id, name, phone, opening_balance_paisa').eq('business_id', businessId).is('deleted_at', null),
-    supabase.from('ledger_entries').select('customer_id, debit_paisa, credit_paisa, entry_date').eq('business_id', businessId),
+  const [custRows, ledRows] = await Promise.all([
+    fetchAllRows<{ id: string; name: string; phone: string | null; opening_balance_paisa: number }>(
+      () => supabase.from('customers').select('id, name, phone, opening_balance_paisa')
+        .eq('business_id', businessId).is('deleted_at', null).order('name'),
+      'Defaulters (customers)',
+    ),
+    fetchAllRows<{ customer_id: string; debit_paisa: number; credit_paisa: number; entry_date: string }>(
+      () => supabase.from('ledger_entries').select('customer_id, debit_paisa, credit_paisa, entry_date')
+        .eq('business_id', businessId).order('entry_date'),
+      'Defaulters (ledger)',
+    ),
   ]);
+  const custRes = { data: custRows, error: null };
+  const ledRes = { data: ledRows, error: null };
   const today = new Date();
   const acc = new Map<string, { delta: number; lastDate: string | null }>();
   for (const e of ledRes.data ?? []) {
@@ -557,16 +648,27 @@ export async function fetchStockData(): Promise<StockData> {
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
-  const [prodRes, stockRes] = await Promise.all([
-    supabase.from('products_for_role')
-      .select('id, name, sku, unit, sale_price_paisa, purchase_price_paisa, low_stock_threshold')
-      .eq('business_id', businessId).eq('is_active', true).order('name'),
-    supabase.from('current_stock').select('product_id, quantity_on_hand').eq('business_id', businessId),
+  const [prodRows, stockRows] = await Promise.all([
+    fetchAllRows<{
+      id: string; name: string; sku: string | null; unit: string;
+      sale_price_paisa: number; purchase_price_paisa: number | null;
+      low_stock_threshold: number | null;
+    }>(
+      () => supabase.from('products_for_role')
+        .select('id, name, sku, unit, sale_price_paisa, purchase_price_paisa, low_stock_threshold')
+        .eq('business_id', businessId).eq('is_active', true).order('name'),
+      'Stock report (products)',
+    ),
+    fetchAllRows<{ product_id: string; quantity_on_hand: number }>(
+      () => supabase.from('current_stock').select('product_id, quantity_on_hand')
+        .eq('business_id', businessId).order('product_id'),
+      'Stock report (stock)',
+    ),
   ]);
   const stockMap = new Map<string, number>(
-    (stockRes.data ?? []).map((s) => [s.product_id, Number(s.quantity_on_hand)]),
+    stockRows.map((s) => [s.product_id, Number(s.quantity_on_hand)]),
   );
-  const rows = (prodRes.data ?? []).map((p) => {
+  const rows = prodRows.map((p) => {
     const qty = stockMap.get(p.id) ?? 0;
     const cost = p.purchase_price_paisa != null ? Number(p.purchase_price_paisa) : null;
     return {
@@ -598,16 +700,26 @@ export async function fetchCashBookData(range: DateRange): Promise<CashBookData>
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
-  const [paysRes, expRes] = await Promise.all([
-    supabase.from('payments')
-      .select('payment_date, amount_paisa, reference, customers(name)')
-      .eq('business_id', businessId).is('deleted_at', null).eq('method', 'cash')
-      .gte('payment_date', range.from).lte('payment_date', range.to),
-    supabase.from('expenses')
-      .select('expense_date, amount_paisa, category, description')
-      .eq('business_id', businessId).is('deleted_at', null)
-      .gte('expense_date', range.from).lte('expense_date', range.to),
+  const [payRows, expRows] = await Promise.all([
+    fetchAllRows<Record<string, unknown>>(
+      () => supabase.from('payments')
+        .select('payment_date, amount_paisa, reference, customers(name)')
+        .eq('business_id', businessId).is('deleted_at', null).eq('method', 'cash')
+        .gte('payment_date', range.from).lte('payment_date', range.to)
+        .order('payment_date'),
+      'Cash book (receipts)',
+    ),
+    fetchAllRows<{ expense_date: string; amount_paisa: number; category: string; description: string | null }>(
+      () => supabase.from('expenses')
+        .select('expense_date, amount_paisa, category, description')
+        .eq('business_id', businessId).is('deleted_at', null)
+        .gte('expense_date', range.from).lte('expense_date', range.to)
+        .order('expense_date'),
+      'Cash book (payments out)',
+    ),
   ]);
+  const paysRes = { data: payRows };
+  const expRes = { data: expRows };
 
   type RawCust = { name: string };
   type RawPay = { payment_date: string; amount_paisa: number; reference: string | null; customers: RawCust | RawCust[] | null };
@@ -656,18 +768,21 @@ export type AuditData = {
 
 export async function fetchAuditData(filters: AuditFilters): Promise<AuditData> {
   const supabase = await createServerClient();
-  let q = supabase
-    .from('audit_log')
-    .select('at, table_name, row_id, action, before_jsonb, after_jsonb, users(email)')
-    .gte('at', filters.from)
-    .lte('at', `${filters.to}T23:59:59`)
-    .order('at', { ascending: false })
-    .limit(500);
-  if (filters.table) q = q.eq('table_name', filters.table);
-  if (filters.action) q = q.eq('action', filters.action);
-  if (filters.userId) q = q.eq('user_id', filters.userId);
-  const { data, error } = await q;
-  if (error) throw error;
+  // Was capped at 500 with no indication in the file that anything was left
+  // out. Now paged, so an audit export covers the range it claims to.
+  const build = () => {
+    let q = supabase
+      .from('audit_log')
+      .select('at, table_name, row_id, action, before_jsonb, after_jsonb, users(email)')
+      .gte('at', filters.from)
+      .lte('at', `${filters.to}T23:59:59`)
+      .order('at', { ascending: false });
+    if (filters.table) q = q.eq('table_name', filters.table);
+    if (filters.action) q = q.eq('action', filters.action);
+    if (filters.userId) q = q.eq('user_id', filters.userId);
+    return q;
+  };
+  const data = await fetchAllRows<Record<string, unknown>>(build, 'Audit report');
 
   type RawUser = { email: string };
   type Raw = {
@@ -734,28 +849,34 @@ export async function fetchLocationReportData(range: DateRange): Promise<Locatio
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
-  const [locRes, custRes, ledgerRes] = await Promise.all([
-    supabase
-      .from('locations')
-      .select('id, name, sort_order')
-      .eq('business_id', businessId)
-      .is('deleted_at', null)
-      .order('sort_order')
-      .order('name'),
-    supabase
-      .from('customers')
-      .select('id, name, phone, location_id, opening_balance_paisa')
-      .eq('business_id', businessId)
-      .is('deleted_at', null)
-      .order('name'),
-    supabase
-      .from('ledger_entries')
-      .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
-      .eq('business_id', businessId),
+  const [locRows, custRows, ledgerRows] = await Promise.all([
+    fetchAllRows<{ id: string; name: string; sort_order: number }>(
+      () => supabase.from('locations').select('id, name, sort_order')
+        .eq('business_id', businessId).is('deleted_at', null)
+        .order('sort_order').order('name'),
+      'Location report (locations)',
+    ),
+    fetchAllRows<{
+      id: string; name: string; phone: string | null;
+      location_id: string | null; opening_balance_paisa: number;
+    }>(
+      () => supabase.from('customers').select('id, name, phone, location_id, opening_balance_paisa')
+        .eq('business_id', businessId).is('deleted_at', null).order('name'),
+      'Location report (customers)',
+    ),
+    fetchAllRows<{
+      customer_id: string; ref_type: string;
+      debit_paisa: number; credit_paisa: number; entry_date: string;
+    }>(
+      () => supabase.from('ledger_entries')
+        .select('customer_id, ref_type, debit_paisa, credit_paisa, entry_date')
+        .eq('business_id', businessId).order('entry_date'),
+      'Location report (ledger)',
+    ),
   ]);
-  if (locRes.error) throw locRes.error;
-  if (custRes.error) throw custRes.error;
-  if (ledgerRes.error) throw ledgerRes.error;
+  const locRes = { data: locRows };
+  const custRes = { data: custRows };
+  const ledgerRes = { data: ledgerRows };
 
   type Acc = { sales: number; paid: number; delta: number };
   const byCustomer = new Map<string, Acc>();
