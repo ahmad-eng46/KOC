@@ -16,7 +16,8 @@ export type ActivityAction =
   | 'brand.created' | 'supplier.created' | 'location.created'
   | 'backup.downloaded'
   | 'user.login' | 'user.password_changed'
-  | 'permission.changed';
+  | 'permission.changed'
+  | 'deletion.requested' | 'deletion.approved' | 'deletion.rejected' | 'deletion.cancelled';
 
 export type LogActivityParams = {
   action: ActivityAction;

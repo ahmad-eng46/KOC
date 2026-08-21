@@ -67,6 +67,7 @@ export const ACTION_GROUPS = [
   { value: 'supplier', label: 'Suppliers' },
   { value: 'user', label: 'Sign-ins & passwords' },
   { value: 'permission', label: 'Permissions' },
+  { value: 'deletion', label: 'Deletion requests' },
   { value: 'backup', label: 'Backups' },
 ] as const;
 
