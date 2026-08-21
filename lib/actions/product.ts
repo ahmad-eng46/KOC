@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
+import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { productSchema, type ProductInput } from '@/lib/validators/product';
 import { logActivity } from '@/lib/actions/activity-log';
@@ -90,6 +91,13 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Ac
 }
 
 export async function softDeleteProduct(id: string): Promise<{ ok: boolean; error?: string }> {
+  // RLS happened to cover this one (products_update is admin-only), but by luck
+  // rather than design — there was no server check at all. Iron rule #7.
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { ok: false, error: 'Only admins can delete products. Request approval instead.' };
+  }
+
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 

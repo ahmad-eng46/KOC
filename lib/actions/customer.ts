@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
+import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { logActivity } from '@/lib/actions/activity-log';
@@ -77,6 +78,14 @@ export async function updateCustomer(
 }
 
 export async function softDeleteCustomer(id: string): Promise<{ ok: boolean; error?: string }> {
+  // Was enforced by RLS alone, which admits accountants (customers_update) —
+  // so an accountant could delete any customer with no gate and no reason on
+  // record. Iron rule #7: the server checks too. Non-admins request instead.
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { ok: false, error: 'Only admins can delete customers. Request approval instead.' };
+  }
+
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 
