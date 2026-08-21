@@ -31,6 +31,11 @@ import { addExpenseSummarySheet, addExpensesSheet } from '@/lib/backup/sheets/ex
 import {
   addAuditSheet, addBrandsSheet, addCustomerCategoriesSheet, addLocationsSheet, addUsersSheet,
 } from '@/lib/backup/sheets/reference-sheets';
+import {
+  addSalesSummarySheet, addSalesByProductSheet, addSalesByBrandSheet,
+  addSalesByCustomerSheet, addSalesByDaySheet, addSalesByWeekSheet,
+  addSalesByMonthSheet, addStockReportSheet, addDeadStockSheet,
+} from '@/lib/backup/sheets/sales-period-sheets';
 
 export type GeneratedBackup = {
   buffer: Buffer;
@@ -112,9 +117,24 @@ export async function generateExcelBackup(
 function addSheets(wb: ExcelJS.Workbook, data: BackupDataset, generatedAt: Date): void {
   const has = (section: Parameters<typeof data.sections.has>[0]) => data.sections.has(section);
 
-  if (has('summary')) addSummarySheet(wb, data, generatedAt);
+  if (has('summary')) {
+    addSummarySheet(wb, data, generatedAt);
+    // The period breakdown the owner actually asks for: how is the week going,
+    // which product is moving, which brand is carrying the month.
+    addSalesSummarySheet(wb, data, generatedAt);
+    addSalesByProductSheet(wb, data, generatedAt);
+    addSalesByBrandSheet(wb, data, generatedAt);
+    addSalesByCustomerSheet(wb, data, generatedAt);
+    addSalesByDaySheet(wb, data, generatedAt);
+    addSalesByWeekSheet(wb, data);
+    addSalesByMonthSheet(wb, data);
+  }
   if (has('customers')) addCustomersSheet(wb, data);
-  if (has('products')) addProductsSheet(wb, data);
+  if (has('products')) {
+    addProductsSheet(wb, data);
+    addStockReportSheet(wb, data);
+    addDeadStockSheet(wb, data, generatedAt);
+  }
   if (has('invoices')) {
     addInvoicesSheet(wb, data);
     addInvoiceItemsSheet(wb, data);
