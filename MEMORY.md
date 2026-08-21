@@ -168,7 +168,15 @@
 - Iron rule #3 by absence: `showCost: false` omits Cost and Cost Value entirely, asserted on the header row.
 - 324/324 vitest (35 new), tsc + ESLint + `next build` clean.
 
-**Migrations pending, in order:** **0054 (deletion requests), then 0055 (auto-resolve trigger)** — 0055 depends on 0054's table. 0046–0053 are all applied (0051–0053 verified live on 2026-08-21). Neither 0054 nor 0055 is dangerous: without them the approvals screens error and non-admins simply cannot request, but nothing else breaks.
+**Round 15 — admin-controlled page access** (session 23)
+- ⚠️ **This is the SECOND per-user permission store.** `user_permission_overrides` (0051) governs what a user may DO; `user_page_access` (0056) governs what they may SEE. Two stores that can disagree is how a sidebar offers a page the server refuses. One rule prevents it, in `resolvePageAccess()`: `page_definitions.permission_key` names the permission a key narrows, and access requires BOTH. **A ticked box can restrict a user; it can never grant what their role and overrides deny.**
+- `page_definitions` is the master list as data, not a hardcoded array — adding a page is one INSERT. `user_page_access` stores only departures from the role defaults, so **a user with no rows behaves exactly as today**: no backfill, and applying 0056 changes nobody's experience until an admin ticks something. "Reset to role defaults" deletes the rows rather than writing defaults into them.
+- **Admin access is enforced in the resolver, not the UI** — a row inserted by hand cannot lock an admin out of their own business.
+- `action.view_cost_prices` is locked by a **trigger**, not just a disabled checkbox: granting it to staff/viewer raises, because `products_for_role` returns NULL cost anyway (iron rule #3).
+- **The route guard lives in `app/(app)/layout.tsx`, not `proxy.ts`.** The middleware runs on every asset request and should not spend three database round trips there; the layout runs once per page, already has the session, and already loads the map for the sidebar. The path reaches it as an `x-pathname` header set by the middleware. An unmapped path falls through rather than being blocked.
+- 22 tests on the pure resolver cover the order the rules fire in. 346/346 vitest, tsc + ESLint + `next build` clean.
+
+**Migrations pending, in order:** **0054 (deletion requests), 0055 (auto-resolve trigger), then 0056 (page access)** — 0055 depends on 0054's table. 0046–0053 are all applied (0051–0053 verified live on 2026-08-21). Neither 0054 nor 0055 is dangerous: without them the approvals screens error and non-admins simply cannot request, but nothing else breaks.
 
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked. Exception taken in round 8: a push that would break production waits for its migration.
 
