@@ -12,6 +12,7 @@ import { useCustomerCategories } from '@/lib/queries/customer-categories';
 import { CategoryBadge } from './CategoryBadge';
 import { CategoryFilterChips, UNCATEGORISED } from './CategoryFilterChips';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBadge } from '@/components/approvals/PendingDeleteMarkers';
 import { formatPKR } from '@/lib/money';
 
 /**
@@ -189,11 +190,14 @@ export function CustomerTable({ initialCategory = '', isAdmin = false }: Props) 
                   <LocationBadge name={c.locations?.name} />
                 </td>
                 <td className="px-4 py-3">
-                  <CategoryBadge
-                    name={c.customer_categories?.name}
-                    color={c.customer_categories?.color}
-                    id={c.category_id}
-                  />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <CategoryBadge
+                      name={c.customer_categories?.name}
+                      color={c.customer_categories?.color}
+                      id={c.category_id}
+                    />
+                    <PendingDeleteBadge entityType="customer" entityId={c.id} />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-gray-500">{c.phone ?? '—'}</td>
                 <td className="px-4 py-3 text-right font-mono">
@@ -259,6 +263,7 @@ export function CustomerTable({ initialCategory = '', isAdmin = false }: Props) 
                   color={c.customer_categories?.color}
                   id={c.category_id}
                 />
+                <PendingDeleteBadge entityType="customer" entityId={c.id} />
               </p>
             </div>
             <div className="text-right shrink-0 ml-3">

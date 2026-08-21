@@ -18,6 +18,7 @@ import { softDeleteInvoice, markInvoicePaid } from '@/lib/actions/invoice-detail
 import { type Role } from '@/lib/auth/permissions';
 import { InvoicePDF } from './InvoicePDF';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBanner } from '@/components/approvals/PendingDeleteMarkers';
 
 // react-pdf is heavy and uses browser-only APIs — load only on client.
 const PDFDownloadLink = dynamic(
@@ -169,6 +170,8 @@ export function InvoiceDetail({ invoiceId, role, canMarkPaid: mayMarkPaid, canRe
           </div>
         </div>
       </div>
+
+      <PendingDeleteBanner entityType="invoice" entityId={invoice.id} />
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2">
