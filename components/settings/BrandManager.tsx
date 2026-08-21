@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, X, Phone } from 'lucide-react';
+import { Plus, Pencil, X, Phone } from 'lucide-react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
@@ -11,6 +11,7 @@ import {
 } from '@/lib/validators/brands';
 import { Field, ServerError, inputCls, textareaCls } from '@/components/ui/form-fields';
 import { useToast } from '@/components/ui/Toast';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   /** Only admins may delete brands. */
@@ -24,27 +25,22 @@ export function BrandManager({ canDelete }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<BrandSummary | null>(null);
 
+  // DeleteButton owns the confirmation and the warning now.
   async function onDelete(brand: BrandSummary) {
-    const suffix =
-      brand.product_count > 0
-        ? ` ${brand.product_count} product${brand.product_count === 1 ? '' : 's'} will become unbranded.`
-        : '';
-    if (!confirm(`Delete ${brand.name}?${suffix}`)) return;
-
     try {
       const result = await deleteBrand(brand.id);
-      if (!result.ok) {
-        showToast(result.error, 'error');
-        return;
-      }
+      if (!result.ok) return result;
+
       await invalidate();
-      showToast(
-        result.count > 0
-          ? `${brand.name} deleted — ${result.count} product${result.count === 1 ? '' : 's'} moved to Unbranded.`
-          : `${brand.name} deleted.`,
-      );
+      if (result.count > 0) {
+        showToast(`${result.count} product${result.count === 1 ? '' : 's'} moved to Unbranded.`);
+      }
+      return { ok: true as const };
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not delete the brand.', 'error');
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Could not delete the brand.',
+      };
     }
   }
 
@@ -126,14 +122,17 @@ export function BrandManager({ canDelete }: Props) {
                 >
                   <Pencil size={12} /> Edit
                 </button>
-                {canDelete && (
-                  <button
-                    onClick={() => onDelete(b)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100"
-                  >
-                    <Trash2 size={12} /> Delete
-                  </button>
-                )}
+                <DeleteButton
+                  entityType="brand"
+                  entityId={b.id}
+                  entityDisplayName={`Brand "${b.name}"`}
+                  isAdmin={canDelete}
+                  details={[{ label: 'Products', value: String(b.product_count) }]}
+                  warnings={b.product_count > 0
+                    ? [`${b.product_count} product${b.product_count === 1 ? '' : 's'} will become unbranded.`]
+                    : []}
+                  onConfirmedDelete={() => onDelete(b)}
+                />
               </div>
             </div>
           ))}

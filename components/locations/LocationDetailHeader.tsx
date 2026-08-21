@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocation, useInvalidateLocationData } from '@/lib/queries/locations';
 import { deleteLocation } from '@/lib/actions/locations';
 import { formatPKR } from '@/lib/money';
 import { useToast } from '@/components/ui/Toast';
 import { AddLocationModal } from './AddLocationModal';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   locationId: string;
@@ -25,29 +26,25 @@ export function LocationDetailHeader({ locationId, canManage, canDelete }: Props
 
   if (!location) return null;
 
+  // DeleteButton owns the confirmation and the warning now.
   async function handleDelete() {
-    if (!location) return;
-    const suffix =
-      location.customer_count > 0
-        ? ` ${location.customer_count} shop${location.customer_count === 1 ? '' : 's'} will become unassigned.`
-        : '';
-    if (!confirm(`Delete ${location.location_name}?${suffix}`)) return;
+    if (!location) return { ok: false, error: 'Location not loaded.' };
 
     try {
       const result = await deleteLocation(location.location_id);
-      if (!result.ok) {
-        showToast(result.error, 'error');
-        return;
-      }
+      if (!result.ok) return result;
+
       await invalidate();
-      showToast(
-        result.count > 0
-          ? `City "${location.location_name}" deleted — ${result.count} shop${result.count === 1 ? '' : 's'} moved to No Location.`
-          : `City "${location.location_name}" deleted.`,
-      );
+      if (result.count > 0) {
+        showToast(`${result.count} shop${result.count === 1 ? '' : 's'} moved to No Location.`);
+      }
       router.push('/locations');
+      return { ok: true as const };
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not delete the city.', 'error');
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Could not delete the city.',
+      };
     }
   }
 
@@ -83,15 +80,19 @@ export function LocationDetailHeader({ locationId, canManage, canDelete }: Props
             >
               <Pencil size={16} />
             </button>
-            {canDelete && (
-              <button
-                onClick={handleDelete}
-                aria-label="Delete city"
-                className="p-2.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
+            <DeleteButton
+              entityType="location"
+              entityId={location.location_id}
+              entityDisplayName={`Location "${location.location_name}"`}
+              isAdmin={canDelete}
+              details={[
+                { label: 'Shops', value: String(location.customer_count) },
+              ]}
+              warnings={location.customer_count > 0
+                ? [`${location.customer_count} shop${location.customer_count === 1 ? '' : 's'} will become unassigned.`]
+                : []}
+              onConfirmedDelete={handleDelete}
+            />
           </div>
         )}
       </div>

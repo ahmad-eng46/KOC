@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Plus, Trash2, ChevronRight } from 'lucide-react';
+import { Search, Plus, ChevronRight } from 'lucide-react';
 import { useCustomers, useDeleteCustomer } from '@/lib/queries/customers';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { useLocations } from '@/lib/queries/locations';
@@ -11,6 +11,7 @@ import { LocationBadge } from '@/components/locations/LocationBadge';
 import { useCustomerCategories } from '@/lib/queries/customer-categories';
 import { CategoryBadge } from './CategoryBadge';
 import { CategoryFilterChips, UNCATEGORISED } from './CategoryFilterChips';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 import { formatPKR } from '@/lib/money';
 
 /**
@@ -39,9 +40,11 @@ function BalanceCell({ accountingPaisa, muted }: { accountingPaisa: number; mute
 type Props = {
   /** Initial category filter, read from ?category= on the server. */
   initialCategory?: string;
+  /** Admins delete outright; everyone else files a request. */
+  isAdmin?: boolean;
 };
 
-export function CustomerTable({ initialCategory = '' }: Props) {
+export function CustomerTable({ initialCategory = '', isAdmin = false }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -217,14 +220,19 @@ export function CustomerTable({ initialCategory = '' }: Props) {
                     >
                       <ChevronRight size={15} />
                     </Link>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete ${c.name}?`)) deleteMutation.mutate(c.id);
-                      }}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    <DeleteButton
+                      entityType="customer"
+                      entityId={c.id}
+                      entityDisplayName={`Customer "${c.name}"`}
+                      isAdmin={isAdmin}
+                      details={[
+                        { label: 'Phone', value: c.phone ?? '—' },
+                        { label: 'Category', value: c.customer_categories?.name ?? 'None' },
+                      ]}
+                      // Through the mutation, not the action, so the list
+                      // invalidates itself the way it always did.
+                      onConfirmedDelete={() => deleteMutation.mutateAsync(c.id)}
+                    />
                   </div>
                 </td>
               </tr>

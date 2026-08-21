@@ -2,13 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Search, Plus, ChevronRight, Trash2 } from 'lucide-react';
+import { Search, Plus, ChevronRight } from 'lucide-react';
 import { useSuppliers, useSupplierBalances, useDeleteSupplier } from '@/lib/queries/suppliers';
 import { formatPKR } from '@/lib/money';
 import { useToast } from '@/components/ui/Toast';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   canCreate: boolean;
+  /** Admins delete outright; everyone else files a request. */
   canDelete: boolean;
   /** Staff/viewer get NULL money from the view; hide the columns entirely. */
   canSeeMoney: boolean;
@@ -46,11 +48,11 @@ export function SupplierTable({ canCreate, canDelete, canSeeMoney }: Props) {
       (s.phone ?? '').includes(search),
   );
 
+  // DeleteButton owns the confirmation now, so this only does the work.
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete ${name}?`)) return;
     const result = await deleteMutation.mutateAsync(id);
-    if (!result.ok) showToast(result.error ?? 'Could not delete supplier.', 'error');
-    else showToast(`Supplier "${name}" deleted.`);
+    if (result.ok) showToast(`Supplier "${name}" deleted.`);
+    return result;
   }
 
   if (isLoading) {
@@ -148,14 +150,14 @@ export function SupplierTable({ canCreate, canDelete, canSeeMoney }: Props) {
                       >
                         <ChevronRight size={15} />
                       </Link>
-                      {canDelete && (
-                        <button
-                          onClick={() => handleDelete(s.id, s.name)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
+                      <DeleteButton
+                        entityType="supplier"
+                        entityId={s.id}
+                        entityDisplayName={`Supplier "${s.name}"`}
+                        isAdmin={canDelete}
+                        details={[{ label: 'Phone', value: s.phone ?? '—' }]}
+                        onConfirmedDelete={() => handleDelete(s.id, s.name)}
+                      />
                     </div>
                   </td>
                 </tr>

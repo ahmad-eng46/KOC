@@ -13,7 +13,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { format, parseISO, subDays } from 'date-fns';
-import { Search, ChevronLeft, ChevronRight, Plus, Calendar, Trash2, X as XIcon } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Plus, Calendar } from 'lucide-react';
 import {
   usePayments,
   useDeletePayment,
@@ -23,6 +23,7 @@ import {
 import { paymentMethods, type PaymentMethod } from '@/lib/validators/payment';
 import { formatPKR } from '@/lib/money';
 import type { Role } from '@/lib/auth/permissions';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
@@ -43,8 +44,6 @@ export function PaymentTable({ role }: Props) {
   const [search, setSearch] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pageIndex, setPageIndex] = useState(0);
-  const [deleteTarget, setDeleteTarget] = useState<PaymentListRow | null>(null);
-  const [deleteReason, setDeleteReason] = useState('');
 
   const filters: PaymentFilters = useMemo(
     () => ({ from, to, methods: methodFilters }),
@@ -127,23 +126,31 @@ export function PaymentTable({ role }: Props) {
         id: 'actions',
         header: () => '',
         cell: (info) =>
-          canDelete ? (
+          (
             <div className="flex justify-end">
-              <button
-                onClick={() => {
-                  setDeleteTarget(info.row.original);
-                  setDeleteReason('');
-                }}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                title="Delete payment"
-              >
-                <Trash2 size={14} />
-              </button>
+              <DeleteButton
+                entityType="payment"
+                entityId={info.row.original.id}
+                entityDisplayName={`Payment ${formatPKR(info.row.original.amount_paisa)}`}
+                isAdmin={canDelete}
+                requireReason
+                details={[
+                  { label: 'Customer', value: info.row.original.customer_name },
+                  { label: 'Amount', value: formatPKR(info.row.original.amount_paisa) },
+                  { label: 'Method', value: METHOD_LABELS[info.row.original.method] },
+                ]}
+                warnings={[
+                  'The ledger credit will remain. Use an offsetting adjustment if the customer balance also needs undoing.',
+                ]}
+                onConfirmedDelete={(reason) =>
+                  deleteMutation.mutateAsync({ id: info.row.original.id, reason })
+                }
+              />
             </div>
-          ) : null,
+          ),
       }),
     ];
-  }, [canDelete]);
+  }, [canDelete, deleteMutation]);
 
   const table = useReactTable({
     data: filteredRows,
@@ -168,12 +175,6 @@ export function PaymentTable({ role }: Props) {
     );
   }
 
-  async function confirmDelete() {
-    if (!deleteTarget || !deleteReason.trim()) return;
-    await deleteMutation.mutateAsync({ id: deleteTarget.id, reason: deleteReason });
-    setDeleteTarget(null);
-    setDeleteReason('');
-  }
 
   const total = filteredRows.length;
   const pageCount = table.getPageCount();
@@ -321,14 +322,22 @@ export function PaymentTable({ role }: Props) {
                       <p className="text-sm font-mono font-medium text-gray-900">
                         {formatPKR(r.amount_paisa)}
                       </p>
-                      {canDelete && (
-                        <button
-                          onClick={() => { setDeleteTarget(r); setDeleteReason(''); }}
-                          className="p-1 rounded text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <DeleteButton
+                        entityType="payment"
+                        entityId={r.id}
+                        entityDisplayName={`Payment ${formatPKR(r.amount_paisa)}`}
+                        isAdmin={canDelete}
+                        requireReason
+                        details={[
+                          { label: 'Customer', value: r.customer_name },
+                          { label: 'Amount', value: formatPKR(r.amount_paisa) },
+                          { label: 'Method', value: METHOD_LABELS[r.method] },
+                        ]}
+                        warnings={[
+                          'The ledger credit will remain. Use an offsetting adjustment if the customer balance also needs undoing.',
+                        ]}
+                        onConfirmedDelete={(reason) => deleteMutation.mutateAsync({ id: r.id, reason })}
+                      />
                     </div>
                   </div>
                 </div>
@@ -374,64 +383,6 @@ export function PaymentTable({ role }: Props) {
       )}
 
       {/* Delete dialog */}
-      {deleteTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
-        >
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="text-base font-semibold text-gray-900">Delete payment?</h2>
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-              >
-                <XIcon size={18} />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm text-gray-700">
-                Soft-delete the {METHOD_LABELS[deleteTarget.method]} payment of{' '}
-                <span className="font-mono font-semibold">{formatPKR(deleteTarget.amount_paisa)}</span>{' '}
-                from <span className="font-medium">{deleteTarget.customer_name}</span>?
-              </p>
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                Note: the ledger credit will remain. Use an offsetting adjustment if you also need to undo the customer's balance.
-              </p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={deleteReason}
-                  onChange={(e) => setDeleteReason(e.target.value)}
-                  placeholder="e.g. Recorded in wrong customer, duplicated entry"
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDeleteTarget(null)}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 h-10 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmDelete}
-                  disabled={deleteMutation.isPending || !deleteReason.trim()}
-                  className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

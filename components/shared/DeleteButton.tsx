@@ -21,9 +21,21 @@ export type DeleteButtonProps = {
    * entity's delete action has its own signature and its own consequences —
    * this component decides WHO may delete, never HOW.
    */
-  onConfirmedDelete: () => Promise<{ ok: boolean; error?: string }>;
+  onConfirmedDelete: (reason: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Invoices and payments already made admins type a reason before deleting,
+   * and that reason is stored on the record. Keeping it means the approval
+   * system does not quietly drop a field the books rely on.
+   */
+  requireReason?: boolean;
   /** Extra lines under the name in the confirm dialog. */
   details?: Array<{ label: string; value: string }>;
+  /**
+   * Consequences the deleter should see before committing — "the ledger credit
+   * will remain". Requesters get these from the entity registry; admins get
+   * them here, because an admin deleting outright needs the warning most.
+   */
+  warnings?: string[];
   /** Fired after a successful direct delete or a filed request. */
   onDone?: () => void;
   label?: string;
@@ -43,7 +55,7 @@ export type DeleteButtonProps = {
  */
 export function DeleteButton({
   entityType, entityId, entityDisplayName, isAdmin,
-  onConfirmedDelete, details, onDone,
+  onConfirmedDelete, requireReason = false, details, warnings, onDone,
   label = 'Delete', withLabel = false, className, disabled,
 }: DeleteButtonProps) {
   const [open, setOpen] = useState(false);
@@ -81,6 +93,8 @@ export function DeleteButton({
           <ConfirmDeleteDialog
             entityDisplayName={entityDisplayName}
             details={details}
+            warnings={warnings}
+            requireReason={requireReason}
             onClose={() => setOpen(false)}
             onConfirm={onConfirmedDelete}
             onDone={onDone}
@@ -101,23 +115,32 @@ export function DeleteButton({
 
 // ─────────────────────────────────────────────
 function ConfirmDeleteDialog({
-  entityDisplayName, details, onClose, onConfirm, onDone,
+  entityDisplayName, details, warnings, requireReason, onClose, onConfirm, onDone,
 }: {
   entityDisplayName: string;
   details?: Array<{ label: string; value: string }>;
+  warnings?: string[];
+  requireReason: boolean;
   onClose: () => void;
-  onConfirm: () => Promise<{ ok: boolean; error?: string }>;
+  onConfirm: (reason: string) => Promise<{ ok: boolean; error?: string }>;
   onDone?: () => void;
 }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const reasonMissing = requireReason && reason.trim().length < 3;
+
   async function go() {
+    if (reasonMissing) {
+      setError('Please say why this is being deleted.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const r = await onConfirm();
+      const r = await onConfirm(reason.trim());
       if (!r.ok) {
         setError(r.error ?? 'Could not delete.');
         return;
@@ -142,6 +165,30 @@ function ConfirmDeleteDialog({
 
         {details && details.length > 0 && <DetailList details={details} />}
 
+        {warnings?.map((w) => (
+          <div key={w} className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 flex gap-2">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">{w}</p>
+          </div>
+        ))}
+
+        {requireReason && (
+          <div>
+            <label htmlFor="admin-delete-reason" className="block text-sm font-medium text-gray-700 mb-1.5">
+              Reason *
+            </label>
+            <textarea
+              id="admin-delete-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus
+              rows={2}
+              placeholder="Why is this being deleted?"
+              className="w-full px-3 py-2 rounded-xl border border-gray-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
+
         {error && <ErrorBox message={error} />}
 
         <div className="flex gap-3">
@@ -156,7 +203,7 @@ function ConfirmDeleteDialog({
           <button
             type="button"
             onClick={go}
-            disabled={busy}
+            disabled={busy || reasonMissing}
             className="flex-1 h-11 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
           >
             {busy ? 'Deleting…' : 'Delete'}

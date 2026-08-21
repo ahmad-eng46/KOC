@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO, startOfMonth, startOfYear, subMonths } from 'date-fns';
 import {
-  Search, Calendar, Plus, Paperclip, Trash2,
+  Search, Calendar, Plus, Paperclip,
   List, Layers, ChevronDown, ChevronRight, Car, MapPin, Inbox,
 } from 'lucide-react';
 import {
@@ -16,6 +16,7 @@ import { useExpenseAssets } from '@/lib/queries/expense-assets';
 import { createClient } from '@/lib/supabase/client';
 import { formatPKR } from '@/lib/money';
 import type { Role } from '@/lib/auth/permissions';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -121,9 +122,9 @@ export function ExpenseTable({ role }: Props) {
     window.open(data.signedUrl, '_blank');
   }
 
-  async function onDelete(id: string, summary: string) {
-    if (!confirm(`Delete this expense?\n${summary}`)) return;
-    await deleteMutation.mutateAsync(id);
+  // DeleteButton owns the confirmation and the request path now.
+  async function onDelete(id: string) {
+    return deleteMutation.mutateAsync(id);
   }
 
   if (isLoading) {
@@ -319,15 +320,18 @@ export function ExpenseTable({ role }: Props) {
                             <Paperclip size={14} />
                           </button>
                         )}
-                        {canDelete && (
-                          <button
-                            onClick={() => onDelete(r.id, `${r.category} · ${formatPKR(r.amount_paisa)}`)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                        <DeleteButton
+                          entityType="expense"
+                          entityId={r.id}
+                          entityDisplayName={`Expense "${r.category} ${formatPKR(r.amount_paisa)}"`}
+                          isAdmin={canDelete}
+                          details={[
+                            { label: 'Category', value: r.category },
+                            { label: 'Amount', value: formatPKR(r.amount_paisa) },
+                            { label: 'Date', value: r.expense_date },
+                          ]}
+                          onConfirmedDelete={() => onDelete(r.id)}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -364,12 +368,18 @@ export function ExpenseTable({ role }: Props) {
                           <Paperclip size={13} />
                         </button>
                       )}
-                      {canDelete && (
-                        <button onClick={() => onDelete(r.id, `${r.category} · ${formatPKR(r.amount_paisa)}`)}
-                          className="p-1 rounded text-gray-400 hover:text-red-600">
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <DeleteButton
+                        entityType="expense"
+                        entityId={r.id}
+                        entityDisplayName={`Expense "${r.category} ${formatPKR(r.amount_paisa)}"`}
+                        isAdmin={canDelete}
+                        details={[
+                          { label: 'Category', value: r.category },
+                          { label: 'Amount', value: formatPKR(r.amount_paisa) },
+                          { label: 'Date', value: r.expense_date },
+                        ]}
+                        onConfirmedDelete={() => onDelete(r.id)}
+                      />
                     </div>
                   </div>
                 </div>

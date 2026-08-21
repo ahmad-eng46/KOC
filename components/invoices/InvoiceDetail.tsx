@@ -17,6 +17,7 @@ import { formatPKR } from '@/lib/money';
 import { softDeleteInvoice, markInvoicePaid } from '@/lib/actions/invoice-detail';
 import { type Role } from '@/lib/auth/permissions';
 import { InvoicePDF } from './InvoicePDF';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 // react-pdf is heavy and uses browser-only APIs — load only on client.
 const PDFDownloadLink = dynamic(
@@ -218,7 +219,9 @@ export function InvoiceDetail({ invoiceId, role, canMarkPaid: mayMarkPaid, canRe
           </Link>
         )}
 
-        {canDelete && (
+        {/* Admins keep the existing modal, which already asks for a reason and
+            explains what a void does. Everyone else gets the request form. */}
+        {canDelete ? (
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
@@ -228,6 +231,22 @@ export function InvoiceDetail({ invoiceId, role, canMarkPaid: mayMarkPaid, canRe
             <Trash2 size={14} />
             Delete
           </button>
+        ) : (
+          <div className="ml-auto">
+            <DeleteButton
+              entityType="invoice"
+              entityId={invoice.id}
+              entityDisplayName={`Invoice #${invoice.invoice_number}`}
+              isAdmin={false}
+              withLabel
+              details={[
+                { label: 'Customer', value: invoice.customer_name },
+                { label: 'Amount', value: formatPKR(invoice.total_paisa) },
+                { label: 'Date', value: invoice.issue_date },
+              ]}
+              onConfirmedDelete={async () => ({ ok: false, error: 'Admins only.' })}
+            />
+          </div>
         )}
       </div>
 

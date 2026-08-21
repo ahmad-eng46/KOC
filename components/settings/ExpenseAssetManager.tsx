@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Car, MapPin, Package2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Car, MapPin, Package2, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   useExpenseAssets, useExpenseSubTypes, useExpenseSummary,
   useInvalidateExpenseAssetData,
@@ -15,6 +15,7 @@ import { buildAssetBreakdown } from '@/lib/expense-analytics';
 import { formatPKR } from '@/lib/money';
 import { AddAssetSheet } from '@/components/expenses/AddAssetSheet';
 import { useToast } from '@/components/ui/Toast';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   /** Only admins may delete assets / sub-types. */
@@ -62,23 +63,18 @@ export function ExpenseAssetManager({ canDelete }: Props) {
     return new Map(rows.map((r) => [r.key, r.periods]));
   }, [summaryRows, now]);
 
-  async function onDeleteAsset(asset: ExpenseAsset) {
-    const linked = summaryRows
-      .filter((r) => r.asset_id === asset.id)
+  function linkedExpenses(assetId: string): number {
+    return summaryRows
+      .filter((r) => r.asset_id === assetId)
       .reduce((s, r) => s + r.transaction_count, 0);
-    const warning =
-      linked > 0
-        ? `"${asset.name}" has ${linked} expense${linked === 1 ? '' : 's'} linked. They keep the name for history, but the item disappears from dropdowns.\n\nDelete it?`
-        : `Delete "${asset.name}"?`;
-    if (!confirm(warning)) return;
+  }
 
+  // DeleteButton owns the confirmation and the warning now.
+  async function onDeleteAsset(asset: ExpenseAsset) {
     const result = await deleteExpenseAsset(asset.id);
-    if (!result.ok) {
-      showToast(result.error, 'error');
-      return;
-    }
+    if (!result.ok) return result;
     invalidate();
-    showToast(`"${asset.name}" deleted.`);
+    return { ok: true as const };
   }
 
   async function onAddType() {
@@ -96,15 +92,11 @@ export function ExpenseAssetManager({ canDelete }: Props) {
     showToast(`Type "${name}" added.`);
   }
 
-  async function onDeleteType(id: string, name: string) {
-    if (!confirm(`Delete expense type "${name}"? Existing expenses keep the name.`)) return;
+  async function onDeleteType(id: string) {
     const result = await deleteExpenseSubType(id);
-    if (!result.ok) {
-      showToast(result.error, 'error');
-      return;
-    }
+    if (!result.ok) return result;
     invalidate();
-    showToast(`Type "${name}" deleted.`);
+    return { ok: true as const };
   }
 
   if (isLoading) {
@@ -203,15 +195,17 @@ export function ExpenseAssetManager({ canDelete }: Props) {
                   >
                     <Pencil size={12} /> Edit
                   </button>
-                  {canDelete && (
-                    <button
-                      onClick={() => onDeleteAsset(a)}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                      aria-label={`Delete ${a.name}`}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
+                  <DeleteButton
+                    entityType="expense_asset"
+                    entityId={a.id}
+                    entityDisplayName={`Expense item "${a.name}"`}
+                    isAdmin={canDelete}
+                    details={[{ label: 'Category', value: a.category }]}
+                    warnings={linkedExpenses(a.id) > 0
+                      ? [`${linkedExpenses(a.id)} expense${linkedExpenses(a.id) === 1 ? '' : 's'} keep the name for history, but the item disappears from dropdowns.`]
+                      : []}
+                    onConfirmedDelete={() => onDeleteAsset(a)}
+                  />
                 </div>
               </div>
             );
@@ -242,15 +236,15 @@ export function ExpenseAssetManager({ canDelete }: Props) {
                   className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full bg-gray-100 text-sm text-gray-700"
                 >
                   {s.name}
-                  {canDelete && (
-                    <button
-                      onClick={() => onDeleteType(s.id, s.name)}
-                      className="p-0.5 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50"
-                      aria-label={`Delete ${s.name}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
+                  <DeleteButton
+                    entityType="expense_sub_type"
+                    entityId={s.id}
+                    entityDisplayName={`Expense type "${s.name}"`}
+                    isAdmin={canDelete}
+                    warnings={['Existing expenses keep the name for history.']}
+                    onConfirmedDelete={() => onDeleteType(s.id)}
+                    className="w-8 h-8 inline-flex items-center justify-center rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  />
                 </span>
               ))}
               {tabSubTypes.length === 0 && (

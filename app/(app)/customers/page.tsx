@@ -34,7 +34,7 @@ export default async function CustomersPage({
           </Link>
         )}
       </div>
-      <CustomerTable initialCategory={category ?? ''} />
+      <CustomerTable initialCategory={category ?? ''} isAdmin={session?.role === 'admin'} />
     </div>
   );
 }

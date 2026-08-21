@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, X, ArrowUp, ArrowDown, EyeOff } from 'lucide-react';
+import { Plus, Pencil, X, ArrowUp, ArrowDown, EyeOff } from 'lucide-react';
 import {
   useCustomerCategoriesWithCounts, useInvalidateCustomerCategories,
   type CustomerCategoryWithCount,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/actions/customer-categories';
 import { categoryColor, isHexColor } from '@/lib/validators/customer-categories';
 import { useToast } from '@/components/ui/Toast';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   /** Only admins may delete a category. */
@@ -25,28 +26,23 @@ export function CustomerCategoryManager({ canDelete }: Props) {
   const [editing, setEditing] = useState<CustomerCategoryWithCount | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
+  // DeleteButton owns the confirmation and the warning now.
   async function onDelete(category: CustomerCategoryWithCount) {
-    const suffix =
-      category.customer_count > 0
-        ? `\n\n${category.customer_count} customer${category.customer_count === 1 ? '' : 's'} will become uncategorized.`
-        : '';
-    if (!confirm(`Delete ${category.name}?${suffix}`)) return;
-
     setBusy(category.id);
     try {
       const result = await deleteCustomerCategory(category.id);
-      if (!result.ok) {
-        showToast(result.error, 'error');
-        return;
-      }
+      if (!result.ok) return result;
+
       await invalidate();
-      showToast(
-        result.uncategorised > 0
-          ? `${category.name} deleted — ${result.uncategorised} customer${result.uncategorised === 1 ? '' : 's'} now uncategorized.`
-          : `${category.name} deleted.`,
-      );
+      if (result.uncategorised > 0) {
+        showToast(`${result.uncategorised} customer${result.uncategorised === 1 ? '' : 's'} now uncategorized.`);
+      }
+      return { ok: true as const };
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not delete the category.', 'error');
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Could not delete the category.',
+      };
     } finally {
       setBusy(null);
     }
@@ -174,11 +170,18 @@ export function CustomerCategoryManager({ canDelete }: Props) {
                 >
                   <Pencil size={15} />
                 </IconButton>
-                {canDelete && (
-                  <IconButton label="Delete" danger disabled={busy === c.id} onClick={() => onDelete(c)}>
-                    <Trash2 size={15} />
-                  </IconButton>
-                )}
+                <DeleteButton
+                  entityType="customer_category"
+                  entityId={c.id}
+                  entityDisplayName={`Customer category "${c.name}"`}
+                  isAdmin={canDelete}
+                  details={[{ label: 'Customers', value: String(c.customer_count) }]}
+                  warnings={c.customer_count > 0
+                    ? [`${c.customer_count} customer${c.customer_count === 1 ? '' : 's'} will become uncategorized.`]
+                    : []}
+                  onConfirmedDelete={() => onDelete(c)}
+                  disabled={busy === c.id}
+                />
               </div>
             </li>
           ))}

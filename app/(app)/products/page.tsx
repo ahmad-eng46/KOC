@@ -17,6 +17,7 @@ export default async function ProductsPage() {
         <p className="text-sm text-gray-500 mt-0.5">Manage your product catalogue</p>
       </div>
       <ProductTable
+        isAdmin={session?.role === 'admin'}
         canSeePurchasePrice={canSeePurchasePrice}
         canBulkAssign={canSeePurchasePrice}
       />

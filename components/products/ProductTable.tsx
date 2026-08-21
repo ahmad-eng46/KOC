@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Plus, Trash2, ChevronRight, AlertTriangle, Check } from 'lucide-react';
+import { Search, Plus, ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import { useProducts, useDeleteProduct, type Product } from '@/lib/queries/products';
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
 import { bulkAssignBrand } from '@/lib/actions/brands';
@@ -12,14 +12,17 @@ import { formatStock } from '@/lib/pack';
 import { BrandBadge } from './BrandBadge';
 import { ExportStockButtons } from './ExportStockButtons';
 import { useToast } from '@/components/ui/Toast';
+import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
   canSeePurchasePrice: boolean;
   /** admin/accountant — shows the bulk brand-assignment flow. */
   canBulkAssign: boolean;
+  /** Admins delete outright; everyone else files a request. */
+  isAdmin?: boolean;
 };
 
-export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
+export function ProductTable({ canSeePurchasePrice, canBulkAssign, isAdmin = false }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
@@ -247,9 +250,8 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
                 showCheckbox={showBulk}
                 checked={selected.has(p.id)}
                 onCheck={() => toggleSelected(p.id)}
-                onDelete={() => {
-                  if (confirm(`Delete ${p.name}?`)) deleteMutation.mutate(p.id);
-                }}
+                isAdmin={isAdmin}
+                onDelete={() => deleteMutation.mutateAsync(p.id)}
               />
             ))}
           </tbody>
@@ -325,7 +327,7 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign }: Props) {
 }
 
 function DesktopRow({
-  product: p, brand, canSeePurchasePrice, showCheckbox, checked, onCheck, onDelete,
+  product: p, brand, canSeePurchasePrice, showCheckbox, checked, onCheck, onDelete, isAdmin,
 }: {
   product: Product;
   brand: BrandSummary | undefined;
@@ -333,7 +335,8 @@ function DesktopRow({
   showCheckbox: boolean;
   checked: boolean;
   onCheck: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<{ ok: boolean; error?: string }>;
+  isAdmin: boolean;
 }) {
   const isLow = p.low_stock_threshold != null && p.quantity_on_hand <= p.low_stock_threshold;
   return (
@@ -393,12 +396,17 @@ function DesktopRow({
           >
             <ChevronRight size={15} />
           </Link>
-          <button
-            onClick={onDelete}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-          >
-            <Trash2 size={15} />
-          </button>
+          <DeleteButton
+            entityType="product"
+            entityId={p.id}
+            entityDisplayName={`Product "${p.name}"`}
+            isAdmin={isAdmin}
+            details={[
+              { label: 'SKU', value: p.sku ?? '—' },
+              { label: 'Brand', value: brand?.name ?? 'Unbranded' },
+            ]}
+            onConfirmedDelete={onDelete}
+          />
         </div>
       </td>
     </tr>
