@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { PaymentTable } from '@/components/payments/PaymentTable';
+import { currentUserCanAccess } from '@/lib/auth/page-access';
 
 export const metadata = { title: 'Payments — KOC' };
 
@@ -15,7 +16,7 @@ export default async function PaymentsPage() {
         <h1 className="text-xl font-semibold text-gray-900">Payments</h1>
         <p className="text-sm text-gray-500 mt-0.5">All customer payments received</p>
       </div>
-      <PaymentTable role={role} />
+      <PaymentTable role={role} canCreate={await currentUserCanAccess('action.create_payment')} />
     </div>
   );
 }

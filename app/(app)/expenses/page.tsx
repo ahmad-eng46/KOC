@@ -3,6 +3,7 @@ import { Settings2 } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { ExpenseTable } from '@/components/expenses/ExpenseTable';
+import { currentUserCanAccess } from '@/lib/auth/page-access';
 
 export const metadata = { title: 'Expenses — KOC' };
 
@@ -27,7 +28,7 @@ export default async function ExpensesPage() {
           Manage Items
         </Link>
       </div>
-      <ExpenseTable role={role} />
+      <ExpenseTable role={role} canCreate={await currentUserCanAccess('action.create_expense')} />
     </div>
   );
 }

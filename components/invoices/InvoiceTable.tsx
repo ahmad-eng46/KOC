@@ -39,11 +39,13 @@ function thirtyDaysAgoISO() {
 }
 
 type Props = {
+  /** Whether this user may create one. Defaults true so existing callers are unchanged. */
+  canCreate?: boolean;
   /** Renders the "New Return" entry — admin/accountant only (returns.create). */
   canReturn?: boolean;
 };
 
-export function InvoiceTable({ canReturn = false }: Props) {
+export function InvoiceTable({ canReturn = false, canCreate = true }: Props) {
   const [from, setFrom] = useState(thirtyDaysAgoISO());
   const [to, setTo] = useState(todayISO());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -187,12 +189,14 @@ export function InvoiceTable({ canReturn = false }: Props) {
               <RotateCcw size={15} /> New Return
             </Link>
           )}
-          <Link
-            href="/invoices/new"
-            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
-          >
-            <Plus size={15} /> New Invoice
-          </Link>
+          {canCreate && (
+            <Link
+              href="/invoices/new"
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
+            >
+              <Plus size={15} /> New Invoice
+            </Link>
+          )}
         </div>
 
         {/* Status pills */}

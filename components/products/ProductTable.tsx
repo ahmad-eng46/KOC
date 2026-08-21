@@ -15,6 +15,8 @@ import { useToast } from '@/components/ui/Toast';
 import { DeleteButton } from '@/components/shared/DeleteButton';
 
 type Props = {
+  /** Whether this user may create one. Defaults true so existing callers are unchanged. */
+  canCreate?: boolean;
   canSeePurchasePrice: boolean;
   /** admin/accountant — shows the bulk brand-assignment flow. */
   canBulkAssign: boolean;
@@ -22,7 +24,7 @@ type Props = {
   isAdmin?: boolean;
 };
 
-export function ProductTable({ canSeePurchasePrice, canBulkAssign, isAdmin = false }: Props) {
+export function ProductTable({ canSeePurchasePrice, canBulkAssign, isAdmin = false, canCreate = true }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
@@ -173,13 +175,15 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign, isAdmin = fal
           />
         </div>
         <ExportStockButtons activeBrand={activeBrand ?? null} isAll={!brandParam} />
-        <Link
-          href="/products/new"
-          className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0 ml-auto"
-        >
-          <Plus size={15} />
-          Add Product
-        </Link>
+        {canCreate && (
+          <Link
+            href="/products/new"
+            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0 ml-auto"
+          >
+            <Plus size={15} />
+            Add Product
+          </Link>
+        )}
       </div>
 
       <p className="text-xs text-gray-500 -mt-1">

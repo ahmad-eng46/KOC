@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { ProductTable } from '@/components/products/ProductTable';
+import { currentUserCanAccess } from '@/lib/auth/page-access';
 
 export const metadata = { title: 'Products — KOC' };
 
@@ -18,6 +19,7 @@ export default async function ProductsPage() {
       </div>
       <ProductTable
         isAdmin={session?.role === 'admin'}
+        canCreate={await currentUserCanAccess('action.add_product')}
         canSeePurchasePrice={canSeePurchasePrice}
         canBulkAssign={canSeePurchasePrice}
       />

@@ -39,13 +39,15 @@ function BalanceCell({ accountingPaisa, muted }: { accountingPaisa: number; mute
 }
 
 type Props = {
+  /** Whether this user may create one. Defaults true so existing callers are unchanged. */
+  canCreate?: boolean;
   /** Initial category filter, read from ?category= on the server. */
   initialCategory?: string;
   /** Admins delete outright; everyone else files a request. */
   isAdmin?: boolean;
 };
 
-export function CustomerTable({ initialCategory = '', isAdmin = false }: Props) {
+export function CustomerTable({ initialCategory = '', isAdmin = false, canCreate = true }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -138,13 +140,15 @@ export function CustomerTable({ initialCategory = '', isAdmin = false }: Props) 
             ))}
           <option value="unassigned">Unassigned</option>
         </select>
-        <Link
-          href="/customers/new"
-          className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
-        >
-          <Plus size={15} />
-          Add Customer
-        </Link>
+        {canCreate && (
+          <Link
+            href="/customers/new"
+            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
+          >
+            <Plus size={15} />
+            Add Customer
+          </Link>
+        )}
       </div>
 
       <CategoryFilterChips

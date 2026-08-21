@@ -32,12 +32,14 @@ const METHOD_LABELS: Record<PaymentMethod, string> = {
   online: 'Online',
 };
 
-type Props = { role: Role };
+type Props = {
+  /** Whether this user may create one. Defaults true so existing callers are unchanged. */
+  canCreate?: boolean; role: Role };
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 function thirtyDaysAgoISO() { return format(subDays(new Date(), 30), 'yyyy-MM-dd'); }
 
-export function PaymentTable({ role }: Props) {
+export function PaymentTable({ role, canCreate = true }: Props) {
   const [from, setFrom] = useState(thirtyDaysAgoISO());
   const [to, setTo] = useState(todayISO());
   const [methodFilters, setMethodFilters] = useState<PaymentMethod[]>([]);
@@ -197,12 +199,14 @@ export function PaymentTable({ role }: Props) {
               />
             </div>
           </div>
-          <Link
-            href="/payments/new"
-            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
-          >
-            <Plus size={15} /> New Payment
-          </Link>
+          {canCreate && (
+            <Link
+              href="/payments/new"
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
+            >
+              <Plus size={15} /> New Payment
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

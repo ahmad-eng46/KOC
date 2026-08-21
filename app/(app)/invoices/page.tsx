@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/guards';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { InvoiceTable } from '@/components/invoices/InvoiceTable';
+import { currentUserCanAccess } from '@/lib/auth/page-access';
 
 export const metadata = { title: 'Invoices — KOC' };
 
@@ -14,7 +15,7 @@ export default async function InvoicesPage() {
         <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
         <p className="text-sm text-gray-500 mt-0.5">All sales invoices for this business</p>
       </div>
-      <InvoiceTable canReturn={canReturn} />
+      <InvoiceTable canReturn={canReturn} canCreate={await currentUserCanAccess('action.create_invoice')} />
     </div>
   );
 }

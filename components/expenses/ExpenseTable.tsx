@@ -42,9 +42,11 @@ function rangeForPeriod(p: PeriodPreset): { from: string; to: string } {
   }
 }
 
-type Props = { role: Role };
+type Props = {
+  /** Whether this user may create one. Defaults true so existing callers are unchanged. */
+  canCreate?: boolean; role: Role };
 
-export function ExpenseTable({ role }: Props) {
+export function ExpenseTable({ role, canCreate = true }: Props) {
   const [period, setPeriod] = useState<PeriodPreset>('month');
   const [from, setFrom] = useState(rangeForPeriod('month').from);
   const [to, setTo] = useState(todayISO());
@@ -230,12 +232,14 @@ export function ExpenseTable({ role }: Props) {
             </button>
           </div>
 
-          <Link
-            href="/expenses/new"
-            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
-          >
-            <Plus size={15} /> New Expense
-          </Link>
+          {canCreate && (
+            <Link
+              href="/expenses/new"
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shrink-0"
+            >
+              <Plus size={15} /> New Expense
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

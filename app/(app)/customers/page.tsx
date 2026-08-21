@@ -3,6 +3,7 @@ import { Settings2 } from 'lucide-react';
 import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { CustomerTable } from '@/components/customers/CustomerTable';
+import { currentUserCanAccess } from '@/lib/auth/page-access';
 
 export const metadata = { title: 'Customers — KOC' };
 
@@ -34,7 +35,11 @@ export default async function CustomersPage({
           </Link>
         )}
       </div>
-      <CustomerTable initialCategory={category ?? ''} isAdmin={session?.role === 'admin'} />
+      <CustomerTable
+        initialCategory={category ?? ''}
+        isAdmin={session?.role === 'admin'}
+        canCreate={await currentUserCanAccess('action.create_customer')}
+      />
     </div>
   );
 }
