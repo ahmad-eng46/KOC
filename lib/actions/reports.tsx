@@ -15,8 +15,6 @@ import {
   BalanceReportPDF, PLReportPDF, LocationReportPDF,
 } from '@/components/reports/pdfs';
 import type { DateRange } from '@/components/reports/shared';
-import { createServerClient } from '@/lib/supabase/server';
-import { getActiveBusinessId } from '@/lib/business';
 
 type ExportResult =
   | { ok: true; base64: string; filename: string }
