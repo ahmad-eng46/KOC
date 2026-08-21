@@ -7,7 +7,12 @@ import { getActiveBusinessId } from '@/lib/business';
 import { getSetting, SETTING_KEYS, SETTING_DEFAULTS } from '@/lib/settings';
 import type { DateRange } from '@/components/reports/shared';
 
+/** Optional brand/product narrowing, matching the Sales Report's dropdowns. */
+export type SalesScope = { brandId?: string; productId?: string };
+
 export type SalesData = {
+  /** "Double Horse", "DH Motor Oil 20W-50 (Double Horse)", or null for everything. */
+  scopeLabel: string | null;
   rows: Array<{
     invoice_number: string;
     issue_date: string;
@@ -20,9 +25,19 @@ export type SalesData = {
   top_customers: Array<{ customer_name: string; total_paisa: number; invoice_count: number }>;
 };
 
-export async function fetchSalesData(range: DateRange): Promise<SalesData> {
+export async function fetchSalesData(
+  range: DateRange,
+  scope: SalesScope = {},
+): Promise<SalesData> {
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
+
+  // A brand or product filter needs line-level rows, so the export switches to
+  // sales_analytics_view. Unfiltered, it stays on the invoice query it always
+  // used, so the numbers match the report exactly.
+  if (scope.brandId || scope.productId) {
+    return fetchScopedSalesData(supabase, businessId, range, scope);
+  }
 
   const { data, error } = await supabase
     .from('invoices')
@@ -79,7 +94,89 @@ export async function fetchSalesData(range: DateRange): Promise<SalesData> {
     .sort((a, b) => b.total_paisa - a.total_paisa)
     .slice(0, 10);
 
-  return { rows, total_paisa, by_day, top_customers };
+  return { scopeLabel: null, rows, total_paisa, by_day, top_customers };
+}
+
+/**
+ * The same shape, read from sales_analytics_view so a brand or product filter
+ * can apply. Amounts are net of returns with the invoice discount already
+ * shared across lines; paid_paisa is 0 per row because a payment settles a
+ * whole invoice and cannot be attributed to one product line.
+ */
+async function fetchScopedSalesData(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+  range: DateRange,
+  scope: SalesScope,
+): Promise<SalesData> {
+  let q = supabase
+    .from('sales_analytics_view')
+    .select('invoice_number, issue_date, customer_name, product_name, brand_name, net_quantity, net_amount_paisa')
+    .eq('business_id', businessId)
+    .gte('issue_date', range.from)
+    .lte('issue_date', range.to)
+    .order('issue_date')
+    .limit(5000);
+
+  // 'unbranded' is not an id — it means the lines whose product has no brand.
+  if (scope.brandId === 'unbranded') q = q.is('brand_id', null);
+  else if (scope.brandId) q = q.eq('brand_id', scope.brandId);
+  if (scope.productId) q = q.eq('product_id', scope.productId);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  type Raw = {
+    invoice_number: string; issue_date: string; customer_name: string | null;
+    product_name: string; brand_name: string | null;
+    net_quantity: number | string; net_amount_paisa: number | string;
+  };
+  const raw = (data ?? []) as unknown as Raw[];
+
+  const rows = raw.map((r) => ({
+    invoice_number: r.invoice_number,
+    issue_date: r.issue_date,
+    customer_name: r.customer_name ?? '—',
+    total_paisa: Number(r.net_amount_paisa),
+    paid_paisa: 0,
+  }));
+
+  const total_paisa = rows.reduce((sum, r) => sum + r.total_paisa, 0);
+
+  const dayMap = new Map<string, { total_paisa: number; count: number }>();
+  for (const r of rows) {
+    const v = dayMap.get(r.issue_date) ?? { total_paisa: 0, count: 0 };
+    v.total_paisa += r.total_paisa;
+    v.count += 1;
+    dayMap.set(r.issue_date, v);
+  }
+  const by_day = [...dayMap.entries()]
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const custMap = new Map<string, { total_paisa: number; invoices: Set<string> }>();
+  for (const [i, r] of rows.entries()) {
+    const v = custMap.get(r.customer_name) ?? { total_paisa: 0, invoices: new Set<string>() };
+    v.total_paisa += r.total_paisa;
+    v.invoices.add(raw[i].invoice_number);
+    custMap.set(r.customer_name, v);
+  }
+  const top_customers = [...custMap.entries()]
+    .map(([customer_name, v]) => ({
+      customer_name, total_paisa: v.total_paisa, invoice_count: v.invoices.size,
+    }))
+    .sort((a, b) => b.total_paisa - a.total_paisa)
+    .slice(0, 10);
+
+  const productName = scope.productId ? raw[0]?.product_name ?? null : null;
+  const brandName = scope.brandId === 'unbranded'
+    ? 'Unbranded'
+    : raw.find((r) => r.brand_name)?.brand_name ?? null;
+  const scopeLabel = productName
+    ? `${productName}${brandName ? ` (${brandName})` : ''}`
+    : brandName;
+
+  return { scopeLabel, rows, total_paisa, by_day, top_customers };
 }
 
 export type PurchaseData = {

@@ -25,6 +25,9 @@ const LINE_COLUMNS =
   'discount_share_paisa, effective_amount_paisa, returned_amount_paisa, net_amount_paisa, ' +
   'cost_price_paisa, profit_paisa, sale_date, sale_week, sale_month';
 
+/** 'unbranded' is not an id — it means the lines whose product has no brand. */
+export const UNBRANDED_BRAND = 'unbranded';
+
 export type LineFilters = {
   range?: DateRange;
   brandId?: string;
@@ -46,7 +49,8 @@ async function fetchLines(businessId: string, f: LineFilters): Promise<SalesLine
       .range(from, from + PAGE - 1);
 
     if (f.range) q = q.gte('issue_date', f.range.from).lte('issue_date', f.range.to);
-    if (f.brandId) q = q.eq('brand_id', f.brandId);
+    if (f.brandId === UNBRANDED_BRAND) q = q.is('brand_id', null);
+    else if (f.brandId) q = q.eq('brand_id', f.brandId);
     if (f.productId) q = q.eq('product_id', f.productId);
     if (f.locationId) q = q.eq('location_id', f.locationId);
     if (f.customerId) q = q.eq('customer_id', f.customerId);
@@ -90,6 +94,9 @@ export function useSalesOverview(range?: DateRange, filters: LineFilters = {}) {
         current: summarise(current),
         previous: prev ? summarise(previous) : null,
         lines: current,
+        // The previous period's lines, not just its totals — a per-product
+        // trend arrow needs the breakdown on both sides, not one number.
+        previousLines: previous,
       };
     },
   });

@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth/session';
 import {
   fetchSalesData, fetchPurchaseData, fetchCustomerReportData,
   fetchBalanceData, fetchPLData, fetchLocationReportData,
+  type SalesScope, type SalesData,
 } from '@/lib/reports/data';
 import {
   SalesReportPDF, PurchaseReportPDF, CustomerReportPDF,
@@ -29,6 +30,14 @@ async function ensureRole(...roles: ('admin' | 'accountant' | 'staff' | 'viewer'
 
 function pdfDate() { return format(new Date(), 'yyyy-MM-dd'); }
 
+/** The filename says what was filtered, so two exports never collide. */
+function slugSales(data: SalesData, range: DateRange): string {
+  const scope = data.scopeLabel
+    ? `-${data.scopeLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+    : '';
+  return `sales${scope}-${range.from}-to-${range.to}`;
+}
+
 async function getBusinessName(): Promise<string> {
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
@@ -39,25 +48,31 @@ async function getBusinessName(): Promise<string> {
 // ───────────────────────────────────────────────
 // SALES
 // ───────────────────────────────────────────────
-export async function exportSalesPdf(range: DateRange): Promise<ExportResult> {
+export async function exportSalesPdf(
+  range: DateRange,
+  scope: SalesScope = {},
+): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const [data, businessName] = await Promise.all([fetchSalesData(range), getBusinessName()]);
+    const [data, businessName] = await Promise.all([fetchSalesData(range, scope), getBusinessName()]);
     const buf = await renderToBuffer(<SalesReportPDF data={data} range={range} businessName={businessName} />);
-    return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `sales-${range.from}-to-${range.to}.pdf` };
+    return { ok: true, base64: Buffer.from(buf).toString('base64'), filename: `${slugSales(data, range)}.pdf` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }
 
-export async function exportSalesExcel(range: DateRange): Promise<ExportResult> {
+export async function exportSalesExcel(
+  range: DateRange,
+  scope: SalesScope = {},
+): Promise<ExportResult> {
   const err = await ensureRole('admin', 'accountant', 'staff', 'viewer');
   if (err) return { ok: false, error: err };
   try {
-    const data = await fetchSalesData(range);
+    const data = await fetchSalesData(range, scope);
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Invoices');
+    const ws = wb.addWorksheet(data.scopeLabel ? 'Filtered Sales' : 'Invoices');
     ws.addRow(['Date', 'Number', 'Customer', 'Total', 'Paid']);
     ws.getRow(1).font = { bold: true };
     for (const r of data.rows) {

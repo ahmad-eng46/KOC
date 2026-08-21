@@ -37,8 +37,15 @@ export function SalesReportPDF({ data, range, businessName }: {
   return (
     <Document title="Sales Report">
       <Page size="A4" style={s.page}>
-        <Text style={s.title}>Sales Report — {businessName}</Text>
-        <Text style={s.meta}>{rangeStr(range.from, range.to)}</Text>
+        <Text style={s.title}>
+          Sales Report{data.scopeLabel ? ` — ${data.scopeLabel}` : ''} — {businessName}
+        </Text>
+        <Text style={s.meta}>
+          {rangeStr(range.from, range.to)}
+          {data.scopeLabel
+            ? ' · Filtered: paid and outstanding are per invoice and are not shown'
+            : ''}
+        </Text>
 
         <View style={s.kpiRow}>
           <View style={s.kpi}>
