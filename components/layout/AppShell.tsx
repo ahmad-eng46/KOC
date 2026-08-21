@@ -15,10 +15,12 @@ type Props = {
   businesses: Business[];
   activeId: string;
   permissions: Permission[];
+  /** page key → may this user see it. Resolved server-side in the layout. */
+  pageAccess: Record<string, boolean>;
   children: React.ReactNode;
 };
 
-export function AppShell({ session, businesses, activeId, permissions, children }: Props) {
+export function AppShell({ session, businesses, activeId, permissions, pageAccess, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -29,6 +31,7 @@ export function AppShell({ session, businesses, activeId, permissions, children 
           <Sidebar
             role={session.role}
             permissions={permissions}
+            pageAccess={pageAccess}
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
           />

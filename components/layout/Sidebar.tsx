@@ -21,30 +21,32 @@ type NavItem = {
   roles?: Role[];
   /** Names a live counter to render beside the label. */
   badge?: 'pendingApprovals';
+  /** The page_definitions key that governs this link. */
+  pageKey?: string;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
+  { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard , pageKey: 'dashboard' },
   // Everyone sees this: admins to decide, everyone else to follow their own
   // requests. RLS decides which rows each of them gets.
-  { label: 'Approvals',   href: '/approvals',   icon: ShieldCheck, badge: 'pendingApprovals' },
-  { label: 'Locations',   href: '/locations',   icon: MapPin },
-  { label: 'Customers',   href: '/customers',   icon: Users,       permission: 'customers.view' },
-  { label: 'Products',    href: '/products',    icon: Package,     permission: 'products.view' },
-  { label: 'Suppliers',   href: '/suppliers',   icon: Truck,       roles: ['admin', 'accountant', 'staff'] },
-  { label: 'Stock',       href: '/stock',       icon: Warehouse,   permission: 'stock.view' },
-  { label: 'Invoices',    href: '/invoices',    icon: FileText,    permission: 'invoices.view' },
-  { label: 'Payments',    href: '/payments',    icon: CreditCard,  permission: 'payments.view' },
-  { label: 'Expenses',    href: '/expenses',    icon: Receipt,     permission: 'expenses.view' },
-  { label: 'Investments', href: '/investments', icon: TrendingUp,  adminOnly: true },
-  { label: 'Loans',       href: '/loans',       icon: Banknote,    adminOnly: true },
-  { label: 'Ledger',      href: '/ledger',      icon: BookOpen,    permission: 'ledger.view' },
-  { label: 'Reports',     href: '/reports',     icon: BarChart3,   permission: 'reports.view_basic' },
-  { label: 'Sales Analytics', href: '/reports/sales-analytics', icon: PieChart, permission: 'reports.view' },
-  { label: 'Settings',    href: '/settings',         icon: Settings,  adminOnly: true },
-  { label: 'Users',       href: '/settings/users',   icon: UserCog,   adminOnly: true },
-  { label: 'Backup',      href: '/settings/backup',  icon: HardDrive, adminOnly: true },
-  { label: 'Activity Log', href: '/settings/activity-log', icon: Activity, roles: ['admin', 'accountant'] },
+  { label: 'Approvals',   href: '/approvals',   icon: ShieldCheck, badge: 'pendingApprovals' , pageKey: 'approvals' },
+  { label: 'Locations',   href: '/locations',   icon: MapPin , pageKey: 'locations' },
+  { label: 'Customers',   href: '/customers',   icon: Users,       permission: 'customers.view' , pageKey: 'customers' },
+  { label: 'Products',    href: '/products',    icon: Package,     permission: 'products.view' , pageKey: 'products' },
+  { label: 'Suppliers',   href: '/suppliers',   icon: Truck,       roles: ['admin', 'accountant', 'staff'] , pageKey: 'suppliers' },
+  { label: 'Stock',       href: '/stock',       icon: Warehouse,   permission: 'stock.view' , pageKey: 'stock' },
+  { label: 'Invoices',    href: '/invoices',    icon: FileText,    permission: 'invoices.view' , pageKey: 'invoices' },
+  { label: 'Payments',    href: '/payments',    icon: CreditCard,  permission: 'payments.view' , pageKey: 'payments' },
+  { label: 'Expenses',    href: '/expenses',    icon: Receipt,     permission: 'expenses.view' , pageKey: 'expenses' },
+  { label: 'Investments', href: '/investments', icon: TrendingUp,  adminOnly: true , pageKey: 'investments' },
+  { label: 'Loans',       href: '/loans',       icon: Banknote,    adminOnly: true , pageKey: 'loans' },
+  { label: 'Ledger',      href: '/ledger',      icon: BookOpen,    permission: 'ledger.view' , pageKey: 'ledger' },
+  { label: 'Reports',     href: '/reports',     icon: BarChart3,   permission: 'reports.view_basic' , pageKey: 'reports.sales' },
+  { label: 'Sales Analytics', href: '/reports/sales-analytics', icon: PieChart, permission: 'reports.view' , pageKey: 'reports.analytics' },
+  { label: 'Settings',    href: '/settings',         icon: Settings,  adminOnly: true , pageKey: 'settings' },
+  { label: 'Users',       href: '/settings/users',   icon: UserCog,   adminOnly: true , pageKey: 'users' },
+  { label: 'Backup',      href: '/settings/backup',  icon: HardDrive, adminOnly: true , pageKey: 'backup' },
+  { label: 'Activity Log', href: '/settings/activity-log', icon: Activity, roles: ['admin', 'accountant'] , pageKey: 'settings' },
 ];
 
 type Props = {
@@ -55,11 +57,13 @@ type Props = {
    * `can()` answers.
    */
   permissions?: Permission[];
+  /** page key → allowed, resolved server-side. Absent falls back to role rules. */
+  pageAccess?: Record<string, boolean>;
   open: boolean;
   onClose: () => void;
 };
 
-export function Sidebar({ role, permissions, open, onClose }: Props) {
+export function Sidebar({ role, permissions, pageAccess, open, onClose }: Props) {
   const pathname = usePathname();
   const { data: pendingApprovals = 0 } = usePendingRequestCount();
 
@@ -67,6 +71,12 @@ export function Sidebar({ role, permissions, open, onClose }: Props) {
   const allows = (p: Permission) => (effective ? effective.has(p) : can(role, p));
 
   const visibleItems = NAV_ITEMS.filter((item) => {
+    // Page access decides first where it has an opinion: it is the admin's
+    // explicit choice for this user, and it already accounts for the role
+    // default, the permission system and the admin override.
+    if (item.pageKey && pageAccess && item.pageKey in pageAccess) {
+      return pageAccess[item.pageKey];
+    }
     if (item.adminOnly) return role === 'admin';
     if (item.roles) return item.roles.includes(role);
     if (item.permission) return allows(item.permission);
