@@ -38,9 +38,17 @@ export default function LoginPage() {
       return;
     }
 
-    await recordLogin();
-    router.push('/dashboard');
-    router.refresh();
+    // Never awaited into the redirect path: recording the sign-in is
+    // bookkeeping, and a failure in it must not strand someone on the login
+    // page with a valid session.
+    recordLogin().catch(() => {});
+
+    // replace, and no refresh() after it. push() followed by refresh() races:
+    // the push fetches /dashboard while the refresh re-fetches the route still
+    // showing — /login — and whichever resolves last wins. Navigating to a
+    // different route already renders it fresh, so the refresh only ever added
+    // the race.
+    router.replace('/dashboard');
   }
 
   return (

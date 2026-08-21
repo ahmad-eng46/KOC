@@ -710,7 +710,13 @@ function AccessSummary({
   if (role === 'admin') {
     return <span className="text-xs text-gray-500">All pages</span>;
   }
-  if (!summary) return <span className="text-xs text-gray-400">—</span>;
+  // A zero total means the page definitions have not been loaded — 0056 not
+  // applied, or the read failed. "0 of 0" reads as "no access at all", which is
+  // the opposite of the truth: with no definitions everyone keeps their role's
+  // access untouched.
+  if (!summary || summary.total === 0) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
 
   const pct = summary.total === 0 ? 0 : (summary.allowed / summary.total) * 100;
   return (

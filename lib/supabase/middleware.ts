@@ -42,7 +42,11 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (user && isAuthRoute) {
+  // GET only. This redirect exists to stop an authenticated user looking at the
+  // login page; applied to a POST it also eats the server action the login page
+  // fires on success, which then throws and leaves the user sitting on /login
+  // holding a perfectly good session.
+  if (user && isAuthRoute && request.method === 'GET') {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
