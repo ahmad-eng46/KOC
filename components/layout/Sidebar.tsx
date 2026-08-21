@@ -6,9 +6,10 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, MapPin, Users, Package, Warehouse, Truck,
   FileText, CreditCard, Receipt, TrendingUp,
-  Banknote, BookOpen, BarChart3, PieChart, UserCog, HardDrive, Settings, Activity, X,
+  Banknote, BookOpen, BarChart3, PieChart, UserCog, HardDrive, Settings, Activity, ShieldCheck, X,
 } from 'lucide-react';
 import { can, type Permission, type Role } from '@/lib/auth/permissions';
+import { usePendingRequestCount } from '@/lib/queries/deletion-requests';
 
 type NavItem = {
   label: string;
@@ -18,10 +19,15 @@ type NavItem = {
   adminOnly?: boolean;
   /** Show only for these roles; checked before `permission`. */
   roles?: Role[];
+  /** Names a live counter to render beside the label. */
+  badge?: 'pendingApprovals';
 };
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
+  // Everyone sees this: admins to decide, everyone else to follow their own
+  // requests. RLS decides which rows each of them gets.
+  { label: 'Approvals',   href: '/approvals',   icon: ShieldCheck, badge: 'pendingApprovals' },
   { label: 'Locations',   href: '/locations',   icon: MapPin },
   { label: 'Customers',   href: '/customers',   icon: Users,       permission: 'customers.view' },
   { label: 'Products',    href: '/products',    icon: Package,     permission: 'products.view' },
@@ -55,6 +61,7 @@ type Props = {
 
 export function Sidebar({ role, permissions, open, onClose }: Props) {
   const pathname = usePathname();
+  const { data: pendingApprovals = 0 } = usePendingRequestCount();
 
   const effective = permissions ? new Set<Permission>(permissions) : null;
   const allows = (p: Permission) => (effective ? effective.has(p) : can(role, p));
@@ -112,7 +119,12 @@ export function Sidebar({ role, permissions, open, onClose }: Props) {
                 )}
               >
                 <Icon size={18} className="shrink-0" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.badge === 'pendingApprovals' && pendingApprovals > 0 && (
+                  <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-red-600 text-white text-[11px] font-semibold flex items-center justify-center tabular-nums">
+                    {pendingApprovals}
+                  </span>
+                )}
               </Link>
             );
           })}

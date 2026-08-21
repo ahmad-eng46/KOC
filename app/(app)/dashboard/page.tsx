@@ -7,6 +7,7 @@ import { formatKarachi } from '@/lib/date';
 import { getSession } from '@/lib/auth/session';
 import { RecentActivityWidget } from '@/components/settings/RecentActivityWidget';
 import { SalesThisMonthCard } from '@/components/reports/analytics/SalesThisMonthCard';
+import { PendingApprovalsWidget } from '@/components/approvals/PendingApprovalsWidget';
 import { currentUserCan } from '@/lib/auth/can-user';
 
 export const metadata = { title: 'Dashboard — KOC' };
@@ -186,6 +187,8 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
+
+      <PendingApprovalsWidget isAdmin={session?.role === 'admin'} />
 
       {canSeeAnalytics && <SalesThisMonthCard />}
 
