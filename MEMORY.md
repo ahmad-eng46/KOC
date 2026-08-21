@@ -161,6 +161,13 @@
 - Replaced across 10 components including the mobile card copies. Two `Trash2` icons remain on purpose: user deletion (admin-only by design, not in the entity enum) and the invoice admin modal, which already asks for a reason.
 - Verified on a throwaway Postgres 16: duplicate pending refused, one-word reason refused, unknown entity type refused, approval without a resolver refused, a proper approval frees the entity for a future request, audit fires on insert and update, and the auto-resolve trigger handles the delete/second-update/service-role cases. 288/288 vitest (19 new), tsc + `next build` clean.
 
+**Round 14 — backup sales sheets** (session 23)
+- ⚠️ **"Sheet Count is in column C" was reported a FIFTH time. It is still not true.** A real .xlsx built through the production path and unzipped shows `<row r="5" spans="1:2"><c r="A5"/><c r="B5"/></row>` — the row stops at column B and holds no C5 cell. `origin/main` has identical code and the scheduled-backup Edge Function writes no Info sheet, so there is no second implementation to blame. **The reporter is looking at a file generated before the round-9 rewrite.** The test now also asserts `row.actualCellCount === 2`, which a stray C5 would break.
+- Nine new sheets: Sales Summary, Sales by Product / Brand / Customer / Day / Week / Month, Stock Report, Dead Stock. All from one pass over the invoice lines via `lib/backup/sales-periods.ts`, so every sheet shares one definition of "This Month". Verified three sheets report the same all-time total.
+- **Rendering a real workbook found four bugs typecheck could not**, all worth remembering: (1) **money was double-converted** — the sheet writer takes *paisa* and divides itself, so passing rupees printed Rs. 52 for Rs. 5,200; (2) a `kind: 'date'` column carrying "Never" rendered *Invalid Date*; (3) pack info read "19 Boxs"; (4) day subtotals fired on the wrong boundary because rows run newest-first. **Always render the workbook, never trust the types.**
+- Iron rule #3 by absence: `showCost: false` omits Cost and Cost Value entirely, asserted on the header row.
+- 324/324 vitest (35 new), tsc + ESLint + `next build` clean.
+
 **Migrations pending, in order:** **0054 (deletion requests), then 0055 (auto-resolve trigger)** — 0055 depends on 0054's table. 0046–0053 are all applied (0051–0053 verified live on 2026-08-21). Neither 0054 nor 0055 is dangerous: without them the approvals screens error and non-admins simply cannot request, but nothing else breaks.
 
 **Working agreement:** push to `main` after every verified change — no feature branches, no waiting to be asked. Exception taken in round 8: a push that would break production waits for its migration.
