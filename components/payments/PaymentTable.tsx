@@ -24,6 +24,7 @@ import { paymentMethods, type PaymentMethod } from '@/lib/validators/payment';
 import { formatPKR } from '@/lib/money';
 import type { Role } from '@/lib/auth/permissions';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBadge } from '@/components/approvals/PendingDeleteMarkers';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
@@ -326,6 +327,7 @@ export function PaymentTable({ role, canCreate = true }: Props) {
                       <p className="text-sm font-mono font-medium text-gray-900">
                         {formatPKR(r.amount_paisa)}
                       </p>
+                      <PendingDeleteBadge entityType="payment" entityId={r.id} />
                       <DeleteButton
                         entityType="payment"
                         entityId={r.id}

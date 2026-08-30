@@ -13,6 +13,7 @@ import { BrandBadge } from './BrandBadge';
 import { ExportStockButtons } from './ExportStockButtons';
 import { useToast } from '@/components/ui/Toast';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBadge } from '@/components/approvals/PendingDeleteMarkers';
 
 type Props = {
   /** Whether this user may create one. Defaults true so existing callers are unchanged. */
@@ -400,6 +401,7 @@ function DesktopRow({
           >
             <ChevronRight size={15} />
           </Link>
+          <PendingDeleteBadge entityType="product" entityId={p.id} />
           <DeleteButton
             entityType="product"
             entityId={p.id}

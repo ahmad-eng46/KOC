@@ -38,7 +38,8 @@ export type DeletionRequest = {
   entity_type: DeletableEntity;
   entity_id: string;
   entity_display_name: string;
-  reason: string;
+  /** Null when the requester did not give one — it is optional since 0062. */
+  reason: string | null;
   status: DeletionRequestStatus;
   requested_by: string;
   requester_name: string;
@@ -46,8 +47,13 @@ export type DeletionRequest = {
   resolved_by: string | null;
   resolver_name: string | null;
   resolved_at: string | null;
-  rejection_reason: string | null;
+  review_note: string | null;
   entity_metadata: Record<string, unknown>;
+  /**
+   * The whole row as it was when the request was filed. Null for anyone the
+   * view withholds it from — a product snapshot carries its cost price.
+   */
+  entity_snapshot: Record<string, unknown> | null;
 };
 
 // ─────────────────────────────────────────────
@@ -77,8 +83,8 @@ export async function requestDeletion(
   // Say who already asked, rather than letting the unique index answer with a
   // constraint name. The index still guarantees it under a race.
   const { data: existing } = await supabase
-    .from('deletion_requests')
-    .select('requested_at, users!deletion_requests_requested_by_fkey(full_name)')
+    .from(REQUEST_VIEW)
+    .select('requested_at, requester_name')
     .eq('business_id', businessId)
     .eq('entity_type', data.entity_type)
     .eq('entity_id', data.entity_id)
@@ -97,41 +103,45 @@ export async function requestDeletion(
   const snapshot = await snapshotEntity(supabase, businessId, data.entity_type, data.entity_id);
   if (!snapshot.ok) return snapshot;
 
-  const { data: created, error } = await supabase
-    .from('deletion_requests')
-    .insert({
-      business_id: businessId,
-      requested_by: session.id,
-      entity_type: data.entity_type,
-      entity_id: data.entity_id,
-      entity_display_name: snapshot.snapshot.displayName,
-      reason: data.reason,
-      entity_metadata: {
-        ...snapshot.snapshot.metadata,
-        __modified_at: snapshot.snapshot.modifiedAt,
-      },
-      status: 'pending',
-    })
-    .select('id')
-    .single();
+  // Filed through the RPC, not inserted directly. The request must carry a
+  // snapshot of the whole row, and the requester is precisely the person who
+  // cannot read all of it — products and stock purchases hold cost prices. The
+  // function takes the snapshot with elevated rights and stores it; the
+  // deletion_requests_for_role view is what keeps it out of the requester's
+  // hands afterwards.
+  const { data: created, error } = await supabase.rpc('file_deletion_request', {
+    p_entity_type: data.entity_type,
+    p_entity_id: data.entity_id,
+    p_business_id: businessId,
+    p_display_name: snapshot.snapshot.displayName,
+    p_reason: data.reason?.trim() || null,
+    p_metadata: {
+      ...snapshot.snapshot.metadata,
+      __modified_at: snapshot.snapshot.modifiedAt,
+    },
+  });
 
   if (error || !created) {
-    if (error?.code === '23505') {
+    if (error?.message.includes('already asked')) {
       return { ok: false, error: 'A deletion request for this item is already pending.' };
+    }
+    if (error?.message.includes('Record not found')) {
+      return { ok: false, error: 'That record no longer exists, or has already been deleted.' };
     }
     return { ok: false, error: error?.message ?? 'Could not file the request.' };
   }
+  const requestId = created as unknown as string;
 
   await logActivity({
     action: 'deletion.requested',
     entityType: data.entity_type,
     entityId: data.entity_id,
     description: `Requested deletion of ${snapshot.snapshot.displayName}`,
-    metadata: { reason: data.reason, request_id: (created as { id: string }).id },
+    metadata: { reason: data.reason ?? null, request_id: requestId },
   });
 
   revalidateAll();
-  return { ok: true, id: (created as { id: string }).id };
+  return { ok: true, id: requestId };
 }
 
 // ─────────────────────────────────────────────
@@ -177,7 +187,7 @@ export async function resolveDeletionRequest(
       .from('deletion_requests')
       .update({
         status: 'rejected', resolved_by: session.id, resolved_at: now,
-        rejection_reason: data.rejection_reason ?? null,
+        review_note: data.review_note ?? null,
       })
       .eq('id', data.request_id);
     if (error) return { ok: false, error: error.message };
@@ -187,7 +197,7 @@ export async function resolveDeletionRequest(
       entityType: request.entity_type,
       entityId: request.entity_id,
       description: `Rejected the deletion of ${request.entity_display_name}`,
-      metadata: { reason: data.rejection_reason ?? null },
+      metadata: { reason: data.review_note ?? null },
     });
 
     revalidateAll();
@@ -251,7 +261,7 @@ export async function cancelDeletionRequest(requestId: string): Promise<SimpleRe
 
   const supabase = await createServerClient();
   const { data: req } = await supabase
-    .from('deletion_requests')
+    .from(REQUEST_VIEW)
     .select('id, requested_by, status, entity_display_name, entity_type, entity_id')
     .eq('id', requestId)
     .eq('business_id', businessId)
@@ -270,12 +280,13 @@ export async function cancelDeletionRequest(requestId: string): Promise<SimpleRe
     return { ok: false, error: `This request was already ${request.status}.` };
   }
 
-  // resolved_by stays null: nobody decided this, the requester withdrew it.
-  // The 0054 CHECK allows exactly that shape for 'cancelled'.
-  const { error } = await supabase
-    .from('deletion_requests')
-    .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-    .eq('id', requestId);
+  // Through the RPC, not a direct UPDATE: 0062 closed the table to requesters,
+  // and an UPDATE's WHERE clause is filtered by the SELECT policy, so this
+  // would match zero rows and report success. The function re-checks that the
+  // request is yours and still pending.
+  const { error } = await supabase.rpc('cancel_deletion_request', {
+    p_request_id: requestId,
+  });
   if (error) return { ok: false, error: error.message };
 
   await logActivity({
@@ -292,11 +303,17 @@ export async function cancelDeletionRequest(requestId: string): Promise<SimpleRe
 // ─────────────────────────────────────────────
 // 4. Reads
 // ─────────────────────────────────────────────
+/**
+ * Read through deletion_requests_for_role, never the table. 0062 closed the
+ * table to everyone but admin and accountant, because a whole-row snapshot of
+ * a product contains its cost price; the view withholds the snapshot from
+ * anyone who may not see one and carries the two user names as plain columns.
+ */
+const REQUEST_VIEW = 'deletion_requests_for_role';
 const REQUEST_COLUMNS =
   'id, entity_type, entity_id, entity_display_name, reason, status, requested_by, requested_at, ' +
-  'resolved_by, resolved_at, rejection_reason, entity_metadata, ' +
-  'requester:users!deletion_requests_requested_by_fkey(full_name), ' +
-  'resolver:users!deletion_requests_resolved_by_fkey(full_name)';
+  'resolved_by, resolved_at, review_note, entity_metadata, entity_snapshot, ' +
+  'requester_name, resolver_name';
 
 export async function listDeletionRequests(
   status?: DeletionRequestStatus | 'all',
@@ -309,7 +326,7 @@ export async function listDeletionRequests(
 
   const supabase = await createServerClient();
   let q = supabase
-    .from('deletion_requests')
+    .from(REQUEST_VIEW)
     .select(REQUEST_COLUMNS)
     .eq('business_id', businessId)
     .order('requested_at', { ascending: false })
@@ -332,7 +349,7 @@ export async function getPendingRequestCount(): Promise<number> {
 
   const supabase = await createServerClient();
   const { count } = await supabase
-    .from('deletion_requests')
+    .from(REQUEST_VIEW)
     .select('id', { count: 'exact', head: true })
     .eq('business_id', businessId)
     .eq('status', 'pending');
@@ -351,7 +368,7 @@ export async function getMyRequests(): Promise<
 
   const supabase = await createServerClient();
   const { data, error } = await supabase
-    .from('deletion_requests')
+    .from(REQUEST_VIEW)
     .select(REQUEST_COLUMNS)
     .eq('business_id', businessId)
     .eq('requested_by', session.id)
@@ -377,8 +394,8 @@ export async function getPendingEntityIds(
 
   const supabase = await createServerClient();
   const { data } = await supabase
-    .from('deletion_requests')
-    .select('entity_id, requested_at, users!deletion_requests_requested_by_fkey(full_name)')
+    .from(REQUEST_VIEW)
+    .select('entity_id, requested_at, requester_name')
     .eq('business_id', businessId)
     .eq('entity_type', entityType)
     .eq('status', 'pending');
@@ -421,6 +438,8 @@ export async function previewEntity(
 type Client = Awaited<ReturnType<typeof createServerClient>>;
 
 function requesterName(row: Record<string, unknown>): string | null {
+  if (typeof row.requester_name === 'string') return row.requester_name;
+  if (typeof row.resolver_name === 'string' && !('requester_name' in row)) return null;
   const v = row.users ?? row.requester;
   if (!v) return null;
   const obj = Array.isArray(v) ? v[0] : v;
@@ -428,27 +447,22 @@ function requesterName(row: Record<string, unknown>): string | null {
 }
 
 function toRequest(row: Record<string, unknown>): DeletionRequest {
-  const pick = (key: string) => {
-    const v = row[key];
-    if (!v) return null;
-    const obj = Array.isArray(v) ? v[0] : v;
-    return (obj as { full_name?: string })?.full_name ?? null;
-  };
   return {
     id: String(row.id),
     entity_type: row.entity_type as DeletableEntity,
     entity_id: String(row.entity_id),
     entity_display_name: String(row.entity_display_name),
-    reason: String(row.reason),
+    reason: row.reason ? String(row.reason) : null,
     status: row.status as DeletionRequestStatus,
     requested_by: String(row.requested_by),
-    requester_name: pick('requester') ?? 'Unknown user',
+    requester_name: row.requester_name ? String(row.requester_name) : 'Unknown user',
     requested_at: String(row.requested_at),
     resolved_by: row.resolved_by ? String(row.resolved_by) : null,
-    resolver_name: pick('resolver'),
+    resolver_name: row.resolver_name ? String(row.resolver_name) : null,
     resolved_at: row.resolved_at ? String(row.resolved_at) : null,
-    rejection_reason: row.rejection_reason ? String(row.rejection_reason) : null,
+    review_note: row.review_note ? String(row.review_note) : null,
     entity_metadata: (row.entity_metadata ?? {}) as Record<string, unknown>,
+    entity_snapshot: (row.entity_snapshot ?? null) as Record<string, unknown> | null,
   };
 }
 
@@ -466,7 +480,7 @@ async function snapshotEntity(
   // cross-business id too, but an id from another business must read as "not
   // found" here rather than depending on the policy to say so.
   const { data, error } = await supabase
-    .from(config.table)
+    .from(config.readTable ?? config.table)
     .select(config.columns)
     .eq('id', entityId)
     .eq('business_id', businessId)

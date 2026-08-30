@@ -7,6 +7,7 @@ import { useSuppliers, useSupplierBalances, useDeleteSupplier } from '@/lib/quer
 import { formatPKR } from '@/lib/money';
 import { useToast } from '@/components/ui/Toast';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBadge } from '@/components/approvals/PendingDeleteMarkers';
 
 type Props = {
   canCreate: boolean;
@@ -150,6 +151,7 @@ export function SupplierTable({ canCreate, canDelete, canSeeMoney }: Props) {
                       >
                         <ChevronRight size={15} />
                       </Link>
+                      <PendingDeleteBadge entityType="supplier" entityId={s.id} />
                       <DeleteButton
                         entityType="supplier"
                         entityId={s.id}

@@ -24,7 +24,16 @@ export type EntitySnapshot = {
 };
 
 export type EntityConfig = {
+  /** The table the row lives in. Used to name it, not to read it. */
   table: string;
+  /**
+   * Where to READ the row for a preview, when that is not the table itself.
+   * products and stock_purchases carry cost prices, so their base tables are
+   * closed to staff — and staff are exactly who files these requests. Reading
+   * through the _for_role view returns the row with the money columns NULLed,
+   * which is all a preview needs.
+   */
+  readTable?: string;
   label: string;
   /** Columns the snapshot needs, beyond id. */
   columns: string;
@@ -100,20 +109,23 @@ export const ENTITY_CONFIG: Record<DeletableEntity, EntityConfig> = {
 
   product: {
     table: 'products',
+    readTable: 'products_for_role',
     label: 'Product',
-    columns: 'id, name, sku, unit, sale_price_paisa, is_active, deleted_at, updated_at, brands(name)',
+    columns: 'id, name, sku, unit, sale_price_paisa, brand_id, brand_name, is_active, deleted_at, updated_at',
     softDeletes: true,
     describe: (r) => ({
       displayName: `Product "${str(r.name)}"`,
       details: [
         { label: 'SKU', value: str(r.sku) || '—' },
-        { label: 'Brand', value: joinedName(r, 'brands') ?? 'Unbranded' },
+        // Either shape: the embedded object when read through the base table,
+        // the plain column when read through products_for_role.
+        { label: 'Brand', value: joinedName(r, 'brands') ?? (str(r.brand_name) || 'Unbranded') },
         { label: 'Sale price', value: formatPKR(num(r.sale_price_paisa)) },
       ],
       warnings: [],
       metadata: {
         name: str(r.name), sku: str(r.sku),
-        brand_name: joinedName(r, 'brands'),
+        brand_name: joinedName(r, 'brands') ?? (str(r.brand_name) || null),
         sale_price_paisa: num(r.sale_price_paisa),
       },
     }),
@@ -195,6 +207,7 @@ export const ENTITY_CONFIG: Record<DeletableEntity, EntityConfig> = {
 
   stock_purchase: {
     table: 'stock_purchases',
+    readTable: 'stock_purchases_for_role',
     label: 'Stock Purchase',
     columns: 'id, quantity, purchase_date, deleted_at, updated_at',
     softDeletes: true,

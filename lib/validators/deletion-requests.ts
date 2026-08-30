@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { uuidLike } from '@/lib/validators/uuid';
 
 /**
- * Every entity the app can soft-delete. Kept in step with the CHECK constraint
- * in 0054 — a type that passes zod but fails the constraint would surface as a
- * database error the user cannot act on.
+ * Every entity the app can soft-delete. Kept in step with
+ * public.deletable_entities, which 0062 made the foreign key for
+ * deletion_requests.entity_type — a type that passes zod but is not registered
+ * would surface as a database error the user cannot act on.
  */
 export const deletableEntities = [
   'invoice', 'customer', 'product', 'expense', 'payment', 'return',
@@ -52,11 +53,18 @@ export function entityHref(type: DeletableEntity, id: string): string | null {
 export const createDeletionRequestSchema = z.object({
   entity_type: z.enum(deletableEntities),
   entity_id: uuidLike('Select an item to delete'),
+  /**
+   * Optional. 0054 required five characters on the reasoning that a reason is
+   * the point of the exercise; in practice that produces "dup" and "asked to".
+   * A blank field the admin can see is blank tells them more than a sentence
+   * written to satisfy a validator.
+   */
   reason: z
     .string()
     .trim()
-    .min(5, 'Please give a reason (at least 5 characters)')
-    .max(500, 'Keep the reason under 500 characters'),
+    .max(500, 'Keep the reason under 500 characters')
+    .optional()
+    .or(z.literal('')),
 });
 export type CreateDeletionRequestInput = z.infer<typeof createDeletionRequestSchema>;
 
@@ -64,7 +72,8 @@ export const resolveDeletionRequestSchema = z
   .object({
     request_id: uuidLike(),
     action: z.enum(['approve', 'reject']),
-    rejection_reason: z.string().trim().max(500).optional(),
+    /** Optional on both actions — an approval can carry a note too. */
+    review_note: z.string().trim().max(500).optional(),
     /**
      * Set once the admin has seen the "modified since requested" warning. The
      * server refuses a stale approval without it, so the warning cannot be
@@ -72,10 +81,7 @@ export const resolveDeletionRequestSchema = z
      */
     acknowledge_modified: z.boolean().optional(),
   })
-  .refine(
-    (d) => d.action !== 'reject' || (d.rejection_reason?.length ?? 0) >= 3,
-    { message: 'Please say why you are rejecting this', path: ['rejection_reason'] },
-  );
+;
 export type ResolveDeletionRequestInput = z.infer<typeof resolveDeletionRequestSchema>;
 
 export type DeletionRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';

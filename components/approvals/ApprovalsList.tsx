@@ -148,7 +148,7 @@ function RequestCard({
     const r = await resolveMut.mutateAsync({
       request_id: request.id,
       action: 'reject',
-      rejection_reason: rejectReason.trim(),
+      review_note: rejectReason.trim() || undefined,
     });
     if (!r.ok) {
       setError(r.error);
@@ -198,13 +198,17 @@ function RequestCard({
             Requested by <span className="font-medium text-gray-700">{request.requester_name}</span>
             {' · '}{relativeTime(request.requested_at)}
           </p>
-          <p className="mt-1 text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-            “{request.reason}”
-          </p>
+          {request.reason ? (
+            <p className="mt-1 text-sm text-gray-800 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+              “{request.reason}”
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-gray-400 italic">No reason given.</p>
+          )}
 
-          {request.status === 'rejected' && request.rejection_reason && (
+          {request.status === 'rejected' && request.review_note && (
             <p className="mt-2 text-xs text-red-700">
-              Rejected by {request.resolver_name ?? 'an admin'}: “{request.rejection_reason}”
+              Rejected by {request.resolver_name ?? 'an admin'}: “{request.review_note}”
             </p>
           )}
           {request.status === 'approved' && (

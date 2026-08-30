@@ -230,15 +230,9 @@ function RequestDeletionDialog({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const tooShort = reason.trim().length < 5;
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (tooShort) {
-      setError('Please give a reason (at least 5 characters).');
-      return;
-    }
     setError(null);
 
     const r = await requestMut.mutateAsync({
@@ -252,16 +246,17 @@ function RequestDeletionDialog({
       showToast(r.error, 'error');
       return;
     }
-    showToast('Request sent to the admin for approval.');
+    showToast(`${preview?.displayName ?? entityDisplayName} sent for approval — not deleted.`);
     onDone?.();
     onClose();
   }
 
   return (
-    <Sheet title="Approval required" icon onClose={onClose}>
+    <Sheet title="Send for approval" icon onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-4">
         <p className="text-sm text-gray-700">
-          Only an admin can delete records. Your request will be sent for approval.
+          This will be <span className="font-medium">sent for approval</span>, not deleted. The
+          record stays where it is and keeps working until an admin decides.
         </p>
 
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
@@ -289,7 +284,7 @@ function RequestDeletionDialog({
 
         <div>
           <label htmlFor="deletion-reason" className="block text-sm font-medium text-gray-700 mb-1.5">
-            Reason for deletion *
+            Reason <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <textarea
             id="deletion-reason"
@@ -301,7 +296,7 @@ function RequestDeletionDialog({
             className="w-full px-3 py-2 rounded-xl border border-gray-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="mt-1 text-xs text-gray-500">
-            The admin sees this, so say what they would need to know.
+            The admin sees this. Leave it blank if the record speaks for itself.
           </p>
         </div>
 
@@ -318,10 +313,10 @@ function RequestDeletionDialog({
           </button>
           <button
             type="submit"
-            disabled={requestMut.isPending || tooShort}
+            disabled={requestMut.isPending}
             className="flex-1 h-11 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
-            {requestMut.isPending ? 'Sending…' : 'Request Deletion'}
+            {requestMut.isPending ? 'Sending…' : 'Send for Approval'}
           </button>
         </div>
       </form>

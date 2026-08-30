@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import { formatPKR } from '@/lib/money';
 import type { Role } from '@/lib/auth/permissions';
 import { DeleteButton } from '@/components/shared/DeleteButton';
+import { PendingDeleteBadge } from '@/components/approvals/PendingDeleteMarkers';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -324,6 +325,7 @@ export function ExpenseTable({ role, canCreate = true }: Props) {
                             <Paperclip size={14} />
                           </button>
                         )}
+                        <PendingDeleteBadge entityType="expense" entityId={r.id} />
                         <DeleteButton
                           entityType="expense"
                           entityId={r.id}
