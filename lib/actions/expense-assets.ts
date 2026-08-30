@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 import {
   expenseAssetSchema,
   expenseSubTypeSchema,
@@ -127,14 +128,8 @@ export async function deleteExpenseAsset(
     .eq('asset_id', id)
     .is('deleted_at', null);
 
-  const { error } = await supabase
-    .from('expense_assets')
-    .update({ deleted_at: new Date().toISOString(), is_active: false })
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('expense_asset', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidateAll();
   return { ok: true, linkedCount: count ?? 0 };
@@ -182,15 +177,8 @@ export async function deleteExpenseSubType(id: string): Promise<SimpleResult> {
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 
-  const supabase = await createServerClient();
-  const { error } = await supabase
-    .from('expense_sub_types')
-    .update({ deleted_at: new Date().toISOString(), is_active: false })
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('expense_sub_type', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidateAll();
   return { ok: true };

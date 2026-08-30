@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { logActivity } from '@/lib/actions/activity-log';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 import {
   customerCategorySchema,
   customerCategoryUpdateSchema,
@@ -181,13 +182,8 @@ export async function deleteCustomerCategory(id: string): Promise<DeleteResult> 
 
   if (detachError) return { ok: false, error: detachError.message };
 
-  const { error } = await supabase
-    .from('customer_categories')
-    .update({ deleted_at: new Date().toISOString(), is_active: false })
-    .eq('id', id)
-    .eq('business_id', businessId);
-
-  if (error) return { ok: false, error: writeError(error, '') };
+  const deleted = await softDeleteEntity('customer_category', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   const uncategorised = (detached ?? []).length;
   const name = (category as { name: string }).name;

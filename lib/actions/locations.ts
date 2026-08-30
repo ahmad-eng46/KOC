@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { logActivity } from '@/lib/actions/activity-log';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 import {
   locationSchema,
   assignLocationSchema,
@@ -141,23 +142,8 @@ export async function deleteLocation(id: string): Promise<CountResult> {
 
   const ids = (customerRows ?? []).map((r) => r.id as string);
 
-  const { error } = await supabase
-    .from('locations')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null);
-
-  if (error) {
-    // 42501 here means the locations_update policy refused the soft delete.
-    return {
-      ok: false,
-      error:
-        error.code === '42501'
-          ? 'The database refused to delete this city. Apply migration 0047.'
-          : error.message,
-    };
-  }
+  const deleted = await softDeleteEntity('location', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   if (ids.length > 0) {
     const { error: unassignErr } = await supabase.rpc('assign_customers_location', {

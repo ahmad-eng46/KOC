@@ -8,6 +8,7 @@ import { logActivity } from '@/lib/actions/activity-log';
 import { formatPKR } from '@/lib/money';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { paymentCreateSchema, type PaymentCreateInput } from '@/lib/validators/payment';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
 type SimpleResult = { ok: true } | { ok: false; error: string };
@@ -137,13 +138,8 @@ export async function softDeletePayment(
     `[DELETED ${stamp} by ${session.email}: ${reason.trim()}]` +
     (existing.notes ? `\n${existing.notes}` : '');
 
-  const { error } = await supabase
-    .from('payments')
-    .update({ deleted_at: new Date().toISOString(), notes: newNotes })
-    .eq('id', id)
-    .eq('business_id', businessId);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('payment', id, businessId, newNotes);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidatePath('/payments');
   revalidatePath(`/customers/${existing.customer_id}`);

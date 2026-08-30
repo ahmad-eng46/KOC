@@ -8,6 +8,7 @@ import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { logActivity } from '@/lib/actions/activity-log';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 
 type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -89,14 +90,8 @@ export async function softDeleteCustomer(id: string): Promise<{ ok: boolean; err
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 
-  const supabase = await createServerClient();
-  const { error } = await supabase
-    .from('customers')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('business_id', businessId);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('customer', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidatePath('/customers');
   return { ok: true };

@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { logActivity } from '@/lib/actions/activity-log';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 import {
   brandSchema,
   assignBrandSchema,
@@ -137,23 +138,8 @@ export async function deleteBrand(id: string): Promise<CountResult> {
 
   const ids = (productRows ?? []).map((r) => r.id as string);
 
-  const { error } = await supabase
-    .from('brands')
-    .update({ deleted_at: new Date().toISOString(), is_active: false })
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null);
-
-  if (error) {
-    // 42501 here means the brands_update policy refused the soft delete — see 0046.
-    return {
-      ok: false,
-      error:
-        error.code === '42501'
-          ? 'The database refused to delete this brand. Apply migration 0046.'
-          : error.message,
-    };
-  }
+  const deleted = await softDeleteEntity('brand', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   if (ids.length > 0) {
     const { error: unassignErr } = await supabase.rpc('assign_products_brand', {

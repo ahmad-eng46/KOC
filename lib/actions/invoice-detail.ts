@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -47,13 +48,11 @@ export async function softDeleteInvoice(
     `[DELETED ${stamp} by ${session.email}: ${reason.trim()}]` +
     (existing.notes ? `\n${existing.notes}` : '');
 
-  const { error } = await supabase
-    .from('invoices')
-    .update({ deleted_at: new Date().toISOString(), notes: newNotes })
-    .eq('id', id)
-    .eq('business_id', businessId);
-
-  if (error) return { ok: false, error: error.message };
+  // The reason goes onto the record itself, as it always has — the RPC writes
+  // notes in the same statement that sets deleted_at, so a refused delete
+  // cannot leave the note behind on a live invoice.
+  const deleted = await softDeleteEntity('invoice', id, businessId, newNotes);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidatePath('/invoices');
   revalidatePath(`/invoices/${id}`);

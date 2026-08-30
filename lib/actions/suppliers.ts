@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { logActivity } from '@/lib/actions/activity-log';
 import { formatPKR } from '@/lib/money';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 import {
   supplierSchema,
   stockPurchaseSchema,
@@ -137,14 +138,8 @@ export async function deleteSupplier(id: string): Promise<SimpleResult> {
     };
   }
 
-  const { error } = await supabase
-    .from('suppliers')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('business_id', businessId)
-    .is('deleted_at', null);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('supplier', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidatePath('/suppliers');
   return { ok: true };

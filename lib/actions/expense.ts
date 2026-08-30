@@ -8,6 +8,7 @@ import { logActivity } from '@/lib/actions/activity-log';
 import { formatPKR } from '@/lib/money';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { expenseCreateSchema, type ExpenseCreateInput } from '@/lib/validators/expense';
+import { softDeleteEntity } from '@/lib/actions/soft-delete';
 
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
 type SimpleResult = { ok: true } | { ok: false; error: string };
@@ -72,14 +73,8 @@ export async function softDeleteExpense(id: string): Promise<SimpleResult> {
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 
-  const supabase = await createServerClient();
-  const { error } = await supabase
-    .from('expenses')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('business_id', businessId);
-
-  if (error) return { ok: false, error: error.message };
+  const deleted = await softDeleteEntity('expense', id, businessId);
+  if (!deleted.ok) return { ok: false, error: deleted.error };
 
   revalidatePath('/expenses');
   return { ok: true };
