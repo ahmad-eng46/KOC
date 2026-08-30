@@ -7,6 +7,7 @@ import { ALL_PERMISSIONS } from '@/lib/auth/permissions';
 import { effectivePermissionSet } from '@/lib/auth/effective';
 import { getUserPageAccessMap } from '@/lib/auth/page-access';
 import { pageKeyForPath } from '@/lib/auth/page-access-rules';
+import { buildDenialQuery } from '@/lib/auth/denial';
 import { AppShell } from '@/components/layout/AppShell';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -38,8 +39,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // three queries on every asset request.
   const requestedPath = (await headers()).get('x-pathname') ?? '';
   const guardKey = pageKeyForPath(requestedPath);
+  // /no-access means "your account is linked to no business" and says exactly
+  // that. A page switched off for this user is a different thing and gets the
+  // page that can name the switch.
   if (guardKey && pageAccess[guardKey] === false) {
-    redirect('/no-access');
+    redirect(buildDenialQuery({ reason: 'page', pageKey: guardKey, path: requestedPath }));
   }
 
   return (

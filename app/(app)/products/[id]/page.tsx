@@ -28,9 +28,10 @@ export default async function ProductDetailPage({ params }: Props) {
 
   const canSeePurchasePrice =
     session?.role === 'admin' || session?.role === 'accountant';
-  const [canPurchase, canCreateSupplier] = await Promise.all([
+  const [canPurchase, canCreateSupplier, canEdit] = await Promise.all([
     currentUserCan('purchases.create'),
     currentUserCan('suppliers.create'),
+    currentUserCan('products.update'),
   ]);
 
   const supabase = await createServerClient();
@@ -44,7 +45,6 @@ export default async function ProductDetailPage({ params }: Props) {
   if (error || !data) notFound();
 
   const product = { ...data, quantity_on_hand: 0 } as Product;
-  const canEdit = session?.role === 'admin';
 
   return (
     <div className="p-4 md:p-6 space-y-4">

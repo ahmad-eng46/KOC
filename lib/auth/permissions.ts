@@ -1,5 +1,12 @@
 export type Role = 'admin' | 'accountant' | 'staff' | 'viewer';
 
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: 'Admin',
+  accountant: 'Accountant',
+  staff: 'Staff',
+  viewer: 'Viewer',
+};
+
 export type Permission =
   | 'customers.view'
   | 'customers.create'
@@ -8,6 +15,7 @@ export type Permission =
   | 'products.view'
   | 'products.create'
   | 'products.update'
+  | 'products.delete'
   | 'invoices.view'
   | 'invoices.create'
   | 'invoices.update'
@@ -77,6 +85,12 @@ const PERMISSIONS: Record<Role, Permission[] | ['*']> = {
     'customers.view',
     'customers.create',
     'products.view',
+    // Staff maintain the catalogue: add a product, correct its name, unit,
+    // pack or sale price. Cost price is not theirs to set — products_for_role
+    // NULLs it on read and enforce_product_cost_price_role() pins it on write,
+    // so this grant cannot reach it. Deleting stays admin-only.
+    'products.create',
+    'products.update',
     'invoices.view',
     'invoices.create',
     'payments.view',
@@ -117,7 +131,7 @@ export function can(role: Role, permission: Permission): boolean {
 
 export const ALL_PERMISSIONS: Permission[] = [
   'customers.view', 'customers.create', 'customers.update', 'customers.delete',
-  'products.view', 'products.create', 'products.update',
+  'products.view', 'products.create', 'products.update', 'products.delete',
   'invoices.view', 'invoices.create', 'invoices.update',
   'payments.view', 'payments.create', 'payments.update',
   'expenses.view', 'expenses.create', 'expenses.update',
@@ -141,6 +155,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'products.view': 'View products',
   'products.create': 'Add products',
   'products.update': 'Edit products',
+  'products.delete': 'Delete products',
   'invoices.view': 'View invoices',
   'invoices.create': 'Create invoices',
   'invoices.update': 'Edit invoices',
@@ -175,7 +190,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 
 export const PERMISSION_GROUPS: Array<{ label: string; permissions: Permission[] }> = [
   { label: 'Customers', permissions: ['customers.view', 'customers.create', 'customers.update', 'customers.delete'] },
-  { label: 'Products & Stock', permissions: ['products.view', 'products.create', 'products.update', 'stock.view', 'stock.update'] },
+  { label: 'Products & Stock', permissions: ['products.view', 'products.create', 'products.update', 'products.delete', 'stock.view', 'stock.update'] },
   { label: 'Invoices & Returns', permissions: ['invoices.view', 'invoices.create', 'invoices.update', 'returns.view', 'returns.create'] },
   { label: 'Payments', permissions: ['payments.view', 'payments.create', 'payments.update'] },
   { label: 'Expenses', permissions: ['expenses.view', 'expenses.create', 'expenses.update'] },
@@ -188,7 +203,14 @@ export const PERMISSION_GROUPS: Array<{ label: string; permissions: Permission[]
  * Overriding these would hand someone the keys to the whole system, so the UI
  * refuses. An admin who should not be an admin is a role change, not a grant.
  */
-export const UNOVERRIDABLE: readonly Permission[] = ['users.manage', 'settings.manage'];
+export const UNOVERRIDABLE: readonly Permission[] = [
+  'users.manage',
+  'settings.manage',
+  // Deleting a product removes it from every historical invoice's context.
+  // products_delete_role in 0058 refuses it for anyone but an admin, so a tick
+  // here would promise something the database declines to honour.
+  'products.delete',
+];
 
 /**
  * Cost prices are hidden by the products_for_role VIEW using user_role(), not by
