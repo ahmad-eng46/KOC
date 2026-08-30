@@ -2,6 +2,7 @@
 
 import { Menu } from 'lucide-react';
 import { UserMenu } from '@/components/layout/UserMenu';
+import { NotificationBell } from '@/components/layout/NotificationBell';
 import { BusinessSwitcher } from '@/components/layout/BusinessSwitcher';
 import { type SessionUser } from '@/lib/auth/session';
 
@@ -23,7 +24,12 @@ export function Header({ user, onMenuClick }: Props) {
         </button>
         <BusinessSwitcher />
       </div>
-      <UserMenu user={user} />
+      <div className="flex items-center gap-1">
+        {/* Admin only: the feed exists so the owner can see what their team did
+            without standing in its way. Nobody else has anyone to watch. */}
+        {user.role === 'admin' && <NotificationBell />}
+        <UserMenu user={user} />
+      </div>
     </header>
   );
 }
