@@ -11,6 +11,7 @@ import { rupeesToPaisa } from '@/lib/money';
 import { createLoan } from '@/lib/actions/loan';
 import { loanDirections, type LoanDirection } from '@/lib/validators/loan';
 import { CustomerCombobox } from '@/components/invoices/CustomerCombobox';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -33,6 +34,9 @@ export function LoanForm() {
   const [loanDate, setLoanDate] = useState(todayISO());
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+
+  // No form library here, so dirtiness is the fields a user would mind losing.
+  useUnsavedChanges(partyName.trim() !== '' || amountInput.trim() !== '' || notes.trim() !== '');
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 

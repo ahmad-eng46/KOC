@@ -9,6 +9,7 @@ import { createSupplier, updateSupplier } from '@/lib/actions/suppliers';
 import { Field, ServerError, inputCls, textareaCls } from '@/components/ui/form-fields';
 import { useToast } from '@/components/ui/Toast';
 import type { Supplier } from '@/lib/queries/suppliers';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 type Props = {
   supplier?: Supplier;
@@ -24,7 +25,7 @@ export function SupplierForm({ supplier, canEdit = true }: Props) {
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
@@ -34,6 +35,10 @@ export function SupplierForm({ supplier, canEdit = true }: Props) {
       notes: supplier?.notes ?? '',
     },
   });
+
+  // Warns before the back button leaves the page. Cleared while submitting,
+  // so saving and navigating away is not treated as abandoning edits.
+  useUnsavedChanges(isDirty && !isSubmitting);
 
   async function onSubmit(values: SupplierInput) {
     setServerError(null);

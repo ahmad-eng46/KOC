@@ -12,6 +12,7 @@ import { computeInvoiceTotals, parseRateInput, formatRateInput } from '@/lib/inv
 import { createInvoice } from '@/lib/actions/invoice';
 import type { DiscountType } from '@/lib/validators/invoice';
 import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { CustomerCombobox } from './CustomerCombobox';
 import { ProductCombobox } from './ProductCombobox';
 
@@ -61,6 +62,17 @@ export function InvoiceForm({ canEditRate }: Props) {
   const [paymentInput, setPaymentInput] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+
+  // A half-built invoice is the most expensive thing in the app to lose, so
+  // anything past an empty first row counts: a customer chosen, a product
+  // picked, or a discount or payment typed.
+  useUnsavedChanges(
+    !submitting &&
+      (customerId !== null ||
+        items.some((it) => it.product_id !== null) ||
+        discountInput.trim() !== '' ||
+        paymentInput.trim() !== ''),
+  );
   const [serverError, setServerError] = useState<string | null>(null);
 
   const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;

@@ -11,6 +11,7 @@ import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { createReturn } from '@/lib/actions/return';
 import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
 import { useToast } from '@/components/ui/Toast';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 type Props = { invoiceId: string };
 
@@ -77,6 +78,8 @@ export function ReturnForm({ invoiceId }: Props) {
   const [selections, setSelections] = useState<Record<string, ItemSelection>>({});
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useUnsavedChanges(!submitting && Object.keys(selections).length > 0);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const totalReturnPaisa = useMemo(() => {

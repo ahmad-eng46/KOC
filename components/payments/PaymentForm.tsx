@@ -11,6 +11,7 @@ import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { createPayment } from '@/lib/actions/payment';
 import { paymentMethods, type PaymentMethod } from '@/lib/validators/payment';
 import { CustomerCombobox } from '@/components/invoices/CustomerCombobox';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
@@ -34,6 +35,9 @@ export function PaymentForm() {
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
+
+  // No form library here, so dirtiness is the fields a user would mind losing.
+  useUnsavedChanges(amountInput.trim() !== '' || notes.trim() !== '' || reference.trim() !== '');
 
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);

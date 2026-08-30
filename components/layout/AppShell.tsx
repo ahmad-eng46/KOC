@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
+import { BackButton } from '@/components/layout/BackButton';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { BusinessProvider } from '@/components/providers/BusinessProvider';
@@ -37,7 +38,14 @@ export function AppShell({ session, businesses, activeId, permissions, pageAcces
           />
           <div className="flex flex-col flex-1 min-w-0">
             <Header user={session} onMenuClick={() => setSidebarOpen(true)} />
-            <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+            {/* One back control for every protected page. Here rather than in
+                each page so a new route gets it without doing anything, and so
+                there is a single place to change how back behaves. It hides
+                itself on routes with no parent. */}
+            <main className="flex-1 overflow-y-auto p-4 md:p-6">
+              <BackButton />
+              {children}
+            </main>
           </div>
         </div>
         </ToastProvider>

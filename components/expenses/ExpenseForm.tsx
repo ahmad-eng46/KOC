@@ -25,6 +25,7 @@ import {
 import { AssetPicker } from './AssetPicker';
 import { AddAssetSheet } from './AddAssetSheet';
 import { useToast } from '@/components/ui/Toast';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -40,6 +41,9 @@ export function ExpenseForm() {
   const [expenseDate, setExpenseDate] = useState(todayISO());
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
+
+  // No form library here, so dirtiness is the fields a user would mind losing.
+  useUnsavedChanges(amountInput.trim() !== '' || description.trim() !== '' || file !== null);
 
   // Optional asset tracking — both prefetched once, filtered client-side per
   // category so these fields appear instantly with no loading state.

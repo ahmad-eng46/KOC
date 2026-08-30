@@ -9,6 +9,7 @@ import { createProduct, updateProduct } from '@/lib/actions/product';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
 import { packPreview } from '@/lib/pack';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { BrandPicker } from './BrandPicker';
 
 type Props = {
@@ -29,7 +30,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
     handleSubmit,
     control,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm({
     resolver: zodResolver(productSchema),
     defaultValues: product
@@ -47,6 +48,10 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         }
       : { is_active: true, sale_price_paisa: 0, brand_id: null, pack_size: 1, pack_name: '' },
   });
+
+  // Warns before the back button leaves the page. Cleared while submitting,
+  // so saving and navigating away is not treated as abandoning edits.
+  useUnsavedChanges(isDirty && !isSubmitting);
 
   const brandId = useWatch({ control, name: 'brand_id' });
   const unit = useWatch({ control, name: 'unit' });

@@ -8,6 +8,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { useBusinessStore } from '@/lib/store/business';
 import { rupeesToPaisa } from '@/lib/money';
 import { createInvestment } from '@/lib/actions/investment';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
 
@@ -20,6 +21,9 @@ export function InvestmentForm() {
   const [amountInput, setAmountInput] = useState('');
   const [investmentDate, setInvestmentDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
+
+  // No form library here, so dirtiness is the fields a user would mind losing.
+  useUnsavedChanges(investorName.trim() !== '' || amountInput.trim() !== '' || notes.trim() !== '');
 
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);

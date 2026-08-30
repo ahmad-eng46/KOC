@@ -8,6 +8,7 @@ import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
+import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { LocationPicker } from './LocationPicker';
 import { CategoryPicker } from './CategoryPicker';
 
@@ -29,7 +30,7 @@ export function CustomerForm({ customer, canCreateCategory = false }: Props) {
     handleSubmit,
     control,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm({
     resolver: zodResolver(customerSchema),
     defaultValues: customer
@@ -45,6 +46,10 @@ export function CustomerForm({ customer, canCreateCategory = false }: Props) {
         }
       : { opening_balance_paisa: 0, location_id: null },
   });
+
+  // Warns before the back button leaves the page. Cleared while submitting,
+  // so saving and navigating away is not treated as abandoning edits.
+  useUnsavedChanges(isDirty && !isSubmitting);
 
   const locationId = useWatch({ control, name: 'location_id' });
   const categoryId = useWatch({ control, name: 'category_id' });
