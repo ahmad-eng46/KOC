@@ -4,7 +4,7 @@ import { InvestmentTable } from '@/components/investments/InvestmentTable';
 export const metadata = { title: 'Investments — KOC' };
 
 export default async function InvestmentsPage() {
-  await requireRole('admin');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div>

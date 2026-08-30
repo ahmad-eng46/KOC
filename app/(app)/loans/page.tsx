@@ -4,7 +4,7 @@ import { LoanTable } from '@/components/loans/LoanTable';
 export const metadata = { title: 'Loans — KOC' };
 
 export default async function LoansPage() {
-  await requireRole('admin');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div>

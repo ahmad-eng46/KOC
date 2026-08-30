@@ -38,15 +38,15 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Invoices',    href: '/invoices',    icon: FileText,    permission: 'invoices.view' , pageKey: 'invoices' },
   { label: 'Payments',    href: '/payments',    icon: CreditCard,  permission: 'payments.view' , pageKey: 'payments' },
   { label: 'Expenses',    href: '/expenses',    icon: Receipt,     permission: 'expenses.view' , pageKey: 'expenses' },
-  { label: 'Investments', href: '/investments', icon: TrendingUp,  adminOnly: true , pageKey: 'investments' },
-  { label: 'Loans',       href: '/loans',       icon: Banknote,    adminOnly: true , pageKey: 'loans' },
+  { label: 'Investments', href: '/investments', icon: TrendingUp,  pageKey: 'investments' },
+  { label: 'Loans',       href: '/loans',       icon: Banknote,    pageKey: 'loans' },
   { label: 'Ledger',      href: '/ledger',      icon: BookOpen,    permission: 'ledger.view' , pageKey: 'ledger' },
   { label: 'Reports',     href: '/reports',     icon: BarChart3,   permission: 'reports.view_basic' , pageKey: 'reports.sales' },
   { label: 'Sales Analytics', href: '/reports/sales-analytics', icon: PieChart, permission: 'reports.view' , pageKey: 'reports.analytics' },
   { label: 'Settings',    href: '/settings',         icon: Settings,  adminOnly: true , pageKey: 'settings' },
   { label: 'Users',       href: '/settings/users',   icon: UserCog,   adminOnly: true , pageKey: 'users' },
   { label: 'Backup',      href: '/settings/backup',  icon: HardDrive, adminOnly: true , pageKey: 'backup' },
-  { label: 'Activity Log', href: '/settings/activity-log', icon: Activity, roles: ['admin', 'accountant'] , pageKey: 'settings' },
+  { label: 'Activity Log', href: '/settings/activity-log', icon: Activity, pageKey: 'settings.activity' },
 ];
 
 type Props = {

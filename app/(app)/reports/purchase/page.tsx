@@ -6,7 +6,7 @@ import { PurchaseReport } from '@/components/reports/PurchaseReport';
 export const metadata = { title: 'Purchase Report — KOC' };
 
 export default async function PurchaseReportPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">

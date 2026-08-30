@@ -10,7 +10,7 @@ export default async function ActivityLogPage({
 }: {
   searchParams: Promise<{ userId?: string }>;
 }) {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const { userId } = await searchParams;
 
   return (

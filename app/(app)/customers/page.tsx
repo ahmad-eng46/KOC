@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { CustomerTable } from '@/components/customers/CustomerTable';
 import { currentUserCanAccess } from '@/lib/auth/page-access';
+import { currentUserCan } from '@/lib/auth/can-user';
 
 export const metadata = { title: 'Customers — KOC' };
 
@@ -15,7 +16,7 @@ export default async function CustomersPage({
   await requireRole('admin', 'accountant', 'staff', 'viewer');
   const { category } = await searchParams;
   const session = await getSession();
-  const canManageCategories = session?.role === 'admin' || session?.role === 'accountant';
+  const canManageCategories = await currentUserCan('customers.update');
 
   return (
     <div className="p-4 md:p-6 space-y-4">

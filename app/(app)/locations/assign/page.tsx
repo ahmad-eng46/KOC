@@ -7,7 +7,7 @@ export const metadata = { title: 'Assign Customers — KOC' };
 
 export default async function AssignCustomersPage() {
   // Bulk assignment is a setup task — matches bulkAssignLocation and the RPC.
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
 
   return (
     <div className="p-4 md:p-6 space-y-4">

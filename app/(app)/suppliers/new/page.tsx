@@ -6,7 +6,7 @@ import { SupplierForm } from '@/components/suppliers/SupplierForm';
 export const metadata = { title: 'New Supplier — KOC' };
 
 export default async function NewSupplierPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
 
   return (
     <div className="p-4 md:p-6 space-y-4">

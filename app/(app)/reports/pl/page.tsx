@@ -6,7 +6,7 @@ import { PLReport } from '@/components/reports/PLReport';
 export const metadata = { title: 'Profit & Loss — KOC' };
 
 export default async function PLReportPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">

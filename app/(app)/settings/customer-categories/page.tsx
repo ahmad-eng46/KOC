@@ -7,7 +7,7 @@ import { CustomerCategoryManager } from '@/components/settings/CustomerCategoryM
 export const metadata = { title: 'Customer Categories — KOC' };
 
 export default async function CustomerCategoriesPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const session = await getSession();
 
   return (

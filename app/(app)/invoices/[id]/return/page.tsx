@@ -8,7 +8,7 @@ export const metadata = { title: 'Process Return — KOC' };
 type Props = { params: Promise<{ id: string }> };
 
 export default async function ReturnPage({ params }: Props) {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const { id } = await params;
 
   return (

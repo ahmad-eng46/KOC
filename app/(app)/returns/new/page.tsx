@@ -6,7 +6,7 @@ import { ReturnEntryFlow } from '@/components/invoices/ReturnEntryFlow';
 export const metadata = { title: 'New Return — KOC' };
 
 export default async function NewReturnPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
 
   return (
     <div className="p-4 md:p-6 space-y-4">

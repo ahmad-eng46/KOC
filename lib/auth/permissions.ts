@@ -47,6 +47,37 @@ export type Permission =
   | 'users.manage'
   | 'settings.manage';
 
+/**
+ * Every permission in the system, declared before the role table so `staff`
+ * can be defined by subtraction. ALL_PERMISSIONS below re-exports it under the
+ * name the rest of the app already uses.
+ */
+const ALL_PERMISSIONS_BASE: Permission[] = [
+  'customers.view', 'customers.create', 'customers.update', 'customers.delete',
+  'products.view', 'products.create', 'products.update', 'products.delete',
+  'invoices.view', 'invoices.create', 'invoices.update',
+  'payments.view', 'payments.create', 'payments.update',
+  'expenses.view', 'expenses.create', 'expenses.update',
+  'returns.view', 'returns.create',
+  'stock.view', 'stock.update',
+  'suppliers.view', 'suppliers.create', 'suppliers.update',
+  'purchases.view', 'purchases.create',
+  'supplier_payments.view', 'supplier_payments.create',
+  'reports.view', 'reports.pnl', 'reports.view_basic',
+  'ledger.view',
+  'investments.view', 'investments.create',
+  'loans.view', 'loans.create',
+  'users.manage', 'settings.manage',
+];
+
+/** What staff do not get. See the note on `staff` below for why each is here. */
+const STAFF_WITHHELD: Permission[] = [
+  'users.manage',
+  'settings.manage',
+  'customers.delete',
+  'products.delete',
+];
+
 const PERMISSIONS: Record<Role, Permission[] | ['*']> = {
   admin: ['*'],
 
@@ -81,31 +112,28 @@ const PERMISSIONS: Record<Role, Permission[] | ['*']> = {
     'loans.view',
   ],
 
-  staff: [
-    'customers.view',
-    'customers.create',
-    'products.view',
-    // Staff maintain the catalogue: add a product, correct its name, unit,
-    // pack or sale price. Cost price is not theirs to set — products_for_role
-    // NULLs it on read and enforce_product_cost_price_role() pins it on write,
-    // so this grant cannot reach it. Deleting stays admin-only.
-    'products.create',
-    'products.update',
-    'invoices.view',
-    'invoices.create',
-    'payments.view',
-    'payments.create',
-    'stock.view',
-    'stock.update',
-    // Staff record deliveries they hold the note for, but never browse cost:
-    // stock_purchases_for_role NULLs the money columns for this role, and
-    // supplier_payments is out of reach entirely.
-    'suppliers.view',
-    'purchases.view',
-    'purchases.create',
-    'returns.view',
-    'reports.view_basic',
-  ],
+  /**
+   * Staff run the business day to day, so the list is defined by what they are
+   * NOT given rather than by enumeration — anything added to ALL_PERMISSIONS
+   * later reaches staff automatically, which is what stops this drifting back
+   * into a shorter list than admin's every time a feature lands.
+   *
+   * The four exclusions, and why each one is not negotiable:
+   *
+   *   users.manage / settings.manage — a staff member who can edit users can
+   *     make themselves an admin, and an admin approves their own deletion
+   *     requests. Granting these would not widen staff access, it would delete
+   *     the role model.
+   *   customers.delete / products.delete — deletion is the one thing staff
+   *     ask for rather than do. That is the whole point of the approval flow.
+   *
+   * Cost prices are absent from this list because they are not in it to give:
+   * products_for_role NULLs the column from user_role(), so no application
+   * grant can produce one (iron rule #3).
+   */
+  staff: ALL_PERMISSIONS_BASE.filter(
+    (p) => !STAFF_WITHHELD.includes(p),
+  ),
 
   viewer: [
     'customers.view',
@@ -129,23 +157,7 @@ export function can(role: Role, permission: Permission): boolean {
 // `canUser()` (lib/auth/can-user.ts) layers a user's overrides over it.
 // ─────────────────────────────────────────────
 
-export const ALL_PERMISSIONS: Permission[] = [
-  'customers.view', 'customers.create', 'customers.update', 'customers.delete',
-  'products.view', 'products.create', 'products.update', 'products.delete',
-  'invoices.view', 'invoices.create', 'invoices.update',
-  'payments.view', 'payments.create', 'payments.update',
-  'expenses.view', 'expenses.create', 'expenses.update',
-  'returns.view', 'returns.create',
-  'stock.view', 'stock.update',
-  'suppliers.view', 'suppliers.create', 'suppliers.update',
-  'purchases.view', 'purchases.create',
-  'supplier_payments.view', 'supplier_payments.create',
-  'reports.view', 'reports.pnl', 'reports.view_basic',
-  'ledger.view',
-  'investments.view', 'investments.create',
-  'loans.view', 'loans.create',
-  'users.manage', 'settings.manage',
-];
+export const ALL_PERMISSIONS: Permission[] = ALL_PERMISSIONS_BASE;
 
 export const PERMISSION_LABELS: Record<Permission, string> = {
   'customers.view': 'View customers',

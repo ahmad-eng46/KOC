@@ -96,7 +96,11 @@ export function useDeleteProduct() {
 
   return useMutation({
     mutationFn: (id: string) => softDeleteProduct(id),
-    onSuccess: () => {
+    // The action reports failure by returning { ok: false }, not by throwing, so
+    // a rejected delete still lands here. Refetching then would be pointless and
+    // would leave isError false on a mutation that did nothing.
+    onSuccess: (result) => {
+      if (!result.ok) return;
       queryClient.invalidateQueries({ queryKey: ['products', activeId] });
     },
   });

@@ -6,7 +6,7 @@ import { LocationReport } from '@/components/reports/LocationReport';
 export const metadata = { title: 'Location Report — KOC' };
 
 export default async function LocationReportPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">

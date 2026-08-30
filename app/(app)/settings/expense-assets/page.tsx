@@ -8,7 +8,7 @@ export const metadata = { title: 'Expense Items — KOC' };
 
 export default async function ExpenseAssetsPage() {
   // Accountants manage assets too; only the sidebar entry is admin-gated.
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const session = await getSession();
 
   return (

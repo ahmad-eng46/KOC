@@ -7,7 +7,7 @@ export const metadata = { title: 'Expense Report — KOC' };
 
 export default async function ExpenseReportPage() {
   // Matches the expenses module's existing access (admin/accountant).
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">

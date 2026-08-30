@@ -59,7 +59,11 @@ describe('buildPermissionRows', () => {
   it('maps overrides by permission name and leaves the rest at role default', () => {
     const rows = buildPermissionRows(
       'staff',
-      ['invoices.create', 'expenses.view', 'ledger.view'],
+      // users.manage is the middle row on purpose: it is one of the four
+      // permissions staff are withheld, so it stays a genuine role-default
+      // false. Picking a business permission here would make the test fail
+      // the next time staff access widens, which is not what it is testing.
+      ['invoices.create', 'users.manage', 'ledger.view'],
       new Map([['ledger.view', true]]),
     );
     expect(rows.map((r) => r.effective)).toEqual([true, false, true]);

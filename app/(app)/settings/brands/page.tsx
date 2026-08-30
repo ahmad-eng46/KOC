@@ -7,7 +7,7 @@ import { BrandManager } from '@/components/settings/BrandManager';
 export const metadata = { title: 'Brands & Suppliers — KOC' };
 
 export default async function BrandsPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const session = await getSession();
 
   return (

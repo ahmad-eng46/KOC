@@ -121,10 +121,15 @@ export function accessSummary(
  * sales one. Ordered longest-first for exactly that reason.
  */
 const ROUTE_MAP: Array<[string, string]> = [
-  ['/settings/customer-categories', 'settings'],
-  ['/settings/expense-assets', 'settings'],
-  ['/settings/activity-log', 'settings'],
-  ['/settings/brands', 'settings'],
+  // Each of these is its own page key, not 'settings'. /settings is the
+  // app-configuration form and stays admin-only; the catalogue screens under
+  // it are ordinary business pages that staff use daily, and mapping them onto
+  // the same key would lock staff out of brands and categories to protect a
+  // form they never open.
+  ['/settings/customer-categories', 'settings.categories'],
+  ['/settings/expense-assets', 'settings.assets'],
+  ['/settings/activity-log', 'settings.activity'],
+  ['/settings/brands', 'settings.brands'],
   ['/settings/backup', 'backup'],
   ['/settings/users', 'users'],
   ['/reports/sales-analytics', 'reports.analytics'],

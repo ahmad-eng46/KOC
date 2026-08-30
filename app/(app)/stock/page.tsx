@@ -1,5 +1,4 @@
 import { requireRole } from '@/lib/auth/guards';
-import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { StockList } from '@/components/stock/StockList';
 
@@ -7,8 +6,9 @@ export const metadata = { title: 'Stock — KOC' };
 
 export default async function StockPage() {
   await requireRole('admin', 'accountant', 'staff');
-  const session = await getSession();
-  const canAdjust = session?.role === 'admin';
+  // canAdjust rides on stock.update rather than a role: stock_movements_insert
+  // already admitted staff, so hiding the Adjustment option was the UI
+  // withholding something the database allowed.
   const [canUpdate, canPurchase, canCreateSupplier] = await Promise.all([
     currentUserCan('stock.update'),
     currentUserCan('purchases.create'),
@@ -23,7 +23,7 @@ export default async function StockPage() {
       </div>
       <StockList
         canUpdate={canUpdate}
-        canAdjust={canAdjust}
+        canAdjust={canUpdate}
         canPurchase={canPurchase}
         canCreateSupplier={canCreateSupplier}
       />

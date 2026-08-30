@@ -7,7 +7,7 @@ import { LedgerBrowser } from '@/components/ledger/LedgerBrowser';
 export const metadata = { title: 'Ledger — KOC' };
 
 export default async function LedgerPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) notFound();

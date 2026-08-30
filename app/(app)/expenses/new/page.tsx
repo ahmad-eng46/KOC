@@ -6,7 +6,7 @@ import { ExpenseForm } from '@/components/expenses/ExpenseForm';
 export const metadata = { title: 'New Expense — KOC' };
 
 export default async function NewExpensePage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">

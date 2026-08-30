@@ -8,7 +8,7 @@ import { currentUserCanAccess } from '@/lib/auth/page-access';
 export const metadata = { title: 'Expenses — KOC' };
 
 export default async function ExpensesPage() {
-  await requireRole('admin', 'accountant');
+  await requireRole('admin', 'accountant', 'staff');
   const session = await getSession();
   const role = session?.role ?? 'viewer';
 

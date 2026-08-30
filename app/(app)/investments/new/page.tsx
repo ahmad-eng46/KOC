@@ -6,7 +6,7 @@ import { InvestmentForm } from '@/components/investments/InvestmentForm';
 export const metadata = { title: 'New Investment — KOC' };
 
 export default async function NewInvestmentPage() {
-  await requireRole('admin');
+  await requireRole('admin', 'accountant', 'staff');
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">
