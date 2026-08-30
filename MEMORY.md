@@ -294,6 +294,19 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 20 — 2026-08-30 — /unauthorized, staff product access, invoice rate override
+- **`/unauthorized` did not exist.** `requireRole()` had redirected there since session 2, so every role rejection dead-ended in Next's 404. Page added under `(auth)`; the reason travels in the URL (`lib/auth/denial.ts`) because a redirect drops everything else. Three reasons: `role`, `permission`, `page`.
+  - The app layout's page-access denial moved off `/no-access`, which renders "your account is linked to no business" — the wrong explanation for a permission denial.
+  - New `requirePermission()` in guards.ts. Prefer it over `requireRole` for anything with a permission key: same answer as the server action and the sidebar, and per-user overrides take effect.
+- **Staff can add and edit products** (`0058`). Not deleting; not cost price.
+  - The trap: `products_select` on the base table is admin/accountant only *on purpose* (iron rule #3). Postgres applies SELECT policies to the rows an UPDATE reads for its WHERE clause and to an INSERT's RETURNING — so widening only `products_update` yields a **silent zero-row update with `error === null`**. Widening `products_select` to fix that would hand staff the cost price via PostgREST.
+  - Resolution: INSERT stays direct, policy-gated, with the id generated in `createProduct()` so there is no RETURNING to refuse. UPDATE goes through `update_product_as_role()` (SECURITY DEFINER), which names every column it writes and omits `purchase_price_paisa` and `deleted_at` for non-admins. `products_update` stays admin-only, which is what keeps soft-delete admin-only.
+  - `trg_products_cost_price_role` pins cost to 0 on INSERT for anyone who cannot read it.
+- **Invoice sale rate is editable per line by anyone who can raise an invoice.** Storage needed no migration — `invoice_items.unit_price_paisa` was already written per line and `create_invoice_atomic` already honoured the submitted rate. The lock was one line of client code.
+  - Line rate is now the raw typed text, not a number, so `"abc"`/`""` are reported instead of both collapsing to a free product at 0.00. `parseRateInput()` splits on the decimal point rather than using parseFloat (19.99 * 100 === 1998.9999999999998).
+  - **Not implemented, awaiting a decision:** below-cost warning. It cannot be done client-side — `products_for_role` NULLs the cost price for exactly the role doing the overriding.
+- **There is no tax anywhere in the invoice schema** (subtotal / discount / total only). Noted because it keeps being assumed.
+
 ### Session 19 (continued, round 2) — spec-gap audit after user asked "what's done, what's remaining"
 - Re-audited the users-page + returns specs line-by-line; four real gaps found and closed (`b3e4116`, `3a33d4b`):
   - `/returns/new` existed but NOTHING linked to it → New Return button on the invoices toolbar, gated `returns.create` (server passes `canReturn` into `InvoiceTable`).
