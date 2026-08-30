@@ -294,6 +294,21 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 21 — 2026-08-30 — soft delete fixed, staff opened up, approvals finished
+- **Soft delete never worked, and 0046/0047/0049/0057 do not fix it.** They diagnose a missing `WITH CHECK` on the UPDATE policy. Proved wrong by experiment (`supabase/tests/repro_soft_delete_bug.sql`, PG16): adding the `WITH CHECK` still fails. **Postgres checks the NEW row of an UPDATE against the table's SELECT policies**, and every one of these carries `deleted_at IS NULL`. The decisive experiment swaps the filter to `is_active` and reproduces the identical failure on a table where `deleted_at` is never touched. `users` is the one table whose delete always worked — and the one whose SELECT policy has no `deleted_at` filter.
+  - Fix (0060): `soft_delete_entity()` SECURITY DEFINER, so the UPDATE is never measured against a SELECT policy. Dropping `deleted_at IS NULL` from the SELECT policies would also work and would turn every read in the app into one that returns deleted rows.
+  - `deletable_entities` registry: adding an entity is one INSERT.
+- **Staff are now defined by subtraction** (0061 + permissions.ts): everything except `users.manage`, `settings.manage`, `customers.delete`, `products.delete`. A permission added later reaches staff without anyone widening a list.
+  - Withheld at the database: `audit_log` and `backups` (both hold cost prices in the clear — whole-row JSON, and the whole database), `products`/`stock_purchases` base SELECT.
+  - RLS widened by `ALTER POLICY` in place, so no predicate gets a second copy to drift. `investments`/`loans` need their own block — the loop widens policies that already name an accountant, and 0017 wrote those two as admin alone.
+  - **Trap:** `pg_policies` deparses `user_role() = 'admin'` **with an explicit `::text`**. A replace that omits it produces invalid SQL.
+  - Settings sub-pages (brands, categories, assets, activity log) got their own page keys — they were all mapped onto `settings`, which is the admin-only config form.
+- **Approvals (0062):** reason optional; `entity_snapshot` holds the whole row; `entity_type` is now a FK to `deletable_entities`.
+  - The requester cannot take the snapshot — products/stock_purchases are exactly the tables they may not read. `file_deletion_request()` is SECURITY DEFINER, which makes the snapshot cost-bearing, which is why `deletion_requests_select` is now admin/accountant only and `deletion_requests_for_role` serves requesters with the snapshot NULLed.
+  - Closing that table took the requester's cancel with it (UPDATE's WHERE is filtered by the SELECT policy — the 0060 lesson again), hence `cancel_deletion_request()`.
+  - Fixed a live bug: the request preview read the `products` base table, so staff asking to delete a product got "Product not found".
+- **Decisions recorded:** FK dependents — everything is soft delete already, nothing is ever hard-deleted, and `invoice_items.product_id` is ON DELETE RESTRICT so a hard delete is impossible anyway. Editing a record with a pending request is allowed, and the admin sees a drift warning they must acknowledge. Duplicate pending requests are blocked by a partial unique index.
+
 ### Session 20 — 2026-08-30 — /unauthorized, staff product access, invoice rate override
 - **`/unauthorized` did not exist.** `requireRole()` had redirected there since session 2, so every role rejection dead-ended in Next's 404. Page added under `(auth)`; the reason travels in the URL (`lib/auth/denial.ts`) because a redirect drops everything else. Three reasons: `role`, `permission`, `page`.
   - The app layout's page-access denial moved off `/no-access`, which renders "your account is linked to no business" — the wrong explanation for a permission denial.
