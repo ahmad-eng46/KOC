@@ -1,5 +1,7 @@
 -- Verify 0059: the admin is told what staff did, and is not asked to approve it.
--- Run in the Supabase SQL editor after applying 0059. Expect PASS on all four.
+-- Run in the Supabase SQL editor AFTER applying supabase/migrations/0059_*.sql.
+-- This file only checks. It does not apply anything — if it says FAIL, the
+-- migration has not been run yet. Expect PASS on all four.
 
 -- 1. The feed exists and is readable by signed-in users (the view's own WHERE
 --    narrows it to admins of the business).

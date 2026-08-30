@@ -1,5 +1,7 @@
 -- Verify 0058: staff can add and edit products; cost price and deletion cannot.
--- Run in the Supabase SQL editor after applying 0058. Expect PASS on all five.
+-- Run in the Supabase SQL editor AFTER applying supabase/migrations/0058_*.sql.
+-- This file only checks. It does not apply anything — if it says FAIL, the
+-- migration has not been run yet. Expect PASS on all five.
 
 -- 1. INSERT now admits staff.
 SELECT

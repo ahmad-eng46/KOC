@@ -39,10 +39,26 @@ CREATE TABLE IF NOT EXISTS public.notification_reads (
   PRIMARY KEY (user_id, business_id)
 );
 
-DROP TRIGGER IF EXISTS trg_notification_reads_updated_at ON public.notification_reads;
-CREATE TRIGGER trg_notification_reads_updated_at
-  BEFORE UPDATE ON public.notification_reads
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- Guarded rather than DROP ... IF EXISTS: `DROP TRIGGER IF EXISTS x ON t`
+-- still raises 42P01 when t itself is missing, so the "safe" form is only safe
+-- if the CREATE TABLE above actually ran. Running a fragment of this file
+-- should fail loudly on the fragment, not on the cleanup line before it.
+DO $$
+BEGIN
+  IF to_regclass('public.notification_reads') IS NULL THEN
+    RAISE EXCEPTION
+      'notification_reads is missing — run this migration file whole, from the top';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_notification_reads_updated_at'
+  ) THEN
+    CREATE TRIGGER trg_notification_reads_updated_at
+      BEFORE UPDATE ON public.notification_reads
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END;
+$$;
 
 COMMENT ON TABLE public.notification_reads IS
   'Per-user high-water mark for the staff activity feed. Own row only.';
@@ -120,3 +136,16 @@ GRANT SELECT ON public.staff_activity_notifications TO authenticated;
 COMMENT ON VIEW public.staff_activity_notifications IS
   'Admin-only feed of what non-admins did. A notice, not an approval queue —
    the action has already happened by the time it appears here.';
+
+-- ─────────────────────────────────────────────
+-- 3. Confirm, rather than assume
+-- ─────────────────────────────────────────────
+DO $$
+BEGIN
+  IF to_regclass('public.notification_reads') IS NULL
+     OR to_regclass('public.staff_activity_notifications') IS NULL THEN
+    RAISE EXCEPTION '0059 did not finish — feed or read markers missing';
+  END IF;
+  RAISE NOTICE '0059 applied: admins are notified of staff activity; nothing waits on approval.';
+END;
+$$;

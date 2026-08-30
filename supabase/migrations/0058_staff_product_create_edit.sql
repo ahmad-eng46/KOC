@@ -182,6 +182,33 @@ COMMENT ON FUNCTION public.update_product_as_role(
 --    now hold. Without flipping the default the button stays hidden and the
 --    page is only reachable by typing the URL.
 -- ─────────────────────────────────────────────
-UPDATE public.page_definitions
-   SET default_staff = true
- WHERE key = 'action.add_product';
+--    Written as an upsert, not an UPDATE. An UPDATE quietly affects zero rows
+--    when 0056's seed row is absent, and a migration that silently does nothing
+--    is the hardest kind to debug — the symptom is a button that never appears
+--    and a verify script that says FAIL with no explanation. This inserts the
+--    row if it is missing and corrects it if it is there.
+INSERT INTO public.page_definitions
+  (key, label, category, sort_order,
+   default_admin, default_accountant, default_staff, default_viewer,
+   is_lockable, permission_key)
+VALUES
+  ('action.add_product', 'Add Products', 'actions', 5,
+   true, false, true, false,
+   false, 'products.create')
+ON CONFLICT (key) DO UPDATE SET
+  default_staff  = true,
+  permission_key = 'products.create';
+
+-- Say so out loud. A migration that ran but changed nothing should not look the
+-- same as one that worked.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.page_definitions
+     WHERE key = 'action.add_product' AND default_staff
+  ) THEN
+    RAISE EXCEPTION '0058 did not enable the Add Product button for staff';
+  END IF;
+  RAISE NOTICE '0058 applied: staff may add and edit products; cost price and delete unchanged.';
+END;
+$$;
