@@ -305,6 +305,10 @@ drqpqjsamguffwkxiilp
 - **Invoice sale rate is editable per line by anyone who can raise an invoice.** Storage needed no migration — `invoice_items.unit_price_paisa` was already written per line and `create_invoice_atomic` already honoured the submitted rate. The lock was one line of client code.
   - Line rate is now the raw typed text, not a number, so `"abc"`/`""` are reported instead of both collapsing to a free product at 0.00. `parseRateInput()` splits on the decimal point rather than using parseFloat (19.99 * 100 === 1998.9999999999998).
   - **Not implemented, awaiting a decision:** below-cost warning. It cannot be done client-side — `products_for_role` NULLs the cost price for exactly the role doing the overriding.
+- **Admin notification feed, not an approval queue** (`0059`). Owner was explicit: staff must not wait on anyone to add a product or make an invoice, but the admin should be told. `deletion_requests` stays the only thing that blocks on an admin.
+  - Derived from `activity_log` — those events were already recorded. 0059 adds only `staff_activity_notifications` (the view that decides which lines an admin is told about: actor role <> 'admin', six actions) and `notification_reads` (per-admin high-water mark). No fan-out table.
+  - Bell in the header, admin only. Polled at 60s, not Realtime.
+  - Gotcha fixed on the way in: `last_seen_at` written as `toISOString()` ('…Z') vs Postgres returning '…+00:00' — string comparison between them is meaningless, so unread is decided on parsed Dates.
 - **There is no tax anywhere in the invoice schema** (subtotal / discount / total only). Noted because it keeps being assumed.
 
 ### Session 19 (continued, round 2) — spec-gap audit after user asked "what's done, what's remaining"
