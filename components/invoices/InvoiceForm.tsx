@@ -7,11 +7,10 @@ import { AlertTriangle, Plus, X, CheckCircle2 } from 'lucide-react';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { useProducts, type Product } from '@/lib/queries/products';
 import { useBusinessStore } from '@/lib/store/business';
-import { formatPKR, paisaToRupees, rupeesToPaisa } from '@/lib/money';
-import { computeInvoiceTotals } from '@/lib/invoice';
+import { formatPKR, rupeesToPaisa } from '@/lib/money';
+import { computeInvoiceTotals, parseRateInput, formatRateInput } from '@/lib/invoice';
 import { createInvoice } from '@/lib/actions/invoice';
 import type { DiscountType } from '@/lib/validators/invoice';
-import type { Role } from '@/lib/auth/permissions';
 import { hasPack, toUnits, conversionHint, packOptionLabel, unitOptionLabel, type EntryMode } from '@/lib/pack';
 import { CustomerCombobox } from './CustomerCombobox';
 import { ProductCombobox } from './ProductCombobox';
@@ -22,26 +21,36 @@ type LineItem = {
   /** What the user typed — boxes when entry_mode is 'pack', units otherwise. */
   quantity: number;
   entry_mode: EntryMode;
-  unit_price_paisa: number;
+  /**
+   * Exactly what is in the rate box, not a number. The override is per line and
+   * per invoice; it seeds from the product's sale price and never travels back.
+   * Keeping the raw text here rather than a parsed paisa value is what lets
+   * "12.", "abc" and "" be told apart and reported instead of all collapsing to
+   * zero on their way in.
+   */
+  rate_input: string;
 };
 
 type Props = {
-  role: Role;
+  /**
+   * Whether this user may type a rate other than the product's. Resolved on the
+   * server; the rate still only ever lands on this invoice's line, never on the
+   * product.
+   */
+  canEditRate: boolean;
 };
 
 function emptyItem(key: string): LineItem {
-  return { key, product_id: null, quantity: 1, entry_mode: 'unit', unit_price_paisa: 0 };
+  return { key, product_id: null, quantity: 1, entry_mode: 'unit', rate_input: '' };
 }
 
-export function InvoiceForm({ role }: Props) {
+export function InvoiceForm({ canEditRate }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeId = useBusinessStore((s) => s.activeId);
 
   const { data: customers = [], isLoading: customersLoading } = useCustomersWithBalance();
   const { data: products = [], isLoading: productsLoading } = useProducts();
-
-  const canEditRate = role === 'admin';
 
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([emptyItem('item-1')]);
@@ -83,10 +92,29 @@ export function InvoiceForm({ role }: Props) {
     () =>
       items.map((it) => {
         const p = it.product_id ? productById.get(it.product_id) : undefined;
-        return { ...it, quantity: toUnits(it.quantity, it.entry_mode, p?.pack_size ?? 1) };
+        const rate = parseRateInput(it.rate_input);
+        return {
+          ...it,
+          quantity: toUnits(it.quantity, it.entry_mode, p?.pack_size ?? 1),
+          unit_price_paisa: rate.ok ? rate.paisa : 0,
+        };
       }),
     [items, productById],
   );
+
+  /**
+   * Only lines that have a product are judged. A blank rate on a blank row is
+   * someone who has not started typing yet, not a mistake to shout about.
+   */
+  const rateErrors = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const it of items) {
+      if (!it.product_id) continue;
+      const rate = parseRateInput(it.rate_input);
+      if (!rate.ok) out.set(it.key, rate.error);
+    }
+    return out;
+  }, [items]);
 
   // ★ All math via the unit-tested computeInvoiceTotals — DO NOT inline. ★
   const totals = useMemo(
@@ -128,7 +156,9 @@ export function InvoiceForm({ role }: Props) {
       ? 'Add at least one item with a product and quantity'
       : items.some((it) => it.product_id && it.quantity <= 0)
         ? 'Each item with a product must have quantity > 0'
-        : null;
+        : rateErrors.size > 0
+          ? 'Fix the highlighted rate before saving'
+          : null;
 
   const stockBlocks = stockWarnings.length > 0;
 
@@ -148,13 +178,13 @@ export function InvoiceForm({ role }: Props) {
   }
   function pickProduct(key: string, productId: string | null) {
     if (!productId) {
-      updateItem(key, { product_id: null, unit_price_paisa: 0, entry_mode: 'unit' });
+      updateItem(key, { product_id: null, rate_input: '', entry_mode: 'unit' });
       return;
     }
     const p = products.find((x) => x.id === productId);
     updateItem(key, {
       product_id: productId,
-      unit_price_paisa: p?.sale_price_paisa ?? 0,
+      rate_input: formatRateInput(p?.sale_price_paisa ?? 0),
       entry_mode: p && hasPack(p) ? 'pack' : 'unit',
     });
   }
@@ -163,10 +193,13 @@ export function InvoiceForm({ role }: Props) {
     updateItem(key, { quantity: isNaN(n) ? 0 : n });
   }
   function changeRate(key: string, value: string) {
-    const n = parseFloat(value);
-    updateItem(key, {
-      unit_price_paisa: isNaN(n) || n < 0 ? 0 : rupeesToPaisa(n),
-    });
+    updateItem(key, { rate_input: value });
+  }
+
+  /** Back to the product's own price, for when an override was a mistake. */
+  function resetRate(key: string, productId: string | null) {
+    const p = productId ? productById.get(productId) : undefined;
+    updateItem(key, { rate_input: formatRateInput(p?.sale_price_paisa ?? 0) });
   }
 
   function changeDiscountType(type: DiscountType) {
@@ -278,6 +311,8 @@ export function InvoiceForm({ role }: Props) {
             onPickProduct={(pid) => pickProduct(item.key, pid)}
             onChangeQty={(v) => changeQty(item.key, v)}
             onChangeRate={(v) => changeRate(item.key, v)}
+            onResetRate={() => resetRate(item.key, item.product_id)}
+            rateError={rateErrors.get(item.key) ?? null}
             onChangeMode={(mode) => updateItem(item.key, { entry_mode: mode })}
             lineTotalPaisa={totals.line_totals_paisa[idx] ?? 0}
           />
@@ -464,7 +499,9 @@ type ItemRowProps = {
   onPickProduct: (id: string | null) => void;
   onChangeQty: (v: string) => void;
   onChangeRate: (v: string) => void;
+  onResetRate: () => void;
   onChangeMode: (mode: EntryMode) => void;
+  rateError: string | null;
   lineTotalPaisa: number;
 };
 
@@ -478,28 +515,23 @@ function ItemRowCard({
   onPickProduct,
   onChangeQty,
   onChangeRate,
+  onResetRate,
   onChangeMode,
+  rateError,
   lineTotalPaisa,
 }: ItemRowProps) {
-  const [rateText, setRateText] = useState<string | null>(null);
-
   const product = item.product_id ? products.find((p) => p.id === item.product_id) : undefined;
   const packed = !!product && hasPack(product);
   const hint = product
     ? conversionHint(item.quantity, item.entry_mode, product)
     : null;
 
-  // Display value — local edit text (admin) or auto-filled product price
-  const rateDisplay =
-    rateText ??
-    (item.unit_price_paisa
-      ? paisaToRupees(item.unit_price_paisa).toFixed(2)
-      : '0.00');
-
-  function handleRateChange(v: string) {
-    setRateText(v);
-    onChangeRate(v);
-  }
+  // The product's own price, only so the row can say when this line departs
+  // from it. Nothing here writes back to the product.
+  const listRatePaisa = product?.sale_price_paisa ?? null;
+  const parsedRate = parseRateInput(item.rate_input);
+  const isOverridden =
+    !!product && parsedRate.ok && listRatePaisa !== null && parsedRate.paisa !== listRatePaisa;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 relative">
@@ -519,10 +551,7 @@ function ItemRowCard({
         <ProductCombobox
           products={products}
           value={item.product_id}
-          onChange={(pid) => {
-            setRateText(null); // reset local rate edit when product changes
-            onPickProduct(pid);
-          }}
+          onChange={onPickProduct}
           loading={productsLoading}
         />
       </div>
@@ -558,19 +587,40 @@ function ItemRowCard({
           <input
             type="text"
             inputMode="decimal"
-            value={rateDisplay}
-            onChange={(e) => canEditRate && handleRateChange(e.target.value)}
+            value={item.rate_input}
+            onChange={(e) => canEditRate && onChangeRate(e.target.value)}
             readOnly={!canEditRate}
             disabled={!item.product_id}
+            aria-invalid={!!rateError}
+            aria-label="Rate for this line"
             className={[
               'w-full h-10 px-3 rounded-xl border text-sm tabular-nums',
-              canEditRate
-                ? 'border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                : 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed',
+              !canEditRate
+                ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed'
+                : rateError
+                  ? 'border-red-400 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500'
+                  : 'border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500',
               !item.product_id ? 'opacity-50' : '',
             ].join(' ')}
-            title={canEditRate ? 'Editable (admin)' : 'Auto-filled from product. Editable for admins only.'}
+            title={
+              canEditRate
+                ? 'This invoice only — the product\u2019s own price is not changed.'
+                : 'Auto-filled from the product.'
+            }
           />
+          {rateError && <p className="mt-1 text-xs text-red-600">{rateError}</p>}
+          {!rateError && isOverridden && (
+            <p className="mt-1 text-xs text-amber-700">
+              Was {formatPKR(listRatePaisa!, { showSymbol: false })}
+              <button
+                type="button"
+                onClick={onResetRate}
+                className="ml-1.5 underline font-medium hover:text-amber-900"
+              >
+                reset
+              </button>
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">

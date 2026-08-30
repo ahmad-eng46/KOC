@@ -56,3 +56,50 @@ export function computeInvoiceTotals(
     line_totals_paisa: lineTotals,
   };
 }
+
+/**
+ * A per-line rate typed by a user, in rupees, turned into paisa.
+ *
+ * Parsed off the digit string rather than through parseFloat: `19.99 * 100` is
+ * 1998.9999999999998 in IEEE-754, and while Math.round happens to rescue that
+ * one, the codebase's rule is that money never travels through a float at all
+ * (iron rule #1). Splitting on the decimal point and padding the fraction is
+ * exact for every input this accepts.
+ *
+ * Rejects rather than silently coercing. A rate box that turns "abc" into 0.00
+ * writes a free product into the books and tells nobody.
+ */
+export type RateParse =
+  | { ok: true; paisa: number }
+  | { ok: false; error: string };
+
+/** Rs. 10,000,000 a unit. Past this it is a typo, not a price. */
+const MAX_RATE_PAISA = 1_000_000_000;
+
+export function parseRateInput(raw: string): RateParse {
+  const text = raw.trim().replace(/,/g, '');
+
+  if (text === '') return { ok: false, error: 'Enter a rate' };
+  if (text.startsWith('-')) return { ok: false, error: 'Rate cannot be negative' };
+
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!match || (match[1] === '' && (match[2] ?? '') === '')) {
+    return { ok: false, error: 'Rate must be a number' };
+  }
+
+  const [, whole, fraction = ''] = match;
+  if (fraction.length > 2) {
+    return { ok: false, error: 'Rate cannot be finer than 1 paisa (2 decimals)' };
+  }
+
+  const paisa = Number(whole || '0') * 100 + Number(fraction.padEnd(2, '0') || '0');
+  if (!Number.isSafeInteger(paisa)) return { ok: false, error: 'Rate is too large' };
+  if (paisa > MAX_RATE_PAISA) return { ok: false, error: 'Rate is too large' };
+
+  return { ok: true, paisa };
+}
+
+/** The rate box's starting text for a product, in the same shape a user types. */
+export function formatRateInput(paisa: number): string {
+  return (Math.round(paisa) / 100).toFixed(2);
+}
