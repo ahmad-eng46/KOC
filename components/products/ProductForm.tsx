@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { productSchema, type ProductInput } from '@/lib/validators/product';
 import { createProduct, updateProduct } from '@/lib/actions/product';
-import { formatPKR, rupeesToPaisa } from '@/lib/money';
+import { formatPKR, parsePKR } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
 import { packPreview } from '@/lib/pack';
 import {
@@ -65,8 +65,9 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const packName = useWatch({ control, name: 'pack_name' });
   const packSize = useWatch({ control, name: 'pack_size' });
 
-  const salePaisa = useWatch({ control, name: 'sale_price_paisa' });
-  const purchasePaisa = useWatch({ control, name: 'purchase_price_paisa' });
+  const salePaisa = Number(useWatch({ control, name: 'sale_price_paisa' })) || 0;
+  const purchaseWatched = useWatch({ control, name: 'purchase_price_paisa' });
+  const purchasePaisa = purchaseWatched == null ? null : Number(purchaseWatched) || 0;
 
   const size = Number(packSize) || 1;
   const packed = hasPack(size) && !!packName?.trim();
@@ -74,24 +75,64 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const packLabel = packName?.trim() || 'pack';
 
   /**
-   * Which price the owner types. The stored value is per unit in both modes —
-   * this only decides whether what they typed is divided by the pack size on
-   * the way in. Defaults to per unit so an existing product keeps reading the
-   * way it was entered.
+   * Which price the owner types. Form state always holds the per-unit price,
+   * whichever mode is showing, so submitting needs no conversion at all and
+   * there is only one place a pack price can be misread. Defaults to per unit
+   * so an existing product opens reading the way it is stored.
    */
   const [priceMode, setPriceMode] = useState<PriceMode>('unit');
   const perPack = packed && priceMode === 'pack';
 
   /**
-   * The pack price cannot always be split into whole paisa, and since every
-   * invoice multiplies up from the per-unit price, the difference has to be
-   * visible before saving rather than discovered in a total afterwards.
+   * The text in the boxes. Kept separately from form state because the same
+   * stored price shows as two different numbers depending on the mode, and
+   * because it must survive a half-typed "12." that parses to nothing yet.
    */
-  const saleSplit = perPack ? packPriceToUnitPrice(Number(salePaisa) || 0, size) : null;
-  const purchaseSplit = perPack && purchasePaisa != null
-    ? packPriceToUnitPrice(Number(purchasePaisa) || 0, size)
+  const [saleText, setSaleText] = useState(() =>
+    product ? formatPKR(product.sale_price_paisa, { showSymbol: false }) : '');
+  const [costText, setCostText] = useState(() =>
+    product?.purchase_price_paisa != null
+      ? formatPKR(product.purchase_price_paisa, { showSymbol: false })
+      : '');
+
+  /**
+   * Rupees typed in the current mode -> the per-unit paisa that gets stored.
+   * parsePKR, not parseFloat: these boxes are refilled with grouped text like
+   * "9,600.00" when the mode changes, and parseFloat stops at the comma and
+   * reads that as 9.
+   */
+  function toUnitPaisa(text: string): number {
+    const paisa = parsePKR(text);
+    return perPack ? packPriceToUnitPrice(paisa, size).unitPaisa : paisa;
+  }
+
+  /**
+   * Switching mode re-expresses what is on screen so the number keeps meaning
+   * the same money. Without this the figure stays put while its label changes,
+   * and on an existing product that silently redefines a stored price.
+   */
+  function switchMode(next: PriceMode) {
+    if (next === priceMode) return;
+    const show = (unitPaisa: number) =>
+      formatPKR(
+        next === 'pack' ? unitPriceToPackPrice(unitPaisa, size) : unitPaisa,
+        { showSymbol: false },
+      );
+    if (saleText.trim() !== '') setSaleText(show(salePaisa));
+    if (costText.trim() !== '' && purchasePaisa != null) setCostText(show(purchasePaisa));
+    setPriceMode(next);
+  }
+
+  /**
+   * A pack price cannot always be split into whole paisa, and every invoice
+   * multiplies up from the per-unit figure, so the difference is shown before
+   * saving rather than discovered in a total afterwards.
+   */
+  const saleSplit = perPack ? packPriceToUnitPrice(parsePKR(saleText), size) : null;
+  const costSplit = perPack && costText.trim() !== ''
+    ? packPriceToUnitPrice(parsePKR(costText), size)
     : null;
-  const inexact = (saleSplit && !saleSplit.exact) || (purchaseSplit && !purchaseSplit.exact);
+  const inexact = (saleSplit && !saleSplit.exact) || (costSplit && !costSplit.exact);
 
   const packPreviewText = packPreview({
     unit: unit || 'unit',
@@ -106,23 +147,12 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
   async function onSubmit(values: ProductInput) {
     setServerError(null);
 
-    // Everything downstream — invoices, COGS, stock valuation — reads a
-    // per-unit price, so a pack price is divided here and never stored as
-    // typed. This is the only place the two modes differ.
-    const priced: ProductInput = perPack
-      ? {
-          ...values,
-          sale_price_paisa: packPriceToUnitPrice(values.sale_price_paisa, size).unitPaisa,
-          purchase_price_paisa: values.purchase_price_paisa == null
-            ? values.purchase_price_paisa
-            : packPriceToUnitPrice(values.purchase_price_paisa, size).unitPaisa,
-        }
-      : values;
-
+    // No conversion here: the price boxes write per-unit paisa into form state
+    // as they are typed, whichever mode is showing.
     try {
       const result = product
-        ? await updateProduct(product.id, priced)
-        : await createProduct(priced);
+        ? await updateProduct(product.id, values)
+        : await createProduct(values);
 
       if (!result.ok) {
         setServerError(result.error);
@@ -272,7 +302,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
               <button
                 key={mode}
                 type="button"
-                onClick={() => setPriceMode(mode)}
+                onClick={() => switchMode(mode)}
                 aria-pressed={priceMode === mode}
                 className={[
                   'h-11 rounded-xl border text-sm font-medium capitalize',
@@ -299,14 +329,17 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           error={errors.sale_price_paisa?.message}
         >
           <input
+            name="sale_price_paisa"
             className={inputCls(!!errors.sale_price_paisa)}
             placeholder="0.00"
             inputMode="decimal"
-            defaultValue={product ? formatPKR(product.sale_price_paisa, { showSymbol: false }) : '0.00'}
-            {...register('sale_price_paisa', {
-              setValueAs: (v: unknown) =>
-                typeof v === 'string' ? rupeesToPaisa(parseFloat(v) || 0) : (v as number),
-            })}
+            value={saleText}
+            onChange={(e) => {
+              setSaleText(e.target.value);
+              setValue('sale_price_paisa', toUnitPaisa(e.target.value), {
+                shouldDirty: true, shouldValidate: true,
+              });
+            }}
           />
         </Field>
 
@@ -316,21 +349,20 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             error={errors.purchase_price_paisa?.message}
           >
             <input
+              name="purchase_price_paisa"
               className={inputCls(!!errors.purchase_price_paisa)}
               placeholder="0.00"
               inputMode="decimal"
-              defaultValue={
-                product?.purchase_price_paisa != null
-                  ? formatPKR(product.purchase_price_paisa, { showSymbol: false })
-                  : '0.00'
-              }
-              {...register('purchase_price_paisa', {
-                setValueAs: (v: unknown) => {
-                  if (typeof v !== 'string') return v as number | null;
-                  const n = parseFloat(v);
-                  return isNaN(n) ? null : rupeesToPaisa(n);
-                },
-              })}
+              value={costText}
+              onChange={(e) => {
+                setCostText(e.target.value);
+                // Blank means "cost not known", which is a null the column allows.
+                setValue(
+                  'purchase_price_paisa',
+                  e.target.value.trim() === '' ? null : toUnitPaisa(e.target.value),
+                  { shouldDirty: true, shouldValidate: true },
+                );
+              }}
             />
           </Field>
         )}
@@ -346,7 +378,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             unitLabel={unitLabel}
             packLabel={packLabel}
             packSize={size}
-            unitPaisa={saleSplit ? saleSplit.unitPaisa : Number(salePaisa) || 0}
+            unitPaisa={salePaisa}
           />
           {canSeePurchasePrice && purchasePaisa != null && (
             <PriceLine
@@ -354,9 +386,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
               unitLabel={unitLabel}
               packLabel={packLabel}
               packSize={size}
-              unitPaisa={
-                purchaseSplit ? purchaseSplit.unitPaisa : Number(purchasePaisa) || 0
-              }
+              unitPaisa={purchasePaisa}
             />
           )}
           {inexact && (
