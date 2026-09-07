@@ -9,7 +9,7 @@ import { logActivity } from '@/lib/actions/activity-log';
 import { can, type Permission, type Role } from '@/lib/auth/permissions';
 import { resolveEffective } from '@/lib/auth/effective';
 import {
-  resolvePageAccess, roleDefault, isLockedFor, type PageDefinition,
+  resolvePageAccess, roleDefault, isLockedFor, isDeparture, type PageDefinition,
 } from '@/lib/auth/page-access-rules';
 
 type Result<T = void> =
@@ -162,6 +162,14 @@ export async function setUserPageAccess(
     business_id: string; user_id: string; page_key: string;
     is_allowed: boolean; granted_by: string; updated_at: string;
   }> = [];
+  /**
+   * Ticks that agree with the role default are deleted, not written. A stored
+   * row wins over the default forever — resolvePageAccess reads
+   * `override ?? roleDefault` — so writing one for every page freezes the user
+   * at the moment Save was pressed, and a later migration that widens the role
+   * reaches everyone except the users an admin had bothered to configure.
+   */
+  const defaultKeys: string[] = [];
   const now = new Date().toISOString();
 
   for (const [key, allowed] of Object.entries(parsed.data)) {
@@ -177,6 +185,11 @@ export async function setUserPageAccess(
       };
     }
 
+    if (!isDeparture(page, role, allowed)) {
+      defaultKeys.push(key);
+      continue;
+    }
+
     rows.push({
       business_id: ctx.businessId,
       user_id: userId,
@@ -185,6 +198,16 @@ export async function setUserPageAccess(
       granted_by: ctx.adminId,
       updated_at: now,
     });
+  }
+
+  if (defaultKeys.length > 0) {
+    const { error: clearError } = await adminClient
+      .from('user_page_access')
+      .delete()
+      .eq('business_id', ctx.businessId)
+      .eq('user_id', userId)
+      .in('page_key', defaultKeys);
+    if (clearError) return { ok: false, error: clearError.message };
   }
 
   if (rows.length === 0) return { ok: true };

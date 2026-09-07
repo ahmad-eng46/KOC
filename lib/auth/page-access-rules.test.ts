@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolvePageAccess, resolveAccessMap, roleDefault, isLockedFor,
-  accessSummary, pageKeyForPath, type PageDefinition,
-} from '@/lib/auth/page-access-rules';
+  accessSummary, pageKeyForPath, type PageDefinition, isDeparture } from '@/lib/auth/page-access-rules';
 
 function page(over: Partial<PageDefinition> = {}): PageDefinition {
   return {
@@ -164,5 +163,43 @@ describe('pageKeyForPath', () => {
     expect(pageKeyForPath('/profile')).toBeNull();
     expect(pageKeyForPath('/login')).toBeNull();
     expect(pageKeyForPath('/no-access')).toBeNull();
+  });
+});
+
+describe('isDeparture', () => {
+  const page = (over: Partial<PageDefinition> = {}): PageDefinition => ({
+    key: 'invoices', label: 'Invoices', category: 'main', sort_order: 1,
+    description: null,
+    default_admin: true, default_accountant: true, default_staff: true, default_viewer: true,
+    is_lockable: false, permission_key: 'invoices.view',
+    ...over,
+  });
+
+  it('is false when the tick only restates the role default', () => {
+    expect(isDeparture(page(), 'staff', true)).toBe(false);
+    expect(isDeparture(page({ default_staff: false }), 'staff', false)).toBe(false);
+  });
+
+  it('is true when the admin actually changed something', () => {
+    expect(isDeparture(page(), 'staff', false)).toBe(true);
+    expect(isDeparture(page({ default_staff: false }), 'staff', true)).toBe(true);
+  });
+
+  it('judges each role against its own default', () => {
+    const p = page({ default_staff: true, default_viewer: false });
+    expect(isDeparture(p, 'staff', true)).toBe(false);
+    expect(isDeparture(p, 'viewer', true)).toBe(true);
+  });
+
+  /**
+   * The regression this exists to stop: a page saved as "allowed" while the
+   * default was already "allowed" used to be stored, and then went on winning
+   * over the default after a migration widened it.
+   */
+  it('does not store a row that would later shadow a widened default', () => {
+    const before = page({ default_staff: false });
+    expect(isDeparture(before, 'staff', false)).toBe(false);
+    const after = page({ default_staff: true });
+    expect(isDeparture(after, 'staff', true)).toBe(false);
   });
 });

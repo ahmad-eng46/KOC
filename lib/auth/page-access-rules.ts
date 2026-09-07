@@ -81,6 +81,23 @@ export function resolvePageAccess(input: AccessInput): boolean {
   return override ?? roleDefault(page, role);
 }
 
+/**
+ * Whether a tick differs from what the role would give anyway.
+ *
+ * `user_page_access` is meant to store only departures. A row that merely
+ * restates the role default pins that user to today's answer forever:
+ * `resolvePageAccess` reads `override ?? roleDefault`, so a stored value — true
+ * or false — wins over any later change to the default. A migration that
+ * widens a role then silently skips every user whose checklist was ever saved.
+ */
+export function isDeparture(
+  page: PageDefinition,
+  role: Role,
+  allowed: boolean,
+): boolean {
+  return allowed !== roleDefault(page, role);
+}
+
 /** Every page's answer at once, which is what the sidebar needs. */
 export function resolveAccessMap(
   role: Role,
