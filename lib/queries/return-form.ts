@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
+import { fetchProductNames } from '@/lib/queries/product-names';
 import { distributeInvoiceDiscount } from '@/lib/return-pricing';
 
 export type ReturnableItem = {
@@ -218,33 +219,16 @@ export function useReturnFormData(invoiceId: string) {
       const rawItems = itemsRes.data as unknown as RawItem[];
 
       /**
-       * Names via product_identity rather than an embed through the products
-       * foreign key: that embed reads the base table, which staff may not
-       * SELECT because the cost price is on it, so every line came back
-       * nameless for exactly the people processing returns.
+       * Names never come from an embed through the products foreign key: that
+       * reads the base table, which staff may not SELECT because the cost
+       * price is on it, so every line came back nameless for exactly the
+       * people processing returns.
        */
-      type Identity = {
-        id: string;
-        name: string;
-        sku: string | null;
-        unit: string;
-        pack_size: number;
-        pack_name: string | null;
-      };
-      const names = new Map<string, Identity>();
-      const productIds = Array.from(new Set(rawItems.map((it) => it.product_id)));
-      if (productIds.length > 0) {
-        const { data: idRows, error: idErr } = await supabase
-          .from('product_identity')
-          .select('id, name, sku, unit, pack_size, pack_name')
-          .eq('business_id', activeId!)
-          .in('id', productIds);
-        // Non-fatal for the same reason as the invoice detail: a missing name
-        // must not stop someone processing a return.
-        if (!idErr) {
-          for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
-        }
-      }
+      const names = await fetchProductNames(
+        supabase,
+        activeId!,
+        Array.from(new Set(rawItems.map((it) => it.product_id))),
+      );
 
       // The invoice discount is a flat amount off the total, so each line's
       // list price overstates what was paid for it. Spread it before showing

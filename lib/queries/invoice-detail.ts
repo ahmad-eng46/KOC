@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
+import { fetchProductNames } from '@/lib/queries/product-names';
 import type { InvoiceStatus } from '@/lib/queries/invoices';
 
 // The RPC returns a BIGINT, which supabase-js may surface as number or string.
@@ -176,29 +177,7 @@ export function useInvoiceDetail(id: string) {
         ]),
       );
 
-      type Identity = {
-        id: string;
-        name: string;
-        sku: string | null;
-        unit: string;
-        pack_name: string | null;
-      };
-      const names = new Map<string, Identity>();
-      if (productIds.length > 0) {
-        const { data: idRows, error: idErr } = await supabase
-          .from('product_identity')
-          .select('id, name, sku, unit, pack_name')
-          .eq('business_id', activeId!)
-          .in('id', productIds);
-        // Deliberately not thrown. A name is a label; the invoice is money.
-        // If this lookup fails — 0065 not applied yet, a stale PostgREST schema
-        // cache — the lines still show their quantities, rates and totals with
-        // "—" for the name, which is what they did before 0065 anyway. Taking
-        // the whole invoice down over a caption would be the worse trade.
-        if (!idErr) {
-          for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
-        }
-      }
+      const names = await fetchProductNames(supabase, activeId!, productIds);
 
       // A missing previous balance must not break the invoice view — the PDF
       // falls back to the simple totals block instead.
