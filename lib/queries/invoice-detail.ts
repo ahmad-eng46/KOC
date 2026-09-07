@@ -75,6 +75,41 @@ export type InvoiceDetail = {
   }>;
 };
 
+/**
+ * The columns an invoice line has always had, and the ones 0066 added.
+ *
+ * Kept apart because the app deploys ahead of its migrations. Naming a column
+ * PostgREST does not know about fails the whole request, so an invoice would
+ * go from "no product name" to "Invoice not found" purely because a migration
+ * had not been pasted yet. The line's money must render either way.
+ */
+const ITEM_COLUMNS =
+  'id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, ' +
+  'entered_quantity, entry_mode, pack_size_snapshot';
+const ITEM_SNAPSHOT_COLUMNS =
+  'product_name_snapshot, product_sku_snapshot, product_unit_snapshot';
+
+/** Full select where the schema allows it, the older one where it does not. */
+async function fetchInvoiceItems(
+  supabase: ReturnType<typeof createClient>,
+  invoiceId: string,
+) {
+  const withSnapshot = await supabase
+    .from('invoice_items')
+    .select(`${ITEM_COLUMNS}, ${ITEM_SNAPSHOT_COLUMNS}`)
+    .eq('invoice_id', invoiceId)
+    .order('created_at');
+
+  if (!withSnapshot.error) return withSnapshot;
+  if (!withSnapshot.error.message.includes('product_name_snapshot')) return withSnapshot;
+
+  return supabase
+    .from('invoice_items')
+    .select(ITEM_COLUMNS)
+    .eq('invoice_id', invoiceId)
+    .order('created_at');
+}
+
 export function useInvoiceDetail(id: string) {
   const activeId = useBusinessStore((s) => s.activeId);
 
@@ -94,11 +129,7 @@ export function useInvoiceDetail(id: string) {
           .eq('business_id', activeId!)
           .is('deleted_at', null)
           .single(),
-        supabase
-          .from('invoice_items')
-          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot, product_name_snapshot, product_sku_snapshot, product_unit_snapshot')
-          .eq('invoice_id', id)
-          .order('created_at'),
+        fetchInvoiceItems(supabase, id),
         supabase
           .from('payments')
           .select('id, amount_paisa, method, reference, payment_date, created_at')
@@ -129,9 +160,14 @@ export function useInvoiceDetail(id: string) {
        * products_for_role would not do either: it hides deleted rows, and an
        * old invoice may name a product that has since been deleted.
        */
+      // Cast once: the two selects in fetchInvoiceItems give supabase-js two
+      // different row shapes, and everything below reads the older one plus
+      // three optional fields.
+      const itemRows = (itemsRes.data ?? []) as unknown as RawItem[];
+
       const productIds = Array.from(
         new Set<string>([
-          ...(itemsRes.data ?? []).map((it) => String(it.product_id)),
+          ...itemRows.map((it) => String(it.product_id)),
           ...(returnsRes.data ?? []).flatMap((r) =>
             ((r.return_items ?? []) as Array<{ product_id: string }>).map((ri) =>
               String(ri.product_id),
@@ -201,11 +237,11 @@ export function useInvoiceDetail(id: string) {
         unit_price_paisa: number;
         discount_paisa: number;
         line_total_paisa: number;
-        product_name_snapshot: string | null;
-        product_sku_snapshot: string | null;
-        product_unit_snapshot: string | null;
+        product_name_snapshot?: string | null;
+        product_sku_snapshot?: string | null;
+        product_unit_snapshot?: string | null;
       };
-      const items = (itemsRes.data as unknown as RawItem[]).map((it) => {
+      const items = itemRows.map((it) => {
         const p = names.get(it.product_id);
         return {
           id: it.id,

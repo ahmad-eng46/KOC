@@ -121,6 +121,41 @@ export function useReturnableInvoices(customerId: string) {
   });
 }
 
+/**
+ * Same split as the invoice detail: the columns a line has always had, and the
+ * three 0066 added. Naming an unknown column fails the whole request, so the
+ * return screen would break outright on a database that has not had 0066
+ * pasted yet — for a caption.
+ */
+const RETURN_ITEM_COLUMNS =
+  'id, product_id, quantity, unit_price_paisa, line_total_paisa';
+const RETURN_ITEM_SNAPSHOT_COLUMNS =
+  'product_name_snapshot, product_sku_snapshot, product_unit_snapshot';
+
+async function fetchReturnableItems(
+  supabase: ReturnType<typeof createClient>,
+  invoiceId: string,
+) {
+  // Ordered by (created_at, id) to match invoice_item_effective_prices() in
+  // 0048 — the order decides which line absorbs the rounding remainder.
+  const withSnapshot = await supabase
+    .from('invoice_items')
+    .select(`${RETURN_ITEM_COLUMNS}, ${RETURN_ITEM_SNAPSHOT_COLUMNS}`)
+    .eq('invoice_id', invoiceId)
+    .order('created_at')
+    .order('id');
+
+  if (!withSnapshot.error) return withSnapshot;
+  if (!withSnapshot.error.message.includes('product_name_snapshot')) return withSnapshot;
+
+  return supabase
+    .from('invoice_items')
+    .select(RETURN_ITEM_COLUMNS)
+    .eq('invoice_id', invoiceId)
+    .order('created_at')
+    .order('id');
+}
+
 export function useReturnFormData(invoiceId: string) {
   const activeId = useBusinessStore((s) => s.activeId);
 
@@ -140,14 +175,7 @@ export function useReturnFormData(invoiceId: string) {
           .single(),
         // Ordered by (created_at, id) to match invoice_item_effective_prices()
         // in 0048 — the order decides which line absorbs the rounding remainder.
-        supabase
-          .from('invoice_items')
-          .select(
-            'id, product_id, quantity, unit_price_paisa, line_total_paisa, product_name_snapshot, product_sku_snapshot, product_unit_snapshot',
-          )
-          .eq('invoice_id', invoiceId)
-          .order('created_at')
-          .order('id'),
+        fetchReturnableItems(supabase, invoiceId),
         // All return_items for this invoice's items, joined to (non-deleted) returns
         supabase
           .from('return_items')
@@ -183,9 +211,9 @@ export function useReturnFormData(invoiceId: string) {
         quantity: number;
         unit_price_paisa: number;
         line_total_paisa: number;
-        product_name_snapshot: string | null;
-        product_sku_snapshot: string | null;
-        product_unit_snapshot: string | null;
+        product_name_snapshot?: string | null;
+        product_sku_snapshot?: string | null;
+        product_unit_snapshot?: string | null;
       };
       const rawItems = itemsRes.data as unknown as RawItem[];
 
