@@ -3,12 +3,14 @@
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
 import { useUnsavedChanges } from '@/lib/store/unsaved';
+import { useBusinessStore } from '@/lib/store/business';
 import { LocationPicker } from './LocationPicker';
 import { CategoryPicker } from './CategoryPicker';
 
@@ -23,6 +25,8 @@ type Props = {
 
 export function CustomerForm({ customer, canCreateCategory = false }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -65,6 +69,9 @@ export function CustomerForm({ customer, canCreateCategory = false }: Props) {
         setServerError(result.error);
         return;
       }
+      await queryClient.invalidateQueries({ queryKey: ['customers', activeId] });
+      await queryClient.invalidateQueries({ queryKey: ['customers-with-balance', activeId] });
+
       router.push('/customers');
       router.refresh();
     } catch (err) {

@@ -3,12 +3,14 @@
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { productSchema, type ProductInput } from '@/lib/validators/product';
 import { createProduct, updateProduct } from '@/lib/actions/product';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
 import { packPreview } from '@/lib/pack';
+import { useBusinessStore } from '@/lib/store/business';
 import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { BrandPicker } from './BrandPicker';
 
@@ -23,6 +25,8 @@ const COMMON_UNITS = ['Litre', 'KG', 'Piece', 'Box', 'Carton', 'Dozen', 'Bag', '
 
 export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -79,6 +83,14 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         setServerError(result.error);
         return;
       }
+      // The products list and the invoice product picker both read the
+      // ['products'] cache, which has a 30s staleTime — without this the page
+      // we are about to push to renders the list from before this save and the
+      // new product simply is not there. router.refresh() only re-renders
+      // server components and cannot touch a client query cache.
+      await queryClient.invalidateQueries({ queryKey: ['products', activeId] });
+      await queryClient.invalidateQueries({ queryKey: ['brands', activeId] });
+
       router.push('/products');
       router.refresh();
     } catch (err) {

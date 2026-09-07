@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supplierSchema, type SupplierInput } from '@/lib/validators/suppliers';
@@ -10,6 +11,7 @@ import { Field, ServerError, inputCls, textareaCls } from '@/components/ui/form-
 import { useToast } from '@/components/ui/Toast';
 import type { Supplier } from '@/lib/queries/suppliers';
 import { useUnsavedChanges } from '@/lib/store/unsaved';
+import { useBusinessStore } from '@/lib/store/business';
 
 type Props = {
   supplier?: Supplier;
@@ -19,6 +21,8 @@ type Props = {
 
 export function SupplierForm({ supplier, canEdit = true }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
   const { showToast } = useToast();
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -52,6 +56,9 @@ export function SupplierForm({ supplier, canEdit = true }: Props) {
     }
 
     showToast(supplier ? 'Supplier updated.' : `Supplier "${values.name}" added.`);
+    await queryClient.invalidateQueries({ queryKey: ['suppliers', activeId] });
+    await queryClient.invalidateQueries({ queryKey: ['supplier-balances', activeId] });
+
     router.push(supplier ? `/suppliers/${supplier.id}` : '/suppliers');
     router.refresh();
   }

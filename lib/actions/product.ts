@@ -17,11 +17,17 @@ type ActionResult = { ok: true; id: string } | { ok: false; error: string };
  * A blank pack name means "no pack", and no pack means a pack size of 1 —
  * otherwise a product could carry a size of 12 with nothing to call it and the
  * forms would have no word for what they were converting to.
+ *
+ * A blank SKU becomes NULL, which is not cosmetic. idx_products_sku is
+ * UNIQUE (business_id, sku) WHERE sku IS NOT NULL, and an empty string is not
+ * null — so storing '' lets the first product without a SKU save and makes
+ * every one after it fail on a duplicate key. Blank means absent.
  */
-function normalisePack(data: ProductInput): ProductInput {
+function normalise(data: ProductInput): ProductInput {
   const packName = data.pack_name?.trim() || null;
   return {
     ...data,
+    sku: data.sku?.trim() || undefined,
     pack_name: packName,
     pack_size: packName ? data.pack_size : 1,
   };
@@ -37,7 +43,7 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
-  const values = normalisePack(parsed.data);
+  const values = normalise(parsed.data);
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
@@ -51,7 +57,7 @@ export async function createProduct(input: ProductInput): Promise<ActionResult> 
   const supabase = await createServerClient();
   const { error } = await supabase
     .from('products')
-    .insert({ ...values, id, business_id: businessId });
+    .insert({ ...values, sku: values.sku ?? null, id, business_id: businessId });
 
   if (error) return { ok: false, error: error.message };
 
@@ -77,7 +83,7 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Ac
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
-  const values = normalisePack(parsed.data);
+  const values = normalise(parsed.data);
 
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
