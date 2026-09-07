@@ -294,6 +294,12 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 23 — 2026-09-07 — "staff can't add products"
+- **Not a permissions problem.** Two client-side bugs on the add-product path, neither staff-specific:
+  - `ProductForm` (and `CustomerForm`, `SupplierForm`) did `router.push` + `router.refresh()` **without invalidating the query cache** — the pattern CLAUDE.md explicitly forbids. `router.refresh()` re-renders server components; the products list and the **invoice product picker** are client components on the `['products']` TanStack cache with `staleTime: 30_000`. The page you land on renders the pre-save list. `InvoiceForm` had it right; these three did not.
+  - **Blank SKU stored as `''`.** `idx_products_sku` is UNIQUE (business_id, sku) WHERE sku IS NOT NULL — `''` is not null, so the first product without a SKU takes the slot and every one after fails on a duplicate key, on a field the form marks optional. 0064 nulls the stored blanks.
+- Lesson worth keeping: `router.refresh()` is not cache invalidation. Any mutation whose result is read through TanStack must invalidate the key before navigating.
+
 ### Session 22 — 2026-09-07 — back button, and why staff lost their Invoices link
 - **Back button** is one component rendered by `AppShell`, replacing 35 hand-written `ChevronLeft` links (none of which had an aria-label or focus state). Destination is the **parent route computed from the path**, never `router.back()` — history back returns to the redirecting page after a redirect and to the filled-in form after a submit. `lib/navigation/parent-route.ts`; six overrides where URL parent ≠ logical parent, four of them because `/settings` is admin-only and staff reach its sub-pages.
 - **No unsaved-changes pattern existed**; `lib/store/unsaved.ts` adds one (Zustand + `beforeunload`), wired into all nine forms.
