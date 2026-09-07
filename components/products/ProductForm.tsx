@@ -10,6 +10,10 @@ import { createProduct, updateProduct } from '@/lib/actions/product';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
 import { packPreview } from '@/lib/pack';
+import {
+  BASE_UNITS, PACK_NAMES, PACK_DEFAULT_SIZE, hasPack,
+  packPriceToUnitPrice, unitPriceToPackPrice,
+} from '@/lib/units';
 import { useBusinessStore } from '@/lib/store/business';
 import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { BrandPicker } from './BrandPicker';
@@ -19,9 +23,8 @@ type Props = {
   canSeePurchasePrice: boolean;
 };
 
-const COMMON_PACK_NAMES = ['Box', 'Packet', 'Carton', 'Case', 'Bundle', 'Crate', 'Drum'];
-
-const COMMON_UNITS = ['Litre', 'KG', 'Piece', 'Box', 'Carton', 'Dozen', 'Bag', 'Tin', 'Bottle', 'Drum'];
+/** Which price the owner is typing. Storage stays per unit either way. */
+type PriceMode = 'unit' | 'pack';
 
 export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const router = useRouter();
@@ -62,10 +65,38 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
   const packName = useWatch({ control, name: 'pack_name' });
   const packSize = useWatch({ control, name: 'pack_size' });
 
+  const salePaisa = useWatch({ control, name: 'sale_price_paisa' });
+  const purchasePaisa = useWatch({ control, name: 'purchase_price_paisa' });
+
+  const size = Number(packSize) || 1;
+  const packed = hasPack(size) && !!packName?.trim();
+  const unitLabel = unit?.trim() || 'unit';
+  const packLabel = packName?.trim() || 'pack';
+
+  /**
+   * Which price the owner types. The stored value is per unit in both modes —
+   * this only decides whether what they typed is divided by the pack size on
+   * the way in. Defaults to per unit so an existing product keeps reading the
+   * way it was entered.
+   */
+  const [priceMode, setPriceMode] = useState<PriceMode>('unit');
+  const perPack = packed && priceMode === 'pack';
+
+  /**
+   * The pack price cannot always be split into whole paisa, and since every
+   * invoice multiplies up from the per-unit price, the difference has to be
+   * visible before saving rather than discovered in a total afterwards.
+   */
+  const saleSplit = perPack ? packPriceToUnitPrice(Number(salePaisa) || 0, size) : null;
+  const purchaseSplit = perPack && purchasePaisa != null
+    ? packPriceToUnitPrice(Number(purchasePaisa) || 0, size)
+    : null;
+  const inexact = (saleSplit && !saleSplit.exact) || (purchaseSplit && !purchaseSplit.exact);
+
   const packPreviewText = packPreview({
     unit: unit || 'unit',
     pack_name: packName ?? null,
-    pack_size: Number(packSize) || 1,
+    pack_size: size,
   });
   // Existing stock is in units, so re-sizing the pack only changes how future
   // quantities are typed — worth saying out loud before they wonder.
@@ -74,10 +105,24 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
 
   async function onSubmit(values: ProductInput) {
     setServerError(null);
+
+    // Everything downstream — invoices, COGS, stock valuation — reads a
+    // per-unit price, so a pack price is divided here and never stored as
+    // typed. This is the only place the two modes differ.
+    const priced: ProductInput = perPack
+      ? {
+          ...values,
+          sale_price_paisa: packPriceToUnitPrice(values.sale_price_paisa, size).unitPaisa,
+          purchase_price_paisa: values.purchase_price_paisa == null
+            ? values.purchase_price_paisa
+            : packPriceToUnitPrice(values.purchase_price_paisa, size).unitPaisa,
+        }
+      : values;
+
     try {
       const result = product
-        ? await updateProduct(product.id, values)
-        : await createProduct(values);
+        ? await updateProduct(product.id, priced)
+        : await createProduct(priced);
 
       if (!result.ok) {
         setServerError(result.error);
@@ -134,15 +179,18 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             {...register('sku')}
           />
         </Field>
-        <Field label="Unit *" error={errors.unit?.message}>
+        <Field
+          label={packed ? `Unit * (what is inside a ${packLabel})` : 'Unit *'}
+          error={errors.unit?.message}
+        >
           <input
             className={inputCls(!!errors.unit)}
-            placeholder="Litre"
+            placeholder="Piece"
             list="units-list"
             {...register('unit')}
           />
           <datalist id="units-list">
-            {COMMON_UNITS.map((u) => <option key={u} value={u} />)}
+            {BASE_UNITS.map((u) => <option key={u} value={u} />)}
           </datalist>
         </Field>
       </div>
@@ -163,12 +211,21 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
           <Field label="Pack Name" error={errors.pack_name?.message}>
             <input
               className={inputCls(!!errors.pack_name)}
-              placeholder="Box"
+              placeholder="Carton"
               list="pack-names-list"
-              {...register('pack_name')}
+              {...register('pack_name', {
+                // Picking a pack with a conventional count fills it in, so
+                // "Carton" does not sit next to a pack size of 1.
+                onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                  const preset = PACK_DEFAULT_SIZE[e.target.value.trim()];
+                  if (preset && size <= 1) {
+                    setValue('pack_size', preset, { shouldDirty: true, shouldValidate: true });
+                  }
+                },
+              })}
             />
             <datalist id="pack-names-list">
-              {COMMON_PACK_NAMES.map((n) => <option key={n} value={n} />)}
+              {PACK_NAMES.map((n) => <option key={n} value={n} />)}
             </datalist>
           </Field>
           <Field
@@ -204,8 +261,43 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         )}
       </div>
 
+      {packed && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-700">I am entering the price per</p>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ['unit', unitLabel],
+              ['pack', packLabel],
+            ] as Array<[PriceMode, string]>).map(([mode, text]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPriceMode(mode)}
+                aria-pressed={priceMode === mode}
+                className={[
+                  'h-11 rounded-xl border text-sm font-medium capitalize',
+                  priceMode === mode
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+                ].join(' ')}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            {perPack
+              ? `Type what one ${packLabel} costs. It is saved as the price of one ${unitLabel}.`
+              : `Type what one ${unitLabel} costs.`}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Sale Price (Rs.) *" error={errors.sale_price_paisa?.message}>
+        <Field
+          label={`Sale Price (Rs.) per ${perPack ? packLabel : unitLabel} *`}
+          error={errors.sale_price_paisa?.message}
+        >
           <input
             className={inputCls(!!errors.sale_price_paisa)}
             placeholder="0.00"
@@ -219,7 +311,10 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         </Field>
 
         {canSeePurchasePrice && (
-          <Field label="Purchase Price (Rs.)" error={errors.purchase_price_paisa?.message}>
+          <Field
+            label={`Purchase Price (Rs.) per ${perPack ? packLabel : unitLabel}`}
+            error={errors.purchase_price_paisa?.message}
+          >
             <input
               className={inputCls(!!errors.purchase_price_paisa)}
               placeholder="0.00"
@@ -241,7 +336,43 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         )}
       </div>
 
-      <Field label="Low Stock Alert (units)" error={errors.low_stock_threshold?.message}>
+      {packed && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-1">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            What gets saved
+          </p>
+          <PriceLine
+            label="Sale"
+            unitLabel={unitLabel}
+            packLabel={packLabel}
+            packSize={size}
+            unitPaisa={saleSplit ? saleSplit.unitPaisa : Number(salePaisa) || 0}
+          />
+          {canSeePurchasePrice && purchasePaisa != null && (
+            <PriceLine
+              label="Cost"
+              unitLabel={unitLabel}
+              packLabel={packLabel}
+              packSize={size}
+              unitPaisa={
+                purchaseSplit ? purchaseSplit.unitPaisa : Number(purchasePaisa) || 0
+              }
+            />
+          )}
+          {inexact && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 mt-1.5">
+              This price does not divide evenly into {size} {unitLabel}. Prices are stored
+              per {unitLabel}, so a {packLabel} works out to{' '}
+              {formatPKR(saleSplit?.roundedPackPaisa ?? 0)} rather than the figure typed.
+            </p>
+          )}
+        </div>
+      )}
+
+      <Field
+        label={`Low Stock Alert (${unitLabel})`}
+        error={errors.low_stock_threshold?.message}
+      >
         <input
           className={inputCls(!!errors.low_stock_threshold)}
           placeholder="10"
@@ -291,6 +422,30 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
         </button>
       </div>
     </form>
+  );
+}
+
+/** Both sides of one price, so the per-unit figure that is actually stored is never implicit. */
+function PriceLine({
+  label, unitLabel, packLabel, packSize, unitPaisa,
+}: {
+  label: string;
+  unitLabel: string;
+  packLabel: string;
+  packSize: number;
+  unitPaisa: number;
+}) {
+  return (
+    <p className="text-sm text-gray-800 flex flex-wrap items-baseline gap-x-1.5">
+      <span className="text-gray-500 w-10 shrink-0">{label}</span>
+      <span className="font-medium tabular-nums">{formatPKR(unitPaisa)}</span>
+      <span className="text-gray-500">per {unitLabel}</span>
+      <span className="text-gray-300">·</span>
+      <span className="font-medium tabular-nums">
+        {formatPKR(unitPriceToPackPrice(unitPaisa, packSize))}
+      </span>
+      <span className="text-gray-500">per {packLabel} of {packSize}</span>
+    </p>
   );
 }
 

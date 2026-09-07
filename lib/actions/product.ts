@@ -22,6 +22,11 @@ type ActionResult = { ok: true; id: string } | { ok: false; error: string };
  * UNIQUE (business_id, sku) WHERE sku IS NOT NULL, and an empty string is not
  * null — so storing '' lets the first product without a SKU save and makes
  * every one after it fail on a duplicate key. Blank means absent.
+ *
+ * A blank low-stock alert becomes 0, matching the column's own default. The
+ * form leaves it null, and passing that null explicitly overrides the DEFAULT
+ * and trips the NOT NULL constraint, so saving a product without an alert
+ * failed with a raw Postgres message.
  */
 function normalise(data: ProductInput): ProductInput {
   const packName = data.pack_name?.trim() || null;
@@ -30,6 +35,7 @@ function normalise(data: ProductInput): ProductInput {
     sku: data.sku?.trim() || undefined,
     pack_name: packName,
     pack_size: packName ? data.pack_size : 1,
+    low_stock_threshold: data.low_stock_threshold ?? 0,
   };
 }
 

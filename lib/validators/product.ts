@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { uuidLike } from '@/lib/validators/uuid';
+import { hasPack, isPackWord } from '@/lib/units';
 
 export const productSchema = z
   .object({
@@ -30,6 +31,21 @@ export const productSchema = z
   .refine((d) => d.pack_size === 1 || !!d.pack_name?.trim(), {
     message: 'Name the pack (Box, Packet, Carton…) or leave units per pack at 1',
     path: ['pack_name'],
+  })
+  // "1 Box = 12 Box" is unreadable and makes the pack price ambiguous, but it
+  // saved cleanly until now because both lists offered the same words.
+  .refine(
+    (d) => !d.pack_name?.trim()
+      || d.pack_name.trim().toLowerCase() !== d.unit.trim().toLowerCase(),
+    {
+      message: 'The pack and the unit cannot both be called the same thing',
+      path: ['pack_name'],
+    },
+  )
+  // A pack of cartons means the unit is really the carton's contents.
+  .refine((d) => !hasPack(d.pack_size) || !isPackWord(d.unit), {
+    message: 'Use what is inside the pack here (Piece, Litre, KG), not another container',
+    path: ['unit'],
   });
 
 export type ProductInput = z.infer<typeof productSchema>;
