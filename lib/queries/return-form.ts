@@ -143,7 +143,7 @@ export function useReturnFormData(invoiceId: string) {
         supabase
           .from('invoice_items')
           .select(
-            'id, product_id, quantity, unit_price_paisa, line_total_paisa',
+            'id, product_id, quantity, unit_price_paisa, line_total_paisa, product_name_snapshot, product_sku_snapshot, product_unit_snapshot',
           )
           .eq('invoice_id', invoiceId)
           .order('created_at')
@@ -183,6 +183,9 @@ export function useReturnFormData(invoiceId: string) {
         quantity: number;
         unit_price_paisa: number;
         line_total_paisa: number;
+        product_name_snapshot: string | null;
+        product_sku_snapshot: string | null;
+        product_unit_snapshot: string | null;
       };
       const rawItems = itemsRes.data as unknown as RawItem[];
 
@@ -238,9 +241,11 @@ export function useReturnFormData(invoiceId: string) {
         return {
           invoice_item_id: it.id,
           product_id: it.product_id,
-          product_name: p?.name ?? '—',
-          sku: p?.sku ?? null,
-          unit: p?.unit ?? '',
+          // Snapshot first — a return must describe what the invoice sold, not
+          // what the catalogue happens to call it today.
+          product_name: it.product_name_snapshot ?? p?.name ?? 'Unknown item',
+          sku: it.product_sku_snapshot ?? p?.sku ?? null,
+          unit: it.product_unit_snapshot ?? p?.unit ?? '',
           pack_size: Number(p?.pack_size ?? 1),
           pack_name: p?.pack_name ?? null,
           sold_quantity: sold,
@@ -256,7 +261,7 @@ export function useReturnFormData(invoiceId: string) {
         invoice_id: inv.id,
         invoice_number: inv.invoice_number,
         issue_date: inv.issue_date,
-        customer_name: cust?.name ?? '—',
+        customer_name: cust?.name ?? 'Unknown customer',
         discount_paisa: discountPaisa,
         items,
       } as ReturnFormData;

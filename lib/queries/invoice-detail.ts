@@ -96,7 +96,7 @@ export function useInvoiceDetail(id: string) {
           .single(),
         supabase
           .from('invoice_items')
-          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot')
+          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot, product_name_snapshot, product_sku_snapshot, product_unit_snapshot')
           .eq('invoice_id', id)
           .order('created_at'),
         supabase
@@ -201,15 +201,21 @@ export function useInvoiceDetail(id: string) {
         unit_price_paisa: number;
         discount_paisa: number;
         line_total_paisa: number;
+        product_name_snapshot: string | null;
+        product_sku_snapshot: string | null;
+        product_unit_snapshot: string | null;
       };
       const items = (itemsRes.data as unknown as RawItem[]).map((it) => {
         const p = names.get(it.product_id);
         return {
           id: it.id,
           product_id: it.product_id,
-          product_name: p?.name ?? '—',
-          sku: p?.sku ?? null,
-          unit: p?.unit ?? '',
+          // Snapshot first: it says what was sold, which a rename or a
+          // deletion must not be able to change. The live catalogue is only a
+          // fallback for lines written before 0066.
+          product_name: it.product_name_snapshot ?? p?.name ?? 'Unknown item',
+          sku: it.product_sku_snapshot ?? p?.sku ?? null,
+          unit: it.product_unit_snapshot ?? p?.unit ?? '',
           quantity: Number(it.quantity),
           entered_quantity: it.entered_quantity == null ? null : Number(it.entered_quantity),
           entry_mode: it.entry_mode ?? null,
@@ -233,7 +239,7 @@ export function useInvoiceDetail(id: string) {
         notes: inv.notes,
         created_at: inv.created_at,
         customer_id: inv.customer_id,
-        customer_name: c?.name ?? '—',
+        customer_name: c?.name ?? 'Unknown customer',
         customer_phone: c?.phone ?? null,
         customer_address: c?.address ?? null,
         business_name: b?.name ?? '—',
@@ -260,7 +266,7 @@ export function useInvoiceDetail(id: string) {
             items: rawItems.map((ri) => {
               const p = names.get(ri.product_id);
               return {
-                product_name: p?.name ?? '—',
+                product_name: p?.name ?? 'Unknown item',
                 quantity: Number(ri.quantity),
                 return_price_paisa: Number(ri.return_price_paisa),
                 is_price_overridden: Boolean(ri.is_price_overridden),

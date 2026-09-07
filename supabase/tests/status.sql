@@ -171,6 +171,26 @@ SELECT * FROM (
     (
       '0065  product_identity view',
       to_regclass('public.product_identity') IS NOT NULL
+    ),
+
+    -- ── 0066  invoice lines carry their own name ─────────────
+    (
+      '0066  invoice_items.product_name_snapshot column',
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'invoice_items'
+           AND column_name = 'product_name_snapshot'
+      )
+    ),
+    (
+      '0066  snapshot trigger on invoice_items',
+      EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_invoice_items_snapshot')
+    ),
+    (
+      '0066  every invoice line has a name (guard)',
+      NOT EXISTS (
+        SELECT 1 FROM public.invoice_items WHERE product_name_snapshot IS NULL
+      )
     )
 ) AS t(change, applied)
 ORDER BY change;
