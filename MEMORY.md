@@ -294,6 +294,14 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 24 — 2026-09-07 — invoice line items showed "—" for staff
+- **Cause:** names were resolved by a PostgREST embed through the FK — `invoice_items ... products(name, sku, unit, pack_name)`. That reads the **base** `products` table, whose SELECT is admin/accountant only (cost price). Staff got `null` and the UI fell through to its `'—'` placeholder. Data was fine; the name was unreadable by the viewer.
+- **`products_for_role` is NOT the fix here** — it filters `deleted_at IS NULL`, and an old invoice may name a since-deleted product. An invoice must keep saying what it sold.
+- **0065 adds `product_identity`**: identity columns only (id, business_id, name, sku, unit, pack_size, pack_name, deleted_at), **no money**, so nothing to gate — readable at any role — and it **includes deleted products**. Third view of this shape after `products_for_role` / `stock_purchases_for_role`. The migration raises if a `%price%` column ever appears in it.
+- Same embed, same failure, fixed in three places: invoice line items, returns listed on an invoice, and the Process Return screen (`lib/queries/return-form.ts`).
+- **Still outstanding:** `lib/queries/reports.ts` (purchase report) and `lib/reports/data.ts` embed `products(... purchase_price_paisa)`. RLS correctly withholds it, so no leak — but the report renders nameless for staff. Real question is whether staff should have a cost report at all (Part B opened `/reports/purchase` to them).
+- **Rule of thumb:** never embed `products(...)` through the FK. Pick the projection — `product_identity` for names, `products_for_role` for the catalogue.
+
 ### Session 23 — 2026-09-07 — "staff can't add products"
 - **Not a permissions problem.** Two client-side bugs on the add-product path, neither staff-specific:
   - `ProductForm` (and `CustomerForm`, `SupplierForm`) did `router.push` + `router.refresh()` **without invalidating the query cache** — the pattern CLAUDE.md explicitly forbids. `router.refresh()` re-renders server components; the products list and the **invoice product picker** are client components on the `['products']` TanStack cache with `staleTime: 30_000`. The page you land on renders the pre-save list. `InvoiceForm` had it right; these three did not.
