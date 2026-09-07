@@ -143,7 +143,7 @@ export function useReturnFormData(invoiceId: string) {
         supabase
           .from('invoice_items')
           .select(
-            'id, product_id, quantity, unit_price_paisa, line_total_paisa, products(name, sku, unit, pack_size, pack_name)',
+            'id, product_id, quantity, unit_price_paisa, line_total_paisa',
           )
           .eq('invoice_id', invoiceId)
           .order('created_at')
@@ -183,12 +183,34 @@ export function useReturnFormData(invoiceId: string) {
         quantity: number;
         unit_price_paisa: number;
         line_total_paisa: number;
-        products:
-          | { name: string; sku: string | null; unit: string; pack_size: number; pack_name: string | null }
-          | { name: string; sku: string | null; unit: string; pack_size: number; pack_name: string | null }[]
-          | null;
       };
       const rawItems = itemsRes.data as unknown as RawItem[];
+
+      /**
+       * Names via product_identity rather than an embed through the products
+       * foreign key: that embed reads the base table, which staff may not
+       * SELECT because the cost price is on it, so every line came back
+       * nameless for exactly the people processing returns.
+       */
+      type Identity = {
+        id: string;
+        name: string;
+        sku: string | null;
+        unit: string;
+        pack_size: number;
+        pack_name: string | null;
+      };
+      const names = new Map<string, Identity>();
+      const productIds = Array.from(new Set(rawItems.map((it) => it.product_id)));
+      if (productIds.length > 0) {
+        const { data: idRows, error: idErr } = await supabase
+          .from('product_identity')
+          .select('id, name, sku, unit, pack_size, pack_name')
+          .eq('business_id', activeId!)
+          .in('id', productIds);
+        if (idErr) throw idErr;
+        for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+      }
 
       // The invoice discount is a flat amount off the total, so each line's
       // list price overstates what was paid for it. Spread it before showing
@@ -206,7 +228,7 @@ export function useReturnFormData(invoiceId: string) {
       );
 
       const items = rawItems.map((it) => {
-        const p = Array.isArray(it.products) ? it.products[0] : it.products;
+        const p = names.get(it.product_id);
         const sold = Number(it.quantity);
         const already = returnedMap.get(it.id) ?? 0;
         const eff = effective.get(it.id);

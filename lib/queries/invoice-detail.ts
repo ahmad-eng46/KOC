@@ -96,7 +96,7 @@ export function useInvoiceDetail(id: string) {
           .single(),
         supabase
           .from('invoice_items')
-          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot, products(name, sku, unit, pack_name)')
+          .select('id, product_id, quantity, unit_price_paisa, discount_paisa, line_total_paisa, entered_quantity, entry_mode, pack_size_snapshot')
           .eq('invoice_id', id)
           .order('created_at'),
         supabase
@@ -108,7 +108,7 @@ export function useInvoiceDetail(id: string) {
         supabase
           .from('returns')
           .select(
-            'id, return_number, return_date, total_paisa, return_items(quantity, return_price_paisa, is_price_overridden, override_reason, products(name))',
+            'id, return_number, return_date, total_paisa, return_items(product_id, quantity, return_price_paisa, is_price_overridden, override_reason)',
           )
           .eq('invoice_id', id)
           .is('deleted_at', null)
@@ -120,6 +120,43 @@ export function useInvoiceDetail(id: string) {
       if (itemsRes.error) throw itemsRes.error;
       if (paysRes.error) throw paysRes.error;
       if (returnsRes.error) throw returnsRes.error;
+
+      /**
+       * Names come from product_identity, not from an embed through the
+       * products foreign key. That embed reads the base table, whose SELECT
+       * policy is admin/accountant only because the cost price lives there —
+       * so for staff it returned null and every line rendered as "—".
+       * products_for_role would not do either: it hides deleted rows, and an
+       * old invoice may name a product that has since been deleted.
+       */
+      const productIds = Array.from(
+        new Set<string>([
+          ...(itemsRes.data ?? []).map((it) => String(it.product_id)),
+          ...(returnsRes.data ?? []).flatMap((r) =>
+            ((r.return_items ?? []) as Array<{ product_id: string }>).map((ri) =>
+              String(ri.product_id),
+            ),
+          ),
+        ]),
+      );
+
+      type Identity = {
+        id: string;
+        name: string;
+        sku: string | null;
+        unit: string;
+        pack_name: string | null;
+      };
+      const names = new Map<string, Identity>();
+      if (productIds.length > 0) {
+        const { data: idRows, error: idErr } = await supabase
+          .from('product_identity')
+          .select('id, name, sku, unit, pack_name')
+          .eq('business_id', activeId!)
+          .in('id', productIds);
+        if (idErr) throw idErr;
+        for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+      }
 
       // A missing previous balance must not break the invoice view — the PDF
       // falls back to the simple totals block instead.
@@ -158,13 +195,9 @@ export function useInvoiceDetail(id: string) {
         unit_price_paisa: number;
         discount_paisa: number;
         line_total_paisa: number;
-        products:
-          | { name: string; sku: string | null; unit: string; pack_name: string | null }
-          | { name: string; sku: string | null; unit: string; pack_name: string | null }[]
-          | null;
       };
       const items = (itemsRes.data as unknown as RawItem[]).map((it) => {
-        const p = Array.isArray(it.products) ? it.products[0] : it.products;
+        const p = names.get(it.product_id);
         return {
           id: it.id,
           product_id: it.product_id,
@@ -206,11 +239,11 @@ export function useInvoiceDetail(id: string) {
         })),
         returns: (returnsRes.data ?? []).map((r) => {
           type RawReturnItem = {
+            product_id: string;
             quantity: number;
             return_price_paisa: number;
             is_price_overridden: boolean;
             override_reason: string | null;
-            products: { name: string } | { name: string }[] | null;
           };
           const rawItems = (r.return_items ?? []) as unknown as RawReturnItem[];
           return {
@@ -219,7 +252,7 @@ export function useInvoiceDetail(id: string) {
             return_date: r.return_date as string,
             total_paisa: Number(r.total_paisa),
             items: rawItems.map((ri) => {
-              const p = Array.isArray(ri.products) ? ri.products[0] : ri.products;
+              const p = names.get(ri.product_id);
               return {
                 product_name: p?.name ?? '—',
                 quantity: Number(ri.quantity),
