@@ -208,8 +208,11 @@ export function useReturnFormData(invoiceId: string) {
           .select('id, name, sku, unit, pack_size, pack_name')
           .eq('business_id', activeId!)
           .in('id', productIds);
-        if (idErr) throw idErr;
-        for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+        // Non-fatal for the same reason as the invoice detail: a missing name
+        // must not stop someone processing a return.
+        if (!idErr) {
+          for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+        }
       }
 
       // The invoice discount is a flat amount off the total, so each line's

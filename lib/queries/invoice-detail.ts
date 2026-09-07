@@ -154,8 +154,14 @@ export function useInvoiceDetail(id: string) {
           .select('id, name, sku, unit, pack_name')
           .eq('business_id', activeId!)
           .in('id', productIds);
-        if (idErr) throw idErr;
-        for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+        // Deliberately not thrown. A name is a label; the invoice is money.
+        // If this lookup fails — 0065 not applied yet, a stale PostgREST schema
+        // cache — the lines still show their quantities, rates and totals with
+        // "—" for the name, which is what they did before 0065 anyway. Taking
+        // the whole invoice down over a caption would be the worse trade.
+        if (!idErr) {
+          for (const row of (idRows ?? []) as Identity[]) names.set(row.id, row);
+        }
       }
 
       // A missing previous balance must not break the invoice view — the PDF
