@@ -294,6 +294,15 @@ drqpqjsamguffwkxiilp
 
 ## Session Log
 
+### Session 22 — 2026-09-07 — back button, and why staff lost their Invoices link
+- **Back button** is one component rendered by `AppShell`, replacing 35 hand-written `ChevronLeft` links (none of which had an aria-label or focus state). Destination is the **parent route computed from the path**, never `router.back()` — history back returns to the redirecting page after a redirect and to the filled-in form after a submit. `lib/navigation/parent-route.ts`; six overrides where URL parent ≠ logical parent, four of them because `/settings` is admin-only and staff reach its sub-pages.
+- **No unsaved-changes pattern existed**; `lib/store/unsaved.ts` adds one (Zustand + `beforeunload`), wired into all nine forms.
+- **`user_page_access` was shadowing the role defaults.** `setUserPageAccess()` wrote a row for *every* page on the checklist, not only departures. `resolvePageAccess` reads `override ?? roleDefault`, so any stored value wins over the default **forever** — pressing Save froze that user at that instant.
+  - Consequence: 0061 widened staff access and reached every staff user **except the ones an admin had configured**. The more attention a user had been given, the staler they were. Symptom reported was the missing Invoices sidebar link.
+  - Fixed both halves: saves now delete rather than write when the tick matches the default (`isDeparture()`, unit-tested); 0063 clears rows already stored, conservatively — only where the row agrees with that user's current role default.
+  - **Invoice functionality itself needed no change** — list, create, detail, mark-paid, returns and PDF were already open to staff in code. It was purely this override shadowing.
+- `supabase/tests/diagnose_page_access.sql` prints every layer's vote per page for one user, so the next "why can't they see X" names itself.
+
 ### Session 21 — 2026-08-30 — soft delete fixed, staff opened up, approvals finished
 - **Soft delete never worked, and 0046/0047/0049/0057 do not fix it.** They diagnose a missing `WITH CHECK` on the UPDATE policy. Proved wrong by experiment (`supabase/tests/repro_soft_delete_bug.sql`, PG16): adding the `WITH CHECK` still fails. **Postgres checks the NEW row of an UPDATE against the table's SELECT policies**, and every one of these carries `deleted_at IS NULL`. The decisive experiment swaps the filter to `is_active` and reproduces the identical failure on a table where `deleted_at` is never touched. `users` is the one table whose delete always worked — and the one whose SELECT policy has no `deleted_at` filter.
   - Fix (0060): `soft_delete_entity()` SECURITY DEFINER, so the UPDATE is never measured against a SELECT policy. Dropping `deleted_at IS NULL` from the SELECT policies would also work and would turn every read in the app into one that returns deleted rows.
