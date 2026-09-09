@@ -742,3 +742,306 @@ git push
 ```
 
 This keeps `main` clean and lets you abandon a half-done piece by deleting the branch.
+
+---
+
+## Piece 16: Product & Invoice Improvements (Sep 2026)
+
+> Four independent changes to the product and invoice flows. **Run them in the
+> order below** — Prompt 16.1 settles what a missing sale price means, and
+> 16.2's fallback logic depends on that answer.
+>
+> Each prompt is self-contained and carries the facts already established by
+> investigation, so a fresh session does not re-diagnose from a wrong premise.
+> **Two of the four original bug reports turned out to rest on false premises**
+> — those are corrected inline. Fill in every `[BRACKETED]` decision before
+> pasting.
+
+**Status at time of writing:** `purchase_price_paisa` and `sale_price_paisa` are
+already `NOT NULL DEFAULT 0` (0 nulls / 55 rows). `invoice_items.unit_price_paisa`
+already stores the per-line rate. Migration 0059 already provides the admin
+notification pattern. Migration 0060 fixed soft-delete via a SECURITY DEFINER
+RPC — `0057_soft_delete_with_check.sql` is redundant and should not be applied.
+
+---
+
+### Prompt 16.1 — Purchase price required, sale price optional
+
+```
+# KOC — Make purchase price required and sale price optional
+
+## Facts already verified — do NOT re-investigate these
+- products.purchase_price_paisa and products.sale_price_paisa are ALREADY
+  `BIGINT NOT NULL DEFAULT 0` (supabase/migrations/0006_products.sql lines
+  10-11). ZERO null rows out of 55 total. A NOT NULL migration is NOT needed —
+  do not write one.
+- Any NULL purchase price seen in the app comes from the products_for_role
+  VIEW, which returns NULL for staff/viewer by design (iron rule #3). That is
+  role-gating, not missing data. Do not "fix" it.
+- lib/validators/product.ts currently has exactly the wrong way round:
+    sale_price_paisa:     z.number().int().min(0)               // required
+    purchase_price_paisa: z.number().int().min(0).nullable().optional()
+- Staff HAVE products.create and products.update (lib/auth/permissions.ts:
+  only users.manage, settings.manage, customers.delete and products.delete are
+  withheld). Staff CANNOT see purchase price. So making it required would
+  block staff from creating products at all.
+- lib/actions/product.ts normalise() is the existing place blank values are
+  coerced for storage. Put coercion there, not scattered across call sites.
+
+## Decisions — I choose:
+Staff handling: [A / B / C]
+  A = remove products.create/update from staff; admin + accountant only
+  B = required for admin/accountant; staff-created products save with 0 and
+      are surfaced to an admin to complete            (RECOMMENDED)
+  C = keep optional; only make the label prominent
+Sale price of 0 means: [FREE / NOT SET]
+  If NOT SET: add a migration making sale_price_paisa nullable and treat null
+  as "no sale price" everywhere it is read — products list, invoice product
+  picker, reports, PDFs. Audit those read sites BEFORE changing anything.
+
+## Work
+1. lib/validators/product.ts — swap required/optional. Reject negatives and
+   non-numeric for both. Keep the existing pack refinements intact.
+2. components/products/ProductForm.tsx — labels must make the required field
+   obvious. The form already appends "per {unit}" / "per {pack}" from the
+   pack-pricing work; preserve that wording.
+3. lib/actions/product.ts — enforce server-side. Client validation is UX only.
+4. Only if NOT SET was chosen: one migration, numbered after 0066.
+
+## Must not
+- Expose purchase price to staff/viewer anywhere — including error messages,
+  form defaults and validation feedback.
+- Introduce float math anywhere near money.
+- Touch invoice or stock code.
+
+## Verify — show actual output, not a claim
+As ADMIN:
+  - Save a product with NO sale price -> succeeds; show the stored row.
+  - Blank purchase price -> rejected with a clear message.
+  - A negative value and "abc" -> both rejected.
+  - Open it in the products list and the invoice product picker; a missing
+    sale price must render sensibly (not "Rs. 0.00" if NOT SET was chosen).
+As STAFF:
+  - Product creation behaves per the chosen option.
+  - Inspect the network response: purchase_price_paisa absent or null, never
+    a real number.
+Then: npx tsc --noEmit, npx eslint, npx vitest run, npx next build.
+
+## Report back
+What changed, which migration to run (if any), how to test as each role.
+Follow the conventions in CLAUDE.md.
+```
+
+---
+
+### Prompt 16.2 — Last sold rate when billing
+
+```
+# KOC — Show and pre-fill the last actually-sold rate on invoice lines
+
+## Facts already verified — do NOT re-investigate these
+- components/invoices/InvoiceForm.tsx ALREADY has a per-line editable rate
+  (`rate_input`, a string, parsed by parseRateInput from lib/invoice.ts). The
+  override ALREADY applies to that line only and never writes back to the
+  product master — there is a comment saying so at ~line 38. Both properties
+  must survive this change.
+- The final rate is ALREADY persisted on invoice_items.unit_price_paisa
+  (BIGINT NOT NULL, supabase/migrations/0008_invoices.sql). No migration is
+  needed to store the rate.
+- At ~line 199, selecting a product pre-fills:
+      rate_input: formatRateInput(p?.sale_price_paisa ?? 0)
+  That is the single line to change.
+- resetRate() at ~line 212 does the same thing. Update it consistently so
+  "reset" restores the same source the pre-fill used.
+- Index idx_invoice_items_product_id already exists, so a batched lookup over
+  many products is cheap.
+- Migration 0066 added product_name_snapshot / sku / unit to invoice_items
+  because a rename or soft delete makes joining products the wrong answer.
+  Follow that philosophy: read what was actually sold.
+- `canEditRate` comes from app/(app)/invoices/new/page.tsx and resolves to
+  currentUserCan('invoices.create'), so staff can edit rates today.
+
+## Decision — I choose: [GLOBAL / PER CUSTOMER]
+  GLOBAL       = last rate this product sold at, to anyone
+  PER CUSTOMER = last rate sold to THIS invoice's customer, falling back to
+                 the global last rate       (RECOMMENDED — otherwise a one-off
+                 discount to one buyer silently becomes everyone's default)
+
+## Work
+1. ONE batched query returning last sold rate + date for every product on the
+   invoice. One round trip for the whole invoice — never one query per line.
+   Exclude soft-deleted, draft and cancelled invoices from "last sold".
+2. Helper text beside the rate input:
+       Last sold: Rs. 13,000.00 on 07 Sep 2026
+   Money via formatPKR; dates in Asia/Karachi (iron rule #8).
+3. Pre-fill precedence: last sold -> product sale price -> empty.
+4. If it ends up empty the rate is REQUIRED before the line can be added.
+   Surface it through the existing rateErrors mechanism, not a new one.
+5. Re-fetch when the customer changes, if PER CUSTOMER was chosen.
+
+## Must not
+- Write the overridden rate back to products.sale_price_paisa.
+- Run a query per line item.
+- Leak purchase price into anything staff can see.
+- Change how totals are computed — computeInvoiceTotals stays the authority
+  and the server recomputes on save.
+
+## Verify — show actual output
+- Previously sold product: helper text and pre-fill match the most recent
+  invoice_item. Query the DB and compare side by side.
+- Never-sold product WITH a sale price: falls back to it.
+- Never-sold product with NO sale price: empty, and the line cannot be added.
+- Override a rate, save, then SELECT the product row and prove
+  sale_price_paisa is unchanged.
+- Prove batching: for a 5-line invoice show ONE query, not five.
+- A soft-deleted product that was previously sold must not crash anything.
+- Check at 375px width (iron rule #9).
+Then: npx tsc --noEmit, npx eslint, npx vitest run, npx next build.
+
+## Report back
+What changed, any migration, how to test as staff and as admin.
+Follow the conventions in CLAUDE.md.
+```
+
+---
+
+### Prompt 16.3 — Notify admin on sale rate override
+
+```
+# KOC — Log rate overrides by staff for admin visibility
+
+## Facts already verified — do NOT build a second notification system
+- supabase/migrations/0059_staff_activity_notifications.sql ALREADY built this
+  pattern:
+    * view public.staff_activity_notifications over activity_log
+    * table public.notification_reads — per-admin, per-business high-water
+      read marker
+  Its own design note says "a notice, not an approval queue". Reuse it.
+- That view ALREADY filters `AND u.role <> 'admin'`, so "admin overrides are
+  not logged" comes for free. Do not add extra logic for it.
+- The view carries an action whitelist:
+    'product.created', 'product.updated', 'invoice.created',
+    'payment.recorded', 'stock.purchased', 'return.processed'
+  Adding an action means adding it to that IN list — a small migration
+  numbered after 0066. The view must be dropped and recreated.
+- activity_log.metadata is JSONB — put the numbers there.
+- logActivity() in lib/actions/activity-log.ts is the existing writer.
+- deletion_requests (0054) is the ONLY approval queue in this app and must
+  stay that way. This feature blocks and gates nothing.
+
+## Work
+1. On invoice save, compare each line's entered rate against the suggested
+   rate from 16.2. Beyond the tolerance below, write an activity_log entry
+   with action 'invoice.rate_overridden' and metadata containing:
+     invoice_id, invoice_number, product_id, product name,
+     suggested_rate_paisa, entered_rate_paisa, difference_paisa,
+     difference_percent, actor user id, timestamp
+   Decide and justify one entry per line vs one per invoice listing lines.
+2. Migration: add 'invoice.rate_overridden' to the view's action whitelist.
+3. Surface it on the EXISTING notifications screen that reads
+   staff_activity_notifications. Money via formatPKR, show the percentage.
+   Do not build a new page.
+4. Tolerance: log only when the difference is >= 1%. Pack-price division
+   produces sub-rupee rounding (Rs. 1,000.08 vs Rs. 1,000.00) that would
+   otherwise flood the log. Keep the threshold in ONE named constant.
+5. Below-cost flag: separately mark lines where the entered rate is below
+   purchase price. COMPUTE SERVER-SIDE ONLY — staff cannot read purchase
+   price, so the browser physically cannot make this comparison. Use the
+   invoice_items.purchase_price_at_sale_paisa snapshot already taken.
+
+## Must not
+- Block or delay saving the invoice.
+- Require approval.
+- Log admin overrides.
+- Return purchase price to a staff client in any payload, including the
+  notification feed if a staff user could ever reach it.
+
+## Verify — show actual output
+As STAFF:
+  - Override by 10%: invoice saves unblocked; one activity_log row with the
+    correct difference and percentage.
+  - Override by 0.5%: NOTHING logged.
+  - Sell below purchase price: loss flag set.
+  - Inspect every network response in the invoice flow: no purchase price.
+As ADMIN:
+  - Override a rate: NOTHING logged.
+  - Notifications screen renders staff entries and the unread marker still
+    works via notification_reads.
+Then: npx tsc --noEmit, npx eslint, npx vitest run, npx next build.
+
+## Report back
+What changed, the migration to run, how to test as staff and as admin.
+Follow the conventions in CLAUDE.md.
+```
+
+---
+
+### Prompt 16.4 — Opening stock on product create
+
+```
+# KOC — Add an optional opening stock quantity to Add Product
+
+## The original bug report was based on a WRONG premise
+## Do NOT go looking for a broken quantity field.
+- There is NO quantity field on the Add Product form. Its fields are: Name,
+  Brand, SKU, Unit, Pack Name, Units per Pack, Sale Price, Purchase Price,
+  Low Stock Alert, Active. "Low Stock Alert" is the ALERT THRESHOLD
+  (low_stock_threshold), not a quantity — most likely what was mistaken
+  for one.
+- Stock is NOT a column on products. public.current_stock
+  (supabase/migrations/0007_stock.sql) is a VIEW that SUMs stock_movements:
+  'in' and 'return' add, 'out' subtracts, 'adjustment' adds signed.
+- Nothing is silently dropped on insert, and there are NO missing stock rows
+  to backfill. A product with no movements is simply absent from the view and
+  lib/queries/products.ts maps that absence to quantity_on_hand: 0. Verified
+  count of products missing stock rows: 0.
+- components/stock/AddStockModal.tsx is the existing way stock is added.
+  Match its semantics; do not invent a parallel path.
+- stock_movements has NO cost column. Purchase cost lives on stock_purchases
+  (unit_price_paisa, purchase_date), linked by stock_movements
+  .stock_purchase_id, added in 0040.
+- Pack support exists: products.pack_size / pack_name, with lib/units.ts
+  converting pack quantities to base units. Stock is ALWAYS stored in base
+  units.
+
+This is a NEW FEATURE, not a bug fix. Say so in the commit message.
+
+## Work
+1. Optional "Opening stock" field on the Add Product form ONLY. Do NOT add it
+   to the edit form — existing stock is a ledger and is corrected with a new
+   movement, never by editing a starting number.
+2. On successful create, write exactly ONE stock_movements row, type 'in',
+   quantity converted to BASE UNITS (honour pack size if entered by pack),
+   with a note identifying it as opening stock.
+3. Valuation: value it at the purchase price entered on the same form so COGS
+   and stock valuation stay correct. Decide and justify whether a
+   stock_purchases row is also needed — if not, explain how the purchase
+   report will treat it, since that report reads cost from stock_purchases.
+4. Blank field = NO movement row at all. Not a zero-quantity row.
+5. Reject negative and non-numeric quantities, server-side too.
+6. Atomicity: if the product is created but the movement fails, do NOT report
+   success. Either use a transaction/RPC, or report the partial outcome
+   honestly and say what state the data is in.
+
+## Must not
+- Add a quantity column to products.
+- Change how current_stock is computed.
+- Touch the edit form.
+
+## Verify — show actual output
+- Opening stock 10: query stock_movements and show exactly ONE row; /stock
+  and the products list both read 10.
+- Blank field: ZERO stock_movements rows.
+- Packed product (1 Carton = 24), entering 2 Cartons: stored quantity is 48
+  base units, not 2.
+- -5 and "abc": both rejected, server-side too.
+- Stock report values it at the entered purchase price; state what the
+  purchase report shows for it.
+- As STAFF: the flow works (staff have stock.update).
+- Check at 375px width (iron rule #9).
+Then: npx tsc --noEmit, npx eslint, npx vitest run, npx next build.
+
+## Report back
+What changed, any migration, how to test as staff and as admin.
+Follow the conventions in CLAUDE.md.
+```
