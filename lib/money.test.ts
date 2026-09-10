@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { formatPKR, parsePKR, rupeesToPaisa, paisaToRupees, applyDiscount, applyDiscountPercent } from './money';
+import {
+  formatPKR, parsePKR, parseMoneyInput, rupeesToPaisa, paisaToRupees,
+  applyDiscount, applyDiscountPercent,
+} from './money';
 
 describe('formatPKR — Pakistani (lakh/crore) grouping', () => {
   it('formats 0 paisa', () => expect(formatPKR(0)).toBe('Rs. 0.00'));
@@ -67,4 +70,33 @@ describe('applyDiscount', () => {
 describe('applyDiscountPercent', () => {
   it('applies 10%', () => expect(applyDiscountPercent(10000, 10)).toBe(9000));
   it('applies 0%', () => expect(applyDiscountPercent(10000, 0)).toBe(10000));
+});
+
+describe('parseMoneyInput — strict, for form fields', () => {
+  it('parses plain and grouped rupees to paisa', () => {
+    expect(parseMoneyInput('250')).toBe(25_000);
+    expect(parseMoneyInput('9,600.00')).toBe(960_000);
+    expect(parseMoneyInput('  1,50,000.50 ')).toBe(15_000_050);
+  });
+
+  it('treats blank as zero, meaning "not set"', () => {
+    expect(parseMoneyInput('')).toBe(0);
+    expect(parseMoneyInput('   ')).toBe(0);
+  });
+
+  it('returns NaN for text that is not a number, instead of 0', () => {
+    expect(parseMoneyInput('abc')).toBeNaN();
+    expect(parseMoneyInput('12abc')).toBeNaN();
+    expect(parseMoneyInput('1.2.3')).toBeNaN();
+    expect(parseMoneyInput('Rs. 500')).toBeNaN();
+  });
+
+  it('keeps a typed minus sign negative, instead of dropping it', () => {
+    expect(parseMoneyInput('-5')).toBe(-500);
+    expect(parseMoneyInput('-1,200.50')).toBe(-120_050);
+  });
+
+  it('always returns whole paisa', () => {
+    expect(Number.isInteger(parseMoneyInput('12.345'))).toBe(true);
+  });
 });

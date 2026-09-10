@@ -49,6 +49,28 @@ export function parsePKR(input: string): Money {
   return rupeesToPaisa(val);
 }
 
+/**
+ * Parse what someone typed into a money box, reporting bad input instead of
+ * absorbing it.
+ *
+ * parsePKR above is deliberately forgiving — it pulls the first number-like
+ * run out of "Rs. 500.50" — which makes it the wrong tool for a form field:
+ * it reads "abc" as 0 and "-5" as 5, so a typo and a negative both save
+ * silently as a plausible number. This returns NaN for text that is not a
+ * number and a negative for a typed minus sign, letting the zod schema reject
+ * each with the right message.
+ *
+ * Blank is 0, not NaN: an empty box means "not set", which callers distinguish
+ * before calling.
+ */
+export function parseMoneyInput(text: string): Money {
+  const trimmed = text.trim();
+  if (trimmed === '') return 0;
+  if (!/^-?[\d,]*\.?\d*$/.test(trimmed)) return NaN;
+  const value = Number(trimmed.replace(/,/g, ''));
+  return Number.isFinite(value) ? Math.round(value * 100) : NaN;
+}
+
 export function sumMoney(items: Money[]): Money {
   return items.reduce((a, b) => a + b, 0);
 }

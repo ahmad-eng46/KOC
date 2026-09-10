@@ -3,6 +3,8 @@ import { requireRole } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { createServerClient } from '@/lib/supabase/server';
+import { salePriceIsUnset } from '@/lib/validators/product';
+import { formatPKR } from '@/lib/money';
 import { getActiveBusinessId } from '@/lib/business';
 import { ProductForm } from '@/components/products/ProductForm';
 import { ProductPurchaseHistory } from '@/components/products/ProductPurchaseHistory';
@@ -92,7 +94,9 @@ function ProductReadView({
     { label: 'Unit', value: product.unit },
     {
       label: 'Sale Price',
-      value: `Rs. ${(product.sale_price_paisa / 100).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`,
+      value: salePriceIsUnset(product.sale_price_paisa)
+        ? 'Not set'
+        : formatPKR(product.sale_price_paisa),
     },
     ...(canSeePurchasePrice && product.purchase_price_paisa != null
       ? [

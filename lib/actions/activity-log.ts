@@ -7,6 +7,7 @@ import { getActiveBusinessId } from '@/lib/business';
 
 export type ActivityAction =
   | 'invoice.created' | 'invoice.deleted' | 'invoice.marked_paid'
+  | 'invoice.rate_overridden'
   | 'payment.recorded'
   | 'product.created' | 'product.updated'
   | 'customer.created' | 'customer.updated'

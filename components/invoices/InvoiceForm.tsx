@@ -1,11 +1,14 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, X, CheckCircle2 } from 'lucide-react';
 import { useCustomersWithBalance } from '@/lib/queries/customers-balance';
 import { useProducts, type Product } from '@/lib/queries/products';
+import { useLastSoldRates, type LastSold } from '@/lib/queries/last-sold';
+import { salePriceIsUnset } from '@/lib/validators/product';
+import { formatKarachi } from '@/lib/date';
 import { useBusinessStore } from '@/lib/store/business';
 import { formatPKR, rupeesToPaisa } from '@/lib/money';
 import { computeInvoiceTotals, parseRateInput, formatRateInput } from '@/lib/invoice';
@@ -93,6 +96,35 @@ export function InvoiceForm({ canEditRate }: Props) {
   }, [paymentInput]);
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /**
+   * One lookup for the whole invoice. The ids come from the lines, so adding a
+   * line refetches once rather than once per line, and the hook keys on the
+   * sorted id list so re-ordering lines changes nothing.
+   */
+  const lineProductIds = useMemo(
+    () => items.map((it) => it.product_id).filter((id): id is string => !!id),
+    [items],
+  );
+  const { data: lastSold } = useLastSoldRates(lineProductIds, customerId);
+
+  /**
+   * What the rate box should start at: what it last sold for, else the
+   * product's own price, else nothing. An empty box is deliberate — a product
+   * that has never sold and carries no price has no rate anyone can stand
+   * behind, so it is asked for rather than guessed at.
+   */
+  const suggestedRatePaisa = useCallback(
+    (productId: string | null): number | null => {
+      if (!productId) return null;
+      const sold = lastSold?.get(productId);
+      if (sold) return sold.unitPricePaisa;
+      const p = productById.get(productId);
+      if (p && !salePriceIsUnset(p.sale_price_paisa)) return p.sale_price_paisa;
+      return null;
+    },
+    [lastSold, productById],
+  );
 
   /**
    * The line items in stock units. A pack entry of 2 on a box of 12 becomes 24
@@ -194,9 +226,10 @@ export function InvoiceForm({ canEditRate }: Props) {
       return;
     }
     const p = products.find((x) => x.id === productId);
+    const suggested = suggestedRatePaisa(productId);
     updateItem(key, {
       product_id: productId,
-      rate_input: formatRateInput(p?.sale_price_paisa ?? 0),
+      rate_input: suggested === null ? '' : formatRateInput(suggested),
       entry_mode: p && hasPack(p) ? 'pack' : 'unit',
     });
   }
@@ -208,10 +241,14 @@ export function InvoiceForm({ canEditRate }: Props) {
     updateItem(key, { rate_input: value });
   }
 
-  /** Back to the product's own price, for when an override was a mistake. */
+  /**
+   * Back to the suggested rate, for when an override was a mistake. Resets to
+   * whatever the box was pre-filled with, not to the master price — otherwise
+   * "reset" would put back a number the line never showed.
+   */
   function resetRate(key: string, productId: string | null) {
-    const p = productId ? productById.get(productId) : undefined;
-    updateItem(key, { rate_input: formatRateInput(p?.sale_price_paisa ?? 0) });
+    const suggested = suggestedRatePaisa(productId);
+    updateItem(key, { rate_input: suggested === null ? '' : formatRateInput(suggested) });
   }
 
   function changeDiscountType(type: DiscountType) {
@@ -327,6 +364,8 @@ export function InvoiceForm({ canEditRate }: Props) {
             rateError={rateErrors.get(item.key) ?? null}
             onChangeMode={(mode) => updateItem(item.key, { entry_mode: mode })}
             lineTotalPaisa={totals.line_totals_paisa[idx] ?? 0}
+            suggestedRatePaisa={suggestedRatePaisa(item.product_id)}
+            lastSold={(item.product_id && lastSold?.get(item.product_id)) || null}
           />
         ))}
 
@@ -515,6 +554,10 @@ type ItemRowProps = {
   onChangeMode: (mode: EntryMode) => void;
   rateError: string | null;
   lineTotalPaisa: number;
+  /** What the box was pre-filled with; null when nothing could be suggested. */
+  suggestedRatePaisa: number | null;
+  /** The sale the suggestion came from, when it came from one. */
+  lastSold: LastSold | null;
 };
 
 function ItemRowCard({
@@ -531,6 +574,8 @@ function ItemRowCard({
   onChangeMode,
   rateError,
   lineTotalPaisa,
+  suggestedRatePaisa,
+  lastSold,
 }: ItemRowProps) {
   const product = item.product_id ? products.find((p) => p.id === item.product_id) : undefined;
   const packed = !!product && hasPack(product);
@@ -538,12 +583,15 @@ function ItemRowCard({
     ? conversionHint(item.quantity, item.entry_mode, product)
     : null;
 
-  // The product's own price, only so the row can say when this line departs
-  // from it. Nothing here writes back to the product.
-  const listRatePaisa = product?.sale_price_paisa ?? null;
+  // Compared against what the box was pre-filled with, not the master price:
+  // "Was ..." should name the number this line actually started from. Nothing
+  // here writes back to the product.
   const parsedRate = parseRateInput(item.rate_input);
   const isOverridden =
-    !!product && parsedRate.ok && listRatePaisa !== null && parsedRate.paisa !== listRatePaisa;
+    !!product
+    && parsedRate.ok
+    && suggestedRatePaisa !== null
+    && parsedRate.paisa !== suggestedRatePaisa;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 relative">
@@ -620,10 +668,22 @@ function ItemRowCard({
                 : 'Auto-filled from the product.'
             }
           />
+          {lastSold && (
+            <p className="mt-1 text-xs text-gray-500">
+              Last sold: {formatPKR(lastSold.unitPricePaisa)} on{' '}
+              {formatKarachi(lastSold.soldOn)}
+              {lastSold.forThisCustomer ? ' to this customer' : ''}
+            </p>
+          )}
+          {!lastSold && item.product_id && suggestedRatePaisa === null && (
+            <p className="mt-1 text-xs text-amber-700">
+              Never sold and no sale price — enter a rate.
+            </p>
+          )}
           {rateError && <p className="mt-1 text-xs text-red-600">{rateError}</p>}
           {!rateError && isOverridden && (
             <p className="mt-1 text-xs text-amber-700">
-              Was {formatPKR(listRatePaisa!, { showSymbol: false })}
+              Was {formatPKR(suggestedRatePaisa!, { showSymbol: false })}
               <button
                 type="button"
                 onClick={onResetRate}

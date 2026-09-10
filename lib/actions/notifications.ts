@@ -19,6 +19,8 @@ export type StaffNotification = {
   description: string;
   created_at: string;
   is_unread: boolean;
+  /** Action-specific detail. Rate overrides carry below_cost here. */
+  metadata: Record<string, unknown> | null;
 };
 
 export type NotificationFeed = {
@@ -51,7 +53,7 @@ export async function getStaffNotifications(): Promise<NotificationFeed> {
     supabase
       .from('staff_activity_notifications')
       .select(
-        'id, actor_id, actor_name, actor_role, action, entity_type, entity_id, description, created_at',
+        'id, actor_id, actor_name, actor_role, action, entity_type, entity_id, description, created_at, metadata',
       )
       .eq('business_id', businessId)
       .order('created_at', { ascending: false })

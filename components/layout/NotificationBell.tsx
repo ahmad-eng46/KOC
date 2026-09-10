@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Bell, PackagePlus, Pencil, FileText, Wallet, Truck, Undo2 } from 'lucide-react';
+import {
+  Bell, PackagePlus, Pencil, FileText, Wallet, Truck, Undo2, TrendingDown,
+  AlertTriangle,
+} from 'lucide-react';
 import { useStaffNotifications, useMarkNotificationsSeen } from '@/lib/queries/notifications';
 import { relativeTime, activityHref, userColor } from '@/lib/activity-display';
 import type { StaffNotification } from '@/lib/actions/notifications';
@@ -15,6 +18,7 @@ const ACTION_META: Record<string, { icon: typeof Bell; verb: string }> = {
   'payment.recorded': { icon: Wallet, verb: 'recorded a payment' },
   'stock.purchased': { icon: Truck, verb: 'recorded a stock purchase' },
   'return.processed': { icon: Undo2, verb: 'processed a return' },
+  'invoice.rate_overridden': { icon: TrendingDown, verb: 'changed a sale rate' },
 };
 
 export function NotificationBell() {
@@ -131,6 +135,12 @@ function NotificationRow({
           {meta?.verb ?? n.action.replace('.', ' ')}
         </p>
         <p className="text-xs text-gray-600 mt-0.5 break-words">{n.description}</p>
+        {n.metadata?.below_cost === true && (
+          <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-red-50 border border-red-200 px-1.5 py-0.5 text-[11px] font-medium text-red-700">
+            <AlertTriangle size={11} />
+            Sold below cost
+          </p>
+        )}
         <p className="text-xs text-gray-400 mt-1">{relativeTime(n.created_at)}</p>
       </div>
       {n.is_unread && (

@@ -5,9 +5,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { productSchema, type ProductInput } from '@/lib/validators/product';
+import {
+  productSchemaFor, salePriceIsUnset, type ProductInput,
+} from '@/lib/validators/product';
 import { createProduct, updateProduct } from '@/lib/actions/product';
-import { formatPKR, parsePKR } from '@/lib/money';
+import { formatPKR, parseMoneyInput } from '@/lib/money';
 import { type Product } from '@/lib/queries/products';
 import { packPreview } from '@/lib/pack';
 import {
@@ -39,7 +41,9 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
     setValue,
     formState: { errors, isSubmitting, isDirty },
   } = useForm({
-    resolver: zodResolver(productSchema),
+    // Same rule the server will apply: purchase price is required of
+    // whoever can actually see the field.
+    resolver: zodResolver(productSchemaFor(canSeePurchasePrice)),
     defaultValues: product
       ? {
           name: product.name,
@@ -81,6 +85,18 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
    * so an existing product opens reading the way it is stored.
    */
   const [priceMode, setPriceMode] = useState<PriceMode>('unit');
+
+  /**
+   * Opening stock, on the create form only. Editing a product must not offer
+   * it: stock is a ledger, and a correction is a new movement rather than a
+   * changed starting number.
+   */
+  const [openingText, setOpeningText] = useState('');
+  const [openingMode, setOpeningMode] = useState<PriceMode>('unit');
+  const openingTyped = Number(openingText.replace(/,/g, ''));
+  const openingUnits = Number.isFinite(openingTyped) && openingTyped > 0
+    ? (openingMode === 'pack' && packed ? openingTyped * size : openingTyped)
+    : 0;
   const perPack = packed && priceMode === 'pack';
 
   /**
@@ -89,7 +105,9 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
    * because it must survive a half-typed "12." that parses to nothing yet.
    */
   const [saleText, setSaleText] = useState(() =>
-    product ? formatPKR(product.sale_price_paisa, { showSymbol: false }) : '');
+    product && !salePriceIsUnset(product.sale_price_paisa)
+      ? formatPKR(product.sale_price_paisa, { showSymbol: false })
+      : '');
   const [costText, setCostText] = useState(() =>
     product?.purchase_price_paisa != null
       ? formatPKR(product.purchase_price_paisa, { showSymbol: false })
@@ -97,12 +115,16 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
 
   /**
    * Rupees typed in the current mode -> the per-unit paisa that gets stored.
-   * parsePKR, not parseFloat: these boxes are refilled with grouped text like
-   * "9,600.00" when the mode changes, and parseFloat stops at the comma and
-   * reads that as 9.
+   *
+   * parseMoneyInput rather than parseFloat or parsePKR: these boxes are
+   * refilled with grouped text like "9,600.00" when the mode changes, which
+   * parseFloat truncates at the comma; and parsePKR would quietly read "abc"
+   * as 0 and "-5" as 5. NaN and negatives are passed straight through to the
+   * schema so it can reject them by name.
    */
   function toUnitPaisa(text: string): number {
-    const paisa = parsePKR(text);
+    const paisa = parseMoneyInput(text);
+    if (!Number.isFinite(paisa)) return NaN;
     return perPack ? packPriceToUnitPrice(paisa, size).unitPaisa : paisa;
   }
 
@@ -128,9 +150,9 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
    * multiplies up from the per-unit figure, so the difference is shown before
    * saving rather than discovered in a total afterwards.
    */
-  const saleSplit = perPack ? packPriceToUnitPrice(parsePKR(saleText), size) : null;
+  const saleSplit = perPack ? packPriceToUnitPrice(parseMoneyInput(saleText) || 0, size) : null;
   const costSplit = perPack && costText.trim() !== ''
-    ? packPriceToUnitPrice(parsePKR(costText), size)
+    ? packPriceToUnitPrice(parseMoneyInput(costText) || 0, size)
     : null;
   const inexact = (saleSplit && !saleSplit.exact) || (costSplit && !costSplit.exact);
 
@@ -152,10 +174,16 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
     try {
       const result = product
         ? await updateProduct(product.id, values)
-        : await createProduct(values);
+        : await createProduct(values, openingUnits || null);
 
       if (!result.ok) {
         setServerError(result.error);
+        return;
+      }
+      if (result.warning) {
+        // Saved, but not entirely. Staying put is better than navigating away
+        // from a message the user needs to act on.
+        setServerError(result.warning);
         return;
       }
       // The products list and the invoice product picker both read the
@@ -325,7 +353,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field
-          label={`Sale Price (Rs.) per ${perPack ? packLabel : unitLabel} *`}
+          label={`Sale Price (Rs.) per ${perPack ? packLabel : unitLabel}`}
           error={errors.sale_price_paisa?.message}
         >
           <input
@@ -336,6 +364,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             value={saleText}
             onChange={(e) => {
               setSaleText(e.target.value);
+              // Blank is allowed and stores 0, which reads back as "not set".
               setValue('sale_price_paisa', toUnitPaisa(e.target.value), {
                 shouldDirty: true, shouldValidate: true,
               });
@@ -345,7 +374,7 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
 
         {canSeePurchasePrice && (
           <Field
-            label={`Purchase Price (Rs.) per ${perPack ? packLabel : unitLabel}`}
+            label={`Purchase Price (Rs.) per ${perPack ? packLabel : unitLabel} *`}
             error={errors.purchase_price_paisa?.message}
           >
             <input
@@ -397,6 +426,39 @@ export function ProductForm({ product, canSeePurchasePrice }: Props) {
             </p>
           )}
         </div>
+      )}
+
+      {!product && (
+        <Field
+          label={`Opening Stock (${openingMode === 'pack' && packed ? packLabel : unitLabel})`}
+        >
+          <div className="flex gap-2">
+            <input
+              name="opening_stock"
+              className={inputCls(false)}
+              placeholder="0"
+              inputMode="decimal"
+              value={openingText}
+              onChange={(e) => setOpeningText(e.target.value)}
+            />
+            {packed && (
+              <select
+                aria-label="Opening stock entered in"
+                value={openingMode}
+                onChange={(e) => setOpeningMode(e.target.value as PriceMode)}
+                className="h-11 px-2 rounded-xl border border-gray-300 bg-white text-sm text-gray-700 shrink-0"
+              >
+                <option value="unit">{unitLabel}</option>
+                <option value="pack">{packLabel}</option>
+              </select>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {openingUnits > 0
+              ? `Records ${openingUnits} ${unitLabel} as stock in.`
+              : 'Leave blank if there is none on the shelf yet.'}
+          </p>
+        </Field>
       )}
 
       <Field

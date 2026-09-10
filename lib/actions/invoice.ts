@@ -10,6 +10,10 @@ import { currentUserCan } from '@/lib/auth/can-user';
 import { invoiceCreateSchema, type InvoiceCreateInput } from '@/lib/validators/invoice';
 import { computeInvoiceTotals } from '@/lib/invoice';
 import { findStockShortages, formatShortageError } from '@/lib/stock';
+import { salePriceIsUnset } from '@/lib/validators/product';
+import {
+  findRateOverrides, describeOverride, type RateOverrideCandidate,
+} from '@/lib/rate-override';
 
 export type CreateInvoiceResult =
   | { ok: true; id: string }
@@ -76,6 +80,18 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
     return { ok: false, error: formatShortageError(shortages) };
   }
 
+  /**
+   * What the form would have suggested, recomputed here rather than taken from
+   * the request. A rate the browser claims it was offered is not evidence of
+   * anything (iron rule #7).
+   *
+   * Read before the invoice is written, so this sale cannot become its own
+   * "last sold" answer.
+   */
+  const suggestedByProduct = await suggestedRates(
+    supabase, productIds, data.customer_id,
+  );
+
   // 6. Atomic creation via RPC
   const rpcInput = {
     business_id: businessId,
@@ -134,9 +150,133 @@ export async function createInvoice(input: InvoiceCreateInput): Promise<CreateIn
     },
   });
 
+  await logRateOverrides({
+    supabase,
+    invoiceId: invoiceId as string,
+    invoiceItems: data.items,
+    suggestedByProduct,
+    productNames,
+    actorRole: session.role,
+    customerName,
+  });
+
   revalidatePath('/invoices');
   revalidatePath('/stock');
   revalidatePath('/products');
 
   return { ok: true, id: invoiceId as string };
+}
+
+type Db = Awaited<ReturnType<typeof createServerClient>>;
+
+/**
+ * The rate the form would have pre-filled for each product: what it last sold
+ * for, else the product's own price, else nothing.
+ *
+ * Mirrors useLastSoldRates on the client deliberately — if the two disagree,
+ * every line looks like an override. Falls back to the sale price when 0067 is
+ * not applied, which is exactly what the form does in that case too.
+ */
+async function suggestedRates(
+  supabase: Db,
+  productIds: string[],
+  customerId: string,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+
+  const { data: products } = await supabase
+    .from('products_for_role')
+    .select('id, sale_price_paisa')
+    .in('id', productIds);
+
+  for (const p of (products ?? []) as { id: string; sale_price_paisa: number }[]) {
+    if (!salePriceIsUnset(p.sale_price_paisa)) out.set(p.id, Number(p.sale_price_paisa));
+  }
+
+  const { data: sold, error } = await supabase.rpc('last_sold_rates', {
+    p_product_ids: productIds,
+    p_customer_id: customerId,
+  });
+
+  // 0067 may not be applied; the sale price fallback above still stands.
+  if (!error) {
+    for (const row of (sold ?? []) as { product_id: string; unit_price_paisa: number }[]) {
+      out.set(row.product_id, Number(row.unit_price_paisa));
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Record lines billed at something other than the suggested rate.
+ *
+ * Notify only: this runs after the invoice is safely created and its failure
+ * must never fail the sale. Admin overrides are not recorded — the admin sets
+ * the prices, so their departing from one is not news.
+ */
+async function logRateOverrides(args: {
+  supabase: Db;
+  invoiceId: string;
+  invoiceItems: { product_id: string; unit_price_paisa: number }[];
+  suggestedByProduct: Map<string, number>;
+  productNames: Map<string, string>;
+  actorRole: string;
+  customerName: string;
+}): Promise<void> {
+  const {
+    supabase, invoiceId, invoiceItems, suggestedByProduct,
+    productNames, actorRole, customerName,
+  } = args;
+
+  // The admin sets the prices; their departing from one is not news. The view
+  // in 0068 filters admins out too, so this is belt and braces.
+  if (actorRole === 'admin') return;
+
+  try {
+    // The cost snapshot the RPC took, which is the only cost figure available
+    // here: products_for_role returns NULL to the staff session that is running
+    // this code. Used to set a boolean and never returned to the client.
+    const { data: rows } = await supabase
+      .from('invoice_items')
+      .select('product_id, purchase_price_at_sale_paisa')
+      .eq('invoice_id', invoiceId);
+
+    const costByProduct = new Map<string, number>(
+      (rows ?? []).map((r: { product_id: string; purchase_price_at_sale_paisa: number }) =>
+        [r.product_id, Number(r.purchase_price_at_sale_paisa)]),
+    );
+
+    const candidates: RateOverrideCandidate[] = invoiceItems.map((it) => ({
+      productId: it.product_id,
+      productName: productNames.get(it.product_id) ?? 'a product',
+      suggestedPaisa: suggestedByProduct.get(it.product_id) ?? null,
+      enteredPaisa: it.unit_price_paisa,
+      costPaisa: costByProduct.get(it.product_id) ?? null,
+    }));
+
+    for (const override of findRateOverrides(candidates)) {
+      await logActivity({
+        action: 'invoice.rate_overridden',
+        entityType: 'invoice',
+        entityId: invoiceId,
+        description:
+          `Rate changed on an invoice for ${customerName} — `
+          + describeOverride(override, formatPKR),
+        metadata: {
+          invoice_id: invoiceId,
+          customer_name: customerName,
+          product_id: override.productId,
+          product_name: override.productName,
+          suggested_rate_paisa: override.suggestedPaisa,
+          entered_rate_paisa: override.enteredPaisa,
+          difference_paisa: override.differencePaisa,
+          difference_percent: override.differencePercent,
+          below_cost: override.belowCost,
+        },
+      });
+    }
+  } catch {
+    // A notice is not worth failing a saved sale over.
+  }
 }

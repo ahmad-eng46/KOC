@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import { useProducts, useDeleteProduct, type Product } from '@/lib/queries/products';
+import { salePriceIsUnset } from '@/lib/validators/product';
 import { useBrands, useInvalidateBrandData, type BrandSummary } from '@/lib/queries/brands';
 import { bulkAssignBrand } from '@/lib/actions/brands';
 import { formatPKR } from '@/lib/money';
@@ -291,7 +292,9 @@ export function ProductTable({ canSeePurchasePrice, canBulkAssign, isAdmin = fal
                 </p>
               </div>
               <div className="text-right shrink-0 ml-1">
-                <p className="text-sm font-mono text-gray-700">{formatPKR(p.sale_price_paisa)}</p>
+                <p className="text-sm font-mono text-gray-700">
+                  {salePriceIsUnset(p.sale_price_paisa) ? '—' : formatPKR(p.sale_price_paisa)}
+                </p>
                 <p className={`text-xs mt-0.5 ${isLow ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
                   Stock: {formatStock(p.quantity_on_hand, p)}
                   {isLow && ' ⚠'}
@@ -375,7 +378,7 @@ function DesktopRow({
         <PackNote product={p} />
       </td>
       <td className="px-4 py-3 text-right font-mono text-gray-700">
-        {formatPKR(p.sale_price_paisa)}
+        {salePriceIsUnset(p.sale_price_paisa) ? '—' : formatPKR(p.sale_price_paisa)}
       </td>
       {canSeePurchasePrice && (
         <td className="px-4 py-3 text-right font-mono text-gray-500">
