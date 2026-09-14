@@ -3,7 +3,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
-import { deleteSupplier } from '@/lib/actions/suppliers';
+import { deleteSupplier,
+  correctPurchaseRate,
+} from '@/lib/actions/suppliers';
 import type { SupplierPaymentMethod } from '@/lib/validators/suppliers';
 
 export type Supplier = {
@@ -304,4 +306,28 @@ export function useInvalidateSupplierData() {
       ].map((key) => queryClient.invalidateQueries({ queryKey: [key, activeId] })),
     );
   };
+}
+
+/**
+ * Correct the rate on a recorded purchase.
+ *
+ * Invalidates broadly on purpose: the rate feeds the purchase list, the
+ * supplier's payable (a view that recomputes on read) and — when the corrected
+ * row is the product's latest purchase — the product's own cost price.
+ */
+export function useCorrectPurchaseRate() {
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
+
+  return useMutation({
+    mutationFn: (vars: { purchaseId: string; unitPricePaisa: number; syncProductCost?: boolean }) =>
+      correctPurchaseRate(vars.purchaseId, vars.unitPricePaisa, vars.syncProductCost ?? true),
+    onSuccess: (result) => {
+      // The action reports failure by returning, not throwing.
+      if (!result.ok) return;
+      queryClient.invalidateQueries({ queryKey: ['stock-purchases'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-balances', activeId] });
+      queryClient.invalidateQueries({ queryKey: ['products', activeId] });
+    },
+  });
 }

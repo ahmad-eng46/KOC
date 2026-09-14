@@ -28,10 +28,11 @@ export default async function ProductDetailPage({ params }: Props) {
 
   const canSeePurchasePrice =
     session?.role === 'admin' || session?.role === 'accountant';
-  const [canPurchase, canCreateSupplier, canEdit] = await Promise.all([
+  const [canPurchase, canCreateSupplier, canEdit, canCorrectRate] = await Promise.all([
     currentUserCan('purchases.create'),
     currentUserCan('suppliers.create'),
     currentUserCan('products.update'),
+    currentUserCan('purchases.update'),
   ]);
 
   const supabase = await createServerClient();
@@ -69,6 +70,7 @@ export default async function ProductDetailPage({ params }: Props) {
           canSeeMoney={canSeePurchasePrice}
           canPurchase={canPurchase}
           canCreateSupplier={canCreateSupplier}
+          canCorrectRate={canCorrectRate}
         />
       </div>
 

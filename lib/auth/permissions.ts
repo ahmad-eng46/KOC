@@ -34,6 +34,7 @@ export type Permission =
   | 'suppliers.update'
   | 'purchases.view'
   | 'purchases.create'
+  | 'purchases.update'
   | 'supplier_payments.view'
   | 'supplier_payments.create'
   | 'reports.view'
@@ -61,7 +62,7 @@ const ALL_PERMISSIONS_BASE: Permission[] = [
   'returns.view', 'returns.create',
   'stock.view', 'stock.update',
   'suppliers.view', 'suppliers.create', 'suppliers.update',
-  'purchases.view', 'purchases.create',
+  'purchases.view', 'purchases.create', 'purchases.update',
   'supplier_payments.view', 'supplier_payments.create',
   'reports.view', 'reports.pnl', 'reports.view_basic',
   'ledger.view',
@@ -76,6 +77,10 @@ const STAFF_WITHHELD: Permission[] = [
   'settings.manage',
   'customers.delete',
   'products.delete',
+  // Correcting a purchase rate means reading the rate first, and the database
+  // returns NULL for cost prices to staff (iron rule #3). Granting it would be
+  // a promise the database refuses to keep.
+  'purchases.update',
 ];
 
 const PERMISSIONS: Record<Role, Permission[] | ['*']> = {
@@ -103,6 +108,7 @@ const PERMISSIONS: Record<Role, Permission[] | ['*']> = {
     'suppliers.update',
     'purchases.view',
     'purchases.create',
+    'purchases.update',
     'supplier_payments.view',
     'supplier_payments.create',
     'reports.view',
@@ -186,6 +192,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'suppliers.update': 'Edit suppliers',
   'purchases.view': 'View stock purchases',
   'purchases.create': 'Record stock purchases',
+  'purchases.update': 'Correct a recorded purchase rate',
   'supplier_payments.view': 'View supplier payments',
   'supplier_payments.create': 'Record supplier payments',
   'reports.view': 'View full reports',
@@ -206,7 +213,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; permissions: Permission[]
   { label: 'Invoices & Returns', permissions: ['invoices.view', 'invoices.create', 'invoices.update', 'returns.view', 'returns.create'] },
   { label: 'Payments', permissions: ['payments.view', 'payments.create', 'payments.update'] },
   { label: 'Expenses', permissions: ['expenses.view', 'expenses.create', 'expenses.update'] },
-  { label: 'Suppliers & Purchasing', permissions: ['suppliers.view', 'suppliers.create', 'suppliers.update', 'purchases.view', 'purchases.create', 'supplier_payments.view', 'supplier_payments.create'] },
+  { label: 'Suppliers & Purchasing', permissions: ['suppliers.view', 'suppliers.create', 'suppliers.update', 'purchases.view', 'purchases.create', 'purchases.update', 'supplier_payments.view', 'supplier_payments.create'] },
   { label: 'Money & Reports', permissions: ['reports.view_basic', 'reports.view', 'reports.pnl', 'ledger.view', 'investments.view', 'investments.create', 'loans.view', 'loans.create'] },
   { label: 'Administration', permissions: ['users.manage', 'settings.manage'] },
 ];

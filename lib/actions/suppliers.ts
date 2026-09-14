@@ -274,3 +274,92 @@ export async function createSupplierPayment(
   revalidatePath(`/suppliers/${parsed.data.supplier_id}`);
   return { ok: true, id: data.id };
 }
+
+/**
+ * Correct the rate on a purchase already recorded.
+ *
+ * A rate typed wrongly used to be permanent — stock_purchases had no write path
+ * at all, and the only workaround was recording a second purchase that never
+ * happened, which then inflated both stock and the supplier's payable.
+ *
+ * The arithmetic and the permission live in correct_stock_purchase_rate (0069),
+ * not here: total_paisa has a CHECK tying it to quantity x rate, and syncing
+ * the product's cost needs rights an accountant does not hold on products.
+ * This function's job is to authorise at the app layer too (iron rule #7) and
+ * to record what changed.
+ */
+export async function correctPurchaseRate(
+  purchaseId: string,
+  unitPricePaisa: number,
+  syncProductCost = true,
+): Promise<{ ok: true; syncedProductCost: boolean } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Not signed in.' };
+  if (!(await currentUserCan('purchases.update'))) {
+    return { ok: false, error: 'You do not have permission to correct a purchase rate.' };
+  }
+
+  if (!Number.isFinite(unitPricePaisa) || !Number.isInteger(unitPricePaisa)) {
+    return { ok: false, error: 'Enter a valid rate.' };
+  }
+  if (unitPricePaisa < 0) {
+    return { ok: false, error: 'A purchase rate cannot be negative.' };
+  }
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const supabase = await createServerClient();
+  const { data, error } = await supabase.rpc('correct_stock_purchase_rate', {
+    p_id: purchaseId,
+    p_business_id: businessId,
+    p_unit_price_paisa: unitPricePaisa,
+    p_sync_product_cost: syncProductCost,
+  });
+
+  if (error) {
+    // 0069 may not be applied yet; say so rather than showing PGRST202.
+    if (error.code === 'PGRST202' || error.code === '42883') {
+      return {
+        ok: false,
+        error: 'Correcting a purchase rate needs migration 0069. Apply it and try again.',
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const result = (row ?? {}) as {
+    old_unit_price_paisa?: number;
+    new_unit_price_paisa?: number;
+    old_total_paisa?: number;
+    new_total_paisa?: number;
+    product_cost_synced?: boolean;
+  };
+
+  const oldRate = Number(result.old_unit_price_paisa ?? 0);
+  const newRate = Number(result.new_unit_price_paisa ?? unitPricePaisa);
+  const synced = result.product_cost_synced === true;
+
+  await logActivity({
+    action: 'purchase.rate_corrected',
+    entityType: 'stock_purchase',
+    entityId: purchaseId,
+    description:
+      `Corrected a purchase rate from ${formatPKR(oldRate)} to ${formatPKR(newRate)}`
+      + (synced ? ' — the product’s cost price now matches' : ''),
+    metadata: {
+      purchase_id: purchaseId,
+      old_unit_price_paisa: oldRate,
+      new_unit_price_paisa: newRate,
+      old_total_paisa: Number(result.old_total_paisa ?? 0),
+      new_total_paisa: Number(result.new_total_paisa ?? 0),
+      product_cost_synced: synced,
+    },
+  });
+
+  revalidatePath('/suppliers');
+  revalidatePath('/products');
+  revalidatePath('/stock');
+  return { ok: true, syncedProductCost: synced };
+}

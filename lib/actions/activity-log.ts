@@ -13,7 +13,7 @@ export type ActivityAction =
   | 'customer.created' | 'customer.updated'
   | 'expense.created'
   | 'return.processed'
-  | 'stock.purchased' | 'stock.adjusted'
+  | 'stock.purchased' | 'stock.adjusted' | 'purchase.rate_corrected'
   | 'brand.created' | 'supplier.created' | 'location.created'
   | 'backup.downloaded'
   | 'user.login' | 'user.password_changed'
