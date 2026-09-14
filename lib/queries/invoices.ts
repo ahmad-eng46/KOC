@@ -40,7 +40,7 @@ export function useInvoices(filters: InvoiceFilters) {
       let query = supabase
         .from('invoices')
         .select(
-          'id, invoice_number, status, issue_date, due_date, subtotal_paisa, discount_paisa, total_paisa, paid_paisa, customer_id, created_at, customers(name, phone)',
+          'id, invoice_number, status, issue_date, due_date, subtotal_paisa, discount_paisa, total_paisa, paid_paisa, customer_id, created_at',
         )
         .eq('business_id', activeId!)
         .is('deleted_at', null)
@@ -58,12 +58,30 @@ export function useInvoices(filters: InvoiceFilters) {
       const { data, error } = await query;
       if (error) throw error;
 
-      type Row = Omit<InvoiceListRow, 'customer_name' | 'customer_phone'> & {
-        customers: { name: string; phone: string | null } | { name: string; phone: string | null }[] | null;
-      };
+      type Row = Omit<InvoiceListRow, 'customer_name' | 'customer_phone'>;
+      const rows = (data as unknown as Row[]) ?? [];
 
-      return (data as unknown as Row[]).map((r) => {
-        const c = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+      /**
+       * Names come from customer_identity, not from an embed through the
+       * customers foreign key. That embed is subject to customers_select,
+       * which filters deleted_at IS NULL, so deleting a customer blanked their
+       * name on every invoice they ever had. One extra query for the whole
+       * page, not one per row.
+       */
+      const ids = Array.from(new Set(rows.map((r) => r.customer_id).filter(Boolean)));
+      const byId = new Map<string, { name: string; phone: string | null }>();
+      if (ids.length > 0) {
+        const { data: people } = await supabase
+          .from('customer_identity')
+          .select('id, name, phone')
+          .in('id', ids);
+        for (const p of (people ?? []) as { id: string; name: string; phone: string | null }[]) {
+          byId.set(p.id, { name: p.name, phone: p.phone });
+        }
+      }
+
+      return rows.map((r) => {
+        const c = byId.get(r.customer_id);
         return {
           ...r,
           customer_name: c?.name ?? '—',

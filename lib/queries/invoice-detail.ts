@@ -124,7 +124,7 @@ export function useInvoiceDetail(id: string) {
         supabase
           .from('invoices')
           .select(
-            'id, invoice_number, status, issue_date, due_date, subtotal_paisa, discount_paisa, total_paisa, paid_paisa, notes, created_at, customer_id, customers(name, phone, address), businesses(name)',
+            'id, invoice_number, status, issue_date, due_date, subtotal_paisa, discount_paisa, total_paisa, paid_paisa, notes, created_at, customer_id, businesses(name)',
           )
           .eq('id', id)
           .eq('business_id', activeId!)
@@ -200,11 +200,26 @@ export function useInvoiceDetail(id: string) {
         notes: string | null;
         created_at: string;
         customer_id: string;
-        customers: RawCustomer | RawCustomer[] | null;
         businesses: RawBusiness | RawBusiness[] | null;
       };
 
-      const c = Array.isArray(inv.customers) ? inv.customers[0] : inv.customers;
+      /**
+       * The name comes from customer_identity, not from an embed through the
+       * customers foreign key. That embed is subject to customers_select,
+       * which filters deleted_at IS NULL — so deleting a customer stripped the
+       * name off every invoice ever raised for them. The invoice must keep
+       * saying who it was billed to, exactly as it must keep saying what it
+       * sold (0065, 0070).
+       *
+       * Falls back to the embed's absence quietly: on a database without 0070
+       * the name is simply unknown, which is what it was before.
+       */
+      const { data: identity } = await supabase
+        .from('customer_identity')
+        .select('name, phone, address')
+        .eq('id', inv.customer_id)
+        .maybeSingle();
+      const c = identity as RawCustomer | null;
       const b = Array.isArray(inv.businesses) ? inv.businesses[0] : inv.businesses;
 
       type RawItem = {
