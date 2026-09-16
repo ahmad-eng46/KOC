@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import { fetchCustomerNames, UNKNOWN_CUSTOMER } from '@/lib/identity';
 import { useBusinessStore } from '@/lib/store/business';
 import { softDeletePayment } from '@/lib/actions/payment';
 import type { PaymentMethod } from '@/lib/validators/payment';
@@ -37,7 +38,7 @@ export function usePayments(filters: PaymentFilters) {
       let q = supabase
         .from('payments')
         .select(
-          'id, payment_date, amount_paisa, method, reference, notes, customer_id, invoice_id, created_at, customers(name), invoices(invoice_number)',
+          'id, payment_date, amount_paisa, method, reference, notes, customer_id, invoice_id, created_at, invoices(invoice_number)',
         )
         .eq('business_id', activeId!)
         .is('deleted_at', null)
@@ -53,20 +54,30 @@ export function usePayments(filters: PaymentFilters) {
       const { data, error } = await q;
       if (error) throw error;
 
-      type RawCustomer = { name: string };
       type RawInvoice = { invoice_number: string };
       type Raw = Omit<PaymentListRow, 'customer_name' | 'invoice_number'> & {
-        customers: RawCustomer | RawCustomer[] | null;
         invoices: RawInvoice | RawInvoice[] | null;
       };
+      const rows = (data as unknown as Raw[]) ?? [];
 
-      return (data as unknown as Raw[]).map((r) => {
-        const c = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+      /**
+       * The payer's name comes from customer_identity, not from an embed
+       * through the customers foreign key: that embed is subject to
+       * customers_select, which hides soft-deleted rows, so a receipt from a
+       * since-deleted customer showed no payer at all. One query for the page.
+       */
+      const names = await fetchCustomerNames(
+        supabase, activeId!, rows.map((r) => r.customer_id),
+      );
+
+      return rows.map((r) => {
         const i = Array.isArray(r.invoices) ? r.invoices[0] : r.invoices;
         return {
           ...r,
           amount_paisa: Number(r.amount_paisa),
-          customer_name: c?.name ?? '—',
+          customer_name: r.customer_id
+            ? names.get(r.customer_id)?.name ?? UNKNOWN_CUSTOMER
+            : '—',
           invoice_number: i?.invoice_number ?? null,
         } as PaymentListRow;
       });

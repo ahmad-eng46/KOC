@@ -2,6 +2,7 @@
 // so RLS scopes everything to the caller's businesses.
 
 import { createServerClient } from '@/lib/supabase/server';
+import { fetchCustomerNames, UNKNOWN_CUSTOMER } from '@/lib/identity';
 import { getActiveBusinessId } from '@/lib/business';
 import { todayKarachiISO } from '@/lib/date';
 
@@ -66,7 +67,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
         .eq('business_id', businessId),
       supabase
         .from('invoices')
-        .select('id, invoice_number, issue_date, total_paisa, paid_paisa, status, customers(name)')
+        .select('id, invoice_number, issue_date, total_paisa, paid_paisa, status, customer_id')
         .eq('business_id', businessId)
         .is('deleted_at', null)
         .neq('status', 'draft')
@@ -113,7 +114,6 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     .filter((s) => s.quantity_on_hand <= (s.low_stock_threshold ?? 0))
     .sort((a, b) => a.quantity_on_hand - b.quantity_on_hand);
 
-  type RawCustomer = { name: string };
   type RawInvoice = {
     id: string;
     invoice_number: string;
@@ -121,16 +121,23 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     total_paisa: number;
     paid_paisa: number;
     status: string;
-    customers: RawCustomer | RawCustomer[] | null;
+    customer_id: string;
   };
 
-  const recent_invoices = ((recentRes.data ?? []) as unknown as RawInvoice[]).map((r) => {
-    const c = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+  const recentRaw = (recentRes.data ?? []) as unknown as RawInvoice[];
+
+  // customer_identity, so the dashboard's recent list still names an invoice
+  // whose customer has since been deleted (0070).
+  const recentNames = await fetchCustomerNames(
+    supabase, businessId, recentRaw.map((r) => r.customer_id),
+  );
+
+  const recent_invoices = recentRaw.map((r) => {
     return {
       id: r.id,
       invoice_number: r.invoice_number,
       issue_date: r.issue_date,
-      customer_name: c?.name ?? '—',
+      customer_name: recentNames.get(r.customer_id)?.name ?? UNKNOWN_CUSTOMER,
       total_paisa: Number(r.total_paisa),
       paid_paisa: Number(r.paid_paisa),
       status: r.status,

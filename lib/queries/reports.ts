@@ -2,6 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import {
+  fetchCustomerNames, fetchProductNames, UNKNOWN_CUSTOMER, UNKNOWN_PRODUCT,
+} from '@/lib/identity';
 import { useBusinessStore } from '@/lib/store/business';
 import type { DateRange } from '@/components/reports/shared';
 
@@ -27,7 +30,7 @@ export function useSalesData(range: DateRange) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('invoices')
-        .select('id, invoice_number, issue_date, total_paisa, paid_paisa, customer_id, customers(name)')
+        .select('id, invoice_number, issue_date, total_paisa, paid_paisa, customer_id')
         .eq('business_id', activeId!)
         .is('deleted_at', null)
         .neq('status', 'draft')
@@ -37,20 +40,26 @@ export function useSalesData(range: DateRange) {
         .order('issue_date');
       if (error) throw error;
 
-      type RawCustomer = { name: string };
       type Raw = {
         id: string; invoice_number: string; issue_date: string;
         total_paisa: number; paid_paisa: number; customer_id: string;
-        customers: RawCustomer | RawCustomer[] | null;
       };
-      return (data as unknown as Raw[]).map((r) => {
-        const c = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+      const rows = (data as unknown as Raw[]) ?? [];
+
+      // Through customer_identity: the embed hid soft-deleted customers, and
+      // this report groups by name, so unresolved names merged into one row.
+      const names = await fetchCustomerNames(
+        supabase, activeId!, rows.map((r) => r.customer_id),
+      );
+
+      return rows.map((r) => {
         return {
           invoice_id: r.id,
           invoice_number: r.invoice_number,
           issue_date: r.issue_date,
           customer_id: r.customer_id,
-          customer_name: c?.name ?? '—',
+          customer_name: names.get(r.customer_id)?.name
+            ?? `${UNKNOWN_CUSTOMER} (${r.customer_id.slice(0, 8)})`,
           total_paisa: Number(r.total_paisa),
           paid_paisa: Number(r.paid_paisa),
         } as SalesRow;
@@ -84,7 +93,7 @@ export function usePurchaseData(range: DateRange) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('stock_movements')
-        .select('id, product_id, quantity, note, created_at, products(name, sku, unit, purchase_price_paisa)')
+        .select('id, product_id, quantity, note, created_at, stock_purchase_id, stock_purchases(unit_price_paisa, purchase_date)')
         .eq('business_id', activeId!)
         .eq('type', 'in')
         .gte('created_at', range.from)
@@ -92,21 +101,49 @@ export function usePurchaseData(range: DateRange) {
         .order('created_at', { ascending: false });
       if (error) throw error;
 
-      type RawProd = { name: string; sku: string | null; unit: string; purchase_price_paisa: number | null };
+      type RawPurchase = { unit_price_paisa: number | null; purchase_date: string | null };
       type Raw = {
         id: string; product_id: string; quantity: number; note: string | null; created_at: string;
-        products: RawProd | RawProd[] | null;
+        stock_purchase_id: string | null;
+        stock_purchases: RawPurchase | RawPurchase[] | null;
       };
-      return (data as unknown as Raw[]).map((r) => {
-        const p = Array.isArray(r.products) ? r.products[0] : r.products;
+      const rows = (data as unknown as Raw[]) ?? [];
+
+      /**
+       * Matches fetchPurchaseData: the rate actually paid from the linked
+       * stock_purchase, and names from product_identity so a deleted product
+       * still names its own purchases. The screen and its export must not
+       * disagree.
+       */
+      const names = await fetchProductNames(
+        supabase, activeId!, rows.map((r) => r.product_id),
+      );
+      const needFallback = rows.filter((r) => !r.stock_purchase_id).map((r) => r.product_id);
+      const fallbackCost = new Map<string, number>();
+      if (needFallback.length > 0) {
+        const { data: costs } = await supabase
+          .from('products_for_role')
+          .select('id, purchase_price_paisa')
+          .eq('business_id', activeId!)
+          .in('id', Array.from(new Set(needFallback)));
+        for (const c of (costs ?? []) as { id: string; purchase_price_paisa: number | null }[]) {
+          fallbackCost.set(c.id, Number(c.purchase_price_paisa ?? 0));
+        }
+      }
+
+      return rows.map((r) => {
+        const purchase = Array.isArray(r.stock_purchases) ? r.stock_purchases[0] : r.stock_purchases;
+        const identity = names.get(r.product_id);
         const qty = Number(r.quantity);
-        const price = Number(p?.purchase_price_paisa ?? 0);
+        const price = purchase?.unit_price_paisa != null
+          ? Number(purchase.unit_price_paisa)
+          : fallbackCost.get(r.product_id) ?? 0;
         return {
           id: r.id,
           product_id: r.product_id,
-          product_name: p?.name ?? '—',
-          sku: p?.sku ?? null,
-          unit: p?.unit ?? '',
+          product_name: identity?.name ?? `${UNKNOWN_PRODUCT} (${r.product_id.slice(0, 8)})`,
+          sku: identity?.sku ?? null,
+          unit: identity?.unit ?? '',
           quantity: qty,
           purchase_price_paisa: price,
           total_value_paisa: Math.round(qty * price),
@@ -482,7 +519,7 @@ export function useCashBook(range: DateRange) {
       const supabase = createClient();
       const [paysRes, expRes] = await Promise.all([
         supabase.from('payments')
-          .select('id, payment_date, amount_paisa, reference, customers(name)')
+          .select('id, payment_date, amount_paisa, reference, customer_id')
           .eq('business_id', activeId!).is('deleted_at', null).eq('method', 'cash')
           .gte('payment_date', range.from).lte('payment_date', range.to),
         supabase.from('expenses')
@@ -493,19 +530,25 @@ export function useCashBook(range: DateRange) {
       if (paysRes.error) throw paysRes.error;
       if (expRes.error) throw expRes.error;
 
-      type RawCust = { name: string };
       type RawPay = {
         id: string; payment_date: string; amount_paisa: number;
-        reference: string | null; customers: RawCust | RawCust[] | null;
+        reference: string | null; customer_id: string | null;
       };
+      const rawPays = (paysRes.data as unknown as RawPay[]) ?? [];
 
-      const ins: CashEntry[] = (paysRes.data as unknown as RawPay[]).map((p) => {
-        const c = Array.isArray(p.customers) ? p.customers[0] : p.customers;
+      const payers = await fetchCustomerNames(
+        supabase, activeId!, rawPays.map((p) => p.customer_id),
+      );
+
+      const ins: CashEntry[] = rawPays.map((p) => {
+        const who = p.customer_id
+          ? payers.get(p.customer_id)?.name ?? UNKNOWN_CUSTOMER
+          : '—';
         return {
           id: `pay-${p.id}`,
           kind: 'in' as const,
           date: p.payment_date,
-          description: `${c?.name ?? '—'}${p.reference ? ` · ${p.reference}` : ''}`,
+          description: `${who}${p.reference ? ` · ${p.reference}` : ''}`,
           amount_paisa: Number(p.amount_paisa),
         };
       });

@@ -129,7 +129,6 @@ WHERE sm.note = 'Opening stock'
 ORDER BY sm.created_at DESC
 LIMIT 20;
 
-
 -- ═══════════════════════════════════════════════════════════════
 -- PART B — only after check 1 above says PASS
 --

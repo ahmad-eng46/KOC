@@ -3,6 +3,9 @@
 // so they can be called from server actions safely.
 
 import { createServerClient } from '@/lib/supabase/server';
+import {
+  fetchCustomerNames, fetchProductNames, UNKNOWN_CUSTOMER, UNKNOWN_PRODUCT,
+} from '@/lib/identity';
 import { getActiveBusinessId } from '@/lib/business';
 import { getSetting, SETTING_KEYS, SETTING_DEFAULTS } from '@/lib/settings';
 import { getSession } from '@/lib/auth/session';
@@ -96,7 +99,7 @@ export async function fetchSalesData(
   const data = await fetchAllRows<Record<string, unknown>>(
     () => supabase
       .from('invoices')
-      .select('invoice_number, issue_date, total_paisa, paid_paisa, customers(name)')
+      .select('invoice_number, issue_date, total_paisa, paid_paisa, customer_id')
       .eq('business_id', businessId)
       .is('deleted_at', null)
       .neq('status', 'draft')
@@ -107,23 +110,33 @@ export async function fetchSalesData(
     'Sales report',
   );
 
-  type RawCust = { name: string };
   type Raw = {
     invoice_number: string; issue_date: string;
     total_paisa: number; paid_paisa: number;
-    customers: RawCust | RawCust[] | null;
+    customer_id: string;
   };
+  const raw = data as unknown as Raw[];
 
-  const rows = (data as unknown as Raw[]).map((r) => {
-    const c = Array.isArray(r.customers) ? r.customers[0] : r.customers;
-    return {
-      invoice_number: r.invoice_number,
-      issue_date: r.issue_date,
-      customer_name: c?.name ?? '—',
-      total_paisa: Number(r.total_paisa),
-      paid_paisa: Number(r.paid_paisa),
-    };
-  });
+  /**
+   * Names resolved through customer_identity rather than an embed. The embed
+   * is subject to customers_select, which hides soft-deleted rows — and the
+   * by-customer table below GROUPS on the name, so an unresolved name did not
+   * merely print as a dash, it merged every such customer into one row.
+   */
+  const names = await fetchCustomerNames(
+    supabase, businessId, raw.map((r) => r.customer_id),
+  );
+
+  const rows = raw.map((r) => ({
+    invoice_number: r.invoice_number,
+    issue_date: r.issue_date,
+    // Keyed by id when the name is gone, so grouping cannot merge two
+    // customers into one line.
+    customer_name: names.get(r.customer_id)?.name
+      ?? `${UNKNOWN_CUSTOMER} (${r.customer_id.slice(0, 8)})`,
+    total_paisa: Number(r.total_paisa),
+    paid_paisa: Number(r.paid_paisa),
+  }));
 
   const total_paisa = rows.reduce((s, r) => s + r.total_paisa, 0);
 
@@ -257,10 +270,32 @@ export async function fetchPurchaseData(range: DateRange): Promise<PurchaseData>
   const supabase = await createServerClient();
   const businessId = await getActiveBusinessId();
 
+  /**
+   * Two faults were being reported as one "the purchase report is wrong".
+   *
+   * 1. The rate. Every movement was valued at products.purchase_price_paisa —
+   *    the CURRENT cost — so a price change retroactively restated history.
+   *    Buy at Rs. 12,200 in August, change the cost later, and August's
+   *    purchase reads at the new figure. stock_purchases holds what was
+   *    actually paid, with a CHECK tying its total to quantity x rate, and
+   *    stock_movements.stock_purchase_id links the two (0040).
+   *
+   * 2. The date. created_at is when the row was typed, not when the goods were
+   *    bought. purchase_date is the business fact, and they differ on most
+   *    rows, so purchases landed in the wrong period.
+   *
+   * Movements with no linked purchase — a manual stock-in or an opening
+   * balance — have no recorded price, so they keep falling back to the
+   * product's current cost. That is the best available answer, and it is the
+   * only case where it is used.
+   */
   const data = await fetchAllRows<Record<string, unknown>>(
     () => supabase
       .from('stock_movements')
-      .select('quantity, note, created_at, products(name, sku, unit, purchase_price_paisa)')
+      .select(
+        'product_id, quantity, note, created_at, stock_purchase_id, '
+        + 'stock_purchases(unit_price_paisa, purchase_date)',
+      )
       .eq('business_id', businessId)
       .eq('type', 'in')
       .gte('created_at', range.from)
@@ -269,24 +304,70 @@ export async function fetchPurchaseData(range: DateRange): Promise<PurchaseData>
     'Purchase report',
   );
 
-  type RawProd = { name: string; sku: string | null; unit: string; purchase_price_paisa: number | null };
-  type Raw = { quantity: number; note: string | null; created_at: string; products: RawProd | RawProd[] | null };
+  type RawPurchase = { unit_price_paisa: number | null; purchase_date: string | null };
+  type Raw = {
+    product_id: string;
+    quantity: number;
+    note: string | null;
+    created_at: string;
+    stock_purchase_id: string | null;
+    stock_purchases: RawPurchase | RawPurchase[] | null;
+  };
+  const raw = data as unknown as Raw[];
 
-  const rows = (data as unknown as Raw[]).map((r) => {
-    const p = Array.isArray(r.products) ? r.products[0] : r.products;
+  // Names through product_identity so a since-deleted product still names its
+  // own purchases (0065). It carries no money column, hence the separate read
+  // below for the fallback cost.
+  const names = await fetchProductNames(
+    supabase, businessId, raw.map((r) => r.product_id),
+  );
+
+  /**
+   * Current cost, used only for movements with no linked purchase. Read from
+   * products_for_role, which returns NULL to staff and viewer — the same
+   * gating the report already relies on, and the reason it is not asked for
+   * unless it is needed.
+   */
+  const needFallback = raw.filter((r) => !r.stock_purchase_id).map((r) => r.product_id);
+  const fallbackCost = new Map<string, number>();
+  if (needFallback.length > 0) {
+    const { data: costs } = await supabase
+      .from('products_for_role')
+      .select('id, purchase_price_paisa')
+      .eq('business_id', businessId)
+      .in('id', Array.from(new Set(needFallback)));
+    for (const c of (costs ?? []) as { id: string; purchase_price_paisa: number | null }[]) {
+      fallbackCost.set(c.id, Number(c.purchase_price_paisa ?? 0));
+    }
+  }
+
+  const rows = raw.map((r) => {
+    const purchase = Array.isArray(r.stock_purchases) ? r.stock_purchases[0] : r.stock_purchases;
+    const identity = names.get(r.product_id);
     const qty = Number(r.quantity);
-    const price = Number(p?.purchase_price_paisa ?? 0);
+
+    const price = purchase?.unit_price_paisa != null
+      ? Number(purchase.unit_price_paisa)
+      : fallbackCost.get(r.product_id) ?? 0;
+
     return {
-      movement_date: r.created_at.slice(0, 10),
-      product_name: p?.name ?? '—',
-      sku: p?.sku ?? null,
-      unit: p?.unit ?? '',
+      // The business date when there is one; the entry timestamp otherwise.
+      movement_date: purchase?.purchase_date ?? r.created_at.slice(0, 10),
+      // Keyed by id when the name is gone, so by_product cannot merge two
+      // different products into one line.
+      product_name: identity?.name ?? `${UNKNOWN_PRODUCT} (${r.product_id.slice(0, 8)})`,
+      sku: identity?.sku ?? null,
+      unit: identity?.unit ?? '',
       quantity: qty,
       purchase_price_paisa: price,
       total_value_paisa: Math.round(qty * price),
       note: r.note,
     };
-  });
+  })
+    // Re-sorted: the rows were ordered by created_at, and they now carry
+    // purchase_date, which is not the same order.
+    .sort((a, b) => b.movement_date.localeCompare(a.movement_date));
+
   const total_value_paisa = rows.reduce((s, r) => s + r.total_value_paisa, 0);
 
   const productMap = new Map<string, { quantity: number; total_value_paisa: number }>();
@@ -705,7 +786,7 @@ export async function fetchCashBookData(range: DateRange): Promise<CashBookData>
   const [payRows, expRows] = await Promise.all([
     fetchAllRows<Record<string, unknown>>(
       () => supabase.from('payments')
-        .select('payment_date, amount_paisa, reference, customers(name)')
+        .select('payment_date, amount_paisa, reference, customer_id')
         .eq('business_id', businessId).is('deleted_at', null).eq('method', 'cash')
         .gte('payment_date', range.from).lte('payment_date', range.to)
         .order('payment_date'),
@@ -723,14 +804,26 @@ export async function fetchCashBookData(range: DateRange): Promise<CashBookData>
   const paysRes = { data: payRows };
   const expRes = { data: expRows };
 
-  type RawCust = { name: string };
-  type RawPay = { payment_date: string; amount_paisa: number; reference: string | null; customers: RawCust | RawCust[] | null };
-  const ins = (paysRes.data as unknown as RawPay[] | null ?? []).map((p) => {
-    const c = Array.isArray(p.customers) ? p.customers[0] : p.customers;
+  type RawPay = {
+    payment_date: string; amount_paisa: number;
+    reference: string | null; customer_id: string | null;
+  };
+  const rawPays = (paysRes.data as unknown as RawPay[] | null) ?? [];
+
+  // Through customer_identity, so a receipt from a since-deleted customer
+  // still says who paid (0070).
+  const payerNames = await fetchCustomerNames(
+    supabase, businessId, rawPays.map((p) => p.customer_id),
+  );
+
+  const ins = rawPays.map((p) => {
+    const name = p.customer_id
+      ? payerNames.get(p.customer_id)?.name ?? UNKNOWN_CUSTOMER
+      : '—';
     return {
       kind: 'in' as const,
       date: p.payment_date,
-      description: `${c?.name ?? '—'}${p.reference ? ` · ${p.reference}` : ''}`,
+      description: `${name}${p.reference ? ` · ${p.reference}` : ''}`,
       amount_paisa: Number(p.amount_paisa),
     };
   });

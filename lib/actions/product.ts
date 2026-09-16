@@ -58,6 +58,51 @@ function costMissing(data: ProductInput): boolean {
 }
 
 /**
+ * Turn a SKU collision into something actionable.
+ *
+ * Postgres reports it as
+ *     duplicate key value violates unique constraint "idx_products_sku"
+ * which names the index rather than the product, and the product holding the
+ * code may be soft-deleted and therefore invisible everywhere in the app —
+ * so the owner sees a database error about a conflict they cannot find.
+ *
+ * 0071 stops deleted products holding a SKU at all. This covers the live case,
+ * and any database where 0071 has not been applied yet.
+ */
+async function explainSkuClash(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+  sku: string | null | undefined,
+  fallback: string,
+): Promise<string> {
+  if (!sku) return fallback;
+
+  // products, not products_for_role: the row may be soft-deleted, which is
+  // exactly the case that needs explaining.
+  const { data } = await supabase
+    .from('products')
+    .select('name, deleted_at')
+    .eq('business_id', businessId)
+    .eq('sku', sku)
+    .limit(1);
+
+  const holder = (data ?? [])[0] as { name: string; deleted_at: string | null } | undefined;
+  if (!holder) return fallback;
+
+  if (holder.deleted_at) {
+    return `SKU "${sku}" still belongs to "${holder.name}", which was deleted `
+      + 'on ' + holder.deleted_at.slice(0, 10)
+      + '. Restore that product instead, or use a different SKU.';
+  }
+  return `SKU "${sku}" is already used by "${holder.name}". Use a different one.`;
+}
+
+/** Postgres unique-violation. */
+function isDuplicateKey(code: string | undefined): boolean {
+  return code === '23505';
+}
+
+/**
  * Opening stock: what is already on the shelf when the product is first
  * recorded.
  *
@@ -68,6 +113,7 @@ function costMissing(data: ProductInput): boolean {
  *
  * Quantity is in base units. The form converts from packs before calling.
  */
+
 export async function createProduct(
   input: ProductInput,
   openingStockUnits?: number | null,
@@ -109,7 +155,14 @@ export async function createProduct(
       business_id: businessId,
     });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    return {
+      ok: false,
+      error: isDuplicateKey(error.code)
+        ? await explainSkuClash(supabase, businessId, values.sku, error.message)
+        : error.message,
+    };
+  }
 
   await logActivity({
     action: 'product.created',
@@ -197,7 +250,14 @@ export async function updateProduct(id: string, input: ProductInput): Promise<Ac
     p_purchase_price_paisa: values.purchase_price_paisa ?? null,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    return {
+      ok: false,
+      error: isDuplicateKey(error.code)
+        ? await explainSkuClash(supabase, businessId, values.sku, error.message)
+        : error.message,
+    };
+  }
 
   await logActivity({
     action: 'product.updated',
@@ -234,4 +294,98 @@ export async function softDeleteProduct(id: string): Promise<{ ok: boolean; erro
 
   revalidatePath('/products');
   return { ok: true };
+}
+
+/**
+ * Bring a deleted product back, with its history attached.
+ *
+ * The gap this fills: 51 deleted products in this business hold 349 stock
+ * movements and 274 invoice lines between them. Recreating one by hand starts
+ * it at zero stock and leaves all of that stranded on a row nobody can see,
+ * so retyping a product is strictly worse than restoring it — there was simply
+ * no way to restore.
+ *
+ * Admin only, matching softDeleteProduct: whoever may remove a product from
+ * the catalogue is who may put it back.
+ *
+ * The SKU is the one thing that may not survive. 0071 frees a deleted
+ * product's SKU for reuse, so by the time anyone restores, the code may belong
+ * to something else — and two live products cannot share one. Rather than fail
+ * with a duplicate-key error, the restore clears the SKU and says so; the
+ * product, its stock and its invoices all come back either way, and a SKU is
+ * a label that can be retyped.
+ */
+export async function restoreProduct(
+  id: string,
+): Promise<{ ok: true; skuCleared: boolean } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { ok: false, error: 'Only admins can restore a product.' };
+  }
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const supabase = await createServerClient();
+
+  // products, not products_for_role: the row being restored is soft-deleted,
+  // which is precisely what that view hides.
+  const { data: rows, error: readError } = await supabase
+    .from('products')
+    .select('id, name, sku, deleted_at')
+    .eq('id', id)
+    .eq('business_id', businessId)
+    .limit(1);
+
+  if (readError) return { ok: false, error: readError.message };
+
+  const product = (rows ?? [])[0] as
+    { id: string; name: string; sku: string | null; deleted_at: string | null } | undefined;
+
+  if (!product) return { ok: false, error: 'Product not found.' };
+  if (!product.deleted_at) return { ok: false, error: `${product.name} is not deleted.` };
+
+  // Would the SKU collide with a live product once this one is live again?
+  let skuCleared = false;
+  if (product.sku) {
+    const { data: taken } = await supabase
+      .from('products')
+      .select('id')
+      .eq('business_id', businessId)
+      .eq('sku', product.sku)
+      .is('deleted_at', null)
+      .limit(1);
+    skuCleared = (taken ?? []).length > 0;
+  }
+
+  const { error } = await supabase
+    .from('products')
+    .update({
+      deleted_at: null,
+      is_active: true,
+      ...(skuCleared ? { sku: null } : {}),
+    })
+    .eq('id', id)
+    .eq('business_id', businessId);
+
+  if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    action: 'product.updated',
+    entityType: 'product',
+    entityId: id,
+    description: `Restored product ${product.name}`
+      + (skuCleared ? ` — its SKU "${product.sku}" was taken, so it was cleared` : ''),
+    metadata: {
+      name: product.name,
+      restored: true,
+      sku_cleared: skuCleared,
+      previous_sku: skuCleared ? product.sku : null,
+    },
+  });
+
+  revalidatePath('/products');
+  revalidatePath(`/products/${id}`);
+  revalidatePath('/stock');
+  return { ok: true, skuCleared };
 }

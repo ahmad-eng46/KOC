@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
 import { fetchProductNames } from '@/lib/queries/product-names';
+import { fetchCustomerNames, UNKNOWN_CUSTOMER } from '@/lib/identity';
 import { distributeInvoiceDiscount } from '@/lib/return-pricing';
 
 export type ReturnableItem = {
@@ -169,7 +170,7 @@ export function useReturnFormData(invoiceId: string) {
       const [invRes, itemsRes, returnedRes] = await Promise.all([
         supabase
           .from('invoices')
-          .select('id, invoice_number, issue_date, discount_paisa, customers(name)')
+          .select('id, invoice_number, issue_date, discount_paisa, customer_id')
           .eq('id', invoiceId)
           .eq('business_id', activeId!)
           .is('deleted_at', null)
@@ -189,15 +190,18 @@ export function useReturnFormData(invoiceId: string) {
       if (itemsRes.error) throw itemsRes.error;
       if (returnedRes.error) throw returnedRes.error;
 
-      type RawCustomer = { name: string };
       const inv = invRes.data as unknown as {
         id: string;
         invoice_number: string;
         issue_date: string;
         discount_paisa: number | null;
-        customers: RawCustomer | RawCustomer[] | null;
+        customer_id: string;
       };
-      const cust = Array.isArray(inv.customers) ? inv.customers[0] : inv.customers;
+
+      // customer_identity, not the embed: a return raised against an invoice
+      // for a since-deleted customer must still say whose return it is (0070).
+      const customerNames = await fetchCustomerNames(supabase, activeId!, [inv.customer_id]);
+      const cust = customerNames.get(inv.customer_id) ?? null;
 
       // Sum already-returned per invoice_item_id
       const returnedMap = new Map<string, number>();
@@ -273,7 +277,7 @@ export function useReturnFormData(invoiceId: string) {
         invoice_id: inv.id,
         invoice_number: inv.invoice_number,
         issue_date: inv.issue_date,
-        customer_name: cust?.name ?? 'Unknown customer',
+        customer_name: cust?.name ?? UNKNOWN_CUSTOMER,
         discount_paisa: discountPaisa,
         items,
       } as ReturnFormData;
