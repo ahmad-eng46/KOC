@@ -11,6 +11,7 @@ type Props = {
   canCreatePurchase: boolean;
   canCreatePayment: boolean;
   canSeeMoney: boolean;
+  canAdjustBalance?: boolean;
 };
 
 /**
@@ -24,12 +25,20 @@ export function SupplierDetailView({
   canCreatePurchase,
   canCreatePayment,
   canSeeMoney,
+  canAdjustBalance = false,
 }: Props) {
   const { data: balance } = useSupplierBalance(supplier.id);
 
   return (
     <div className="space-y-4">
-      {canSeeMoney && <SupplierBalanceCard balance={balance ?? null} />}
+      {canSeeMoney && (
+        <SupplierBalanceCard
+          balance={balance ?? null}
+          supplierId={supplier.id}
+          supplierName={supplier.name}
+          canAdjustBalance={canAdjustBalance}
+        />
+      )}
       <SupplierDetailTabs
         supplier={supplier}
         canEdit={canEdit}

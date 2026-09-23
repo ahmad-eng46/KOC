@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { useSupplierLedger } from '@/lib/queries/suppliers';
+import { useSupplierLedger, type SupplierLedgerRow } from '@/lib/queries/suppliers';
 import { formatPKR } from '@/lib/money';
 
 type Props = {
@@ -17,6 +17,20 @@ type Props = {
  *
  * Sign: positive running balance = we owe the supplier.
  */
+/**
+ * A correction is not a purchase and not a payment, but its amount lands in
+ * the Purchase or Paid column all the same — so the row says what it is.
+ * Without this, "Damaged drum returned" reads as money paid.
+ */
+function AdjustmentTag({ refType }: { refType: SupplierLedgerRow['ref_type'] }) {
+  if (refType !== 'adjustment' && refType !== 'opening') return null;
+  return (
+    <span className="inline-flex items-center mr-2 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium align-middle">
+      {refType === 'opening' ? 'Opening' : 'Adjustment'}
+    </span>
+  );
+}
+
 export function SupplierLedger({ supplierId, canSeeMoney }: Props) {
   const { data: rows = [], isLoading } = useSupplierLedger(supplierId, canSeeMoney);
 
@@ -66,7 +80,10 @@ export function SupplierLedger({ supplierId, canSeeMoney }: Props) {
                 <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                   {format(parseISO(r.entry_date), 'dd MMM yyyy')}
                 </td>
-                <td className="px-4 py-3 text-gray-700">{r.description}</td>
+                <td className="px-4 py-3 text-gray-700">
+                  <AdjustmentTag refType={r.ref_type} />
+                  {r.description}
+                </td>
                 <td className="px-4 py-3 text-right font-mono">
                   {r.debit_paisa > 0 ? formatPKR(r.debit_paisa) : ''}
                 </td>
@@ -112,7 +129,10 @@ export function SupplierLedger({ supplierId, canSeeMoney }: Props) {
           <div key={r.id} className="bg-white rounded-2xl border border-gray-200 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm text-gray-900">{r.description}</p>
+                <p className="text-sm text-gray-900">
+                  <AdjustmentTag refType={r.ref_type} />
+                  {r.description}
+                </p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {format(parseISO(r.entry_date), 'dd MMM yyyy')}
                 </p>

@@ -22,7 +22,14 @@ export function purchaseTotalPaisa(quantity: number, unitPricePaisa: Money): Mon
 export type SupplierAccount = {
   totalPurchasedPaisa: Money;
   totalPaidPaisa: Money;
-  /** purchased − paid. Positive = we owe them, negative = we overpaid. */
+  /**
+   * What we owe. Positive = we owe them, negative = we overpaid.
+   *
+   * Taken from the database when it is supplied, because since 0079 a balance
+   * is purchased − paid PLUS any posted adjustments, and re-deriving it here
+   * would quietly drop those — leaving the card and the ledger under it
+   * showing two different figures for the same account.
+   */
   balanceDuePaisa: Money;
   weOwe: boolean;
   /** We paid more than we bought — the supplier holds our credit. */
@@ -39,11 +46,17 @@ export type SupplierAccount = {
 export function computeSupplierAccount(input: {
   totalPurchasedPaisa: Money | null;
   totalPaidPaisa: Money | null;
+  /**
+   * The balance as the database computed it. Preferred over the subtraction
+   * below; omit it only where it genuinely is not available.
+   */
+  balanceDuePaisa?: Money | null;
 }): SupplierAccount | null {
   const { totalPurchasedPaisa, totalPaidPaisa } = input;
   if (totalPurchasedPaisa === null || totalPaidPaisa === null) return null;
 
-  const balanceDuePaisa = totalPurchasedPaisa - totalPaidPaisa;
+  const balanceDuePaisa =
+    input.balanceDuePaisa ?? totalPurchasedPaisa - totalPaidPaisa;
   return {
     totalPurchasedPaisa,
     totalPaidPaisa,

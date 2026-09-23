@@ -40,6 +40,9 @@ export default async function SupplierDetailPage({ params }: Props) {
     currentUserCan('supplier_payments.create'),
   ]);
   const canSeeMoney = role === 'admin' || role === 'accountant';
+  // Not a permission: correcting a balance is admin-only by role, and 0079
+  // says so again in the database.
+  const canAdjustBalance = role === 'admin';
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -59,6 +62,7 @@ export default async function SupplierDetailPage({ params }: Props) {
         canCreatePurchase={canCreatePurchase}
         canCreatePayment={canCreatePayment}
         canSeeMoney={canSeeMoney}
+        canAdjustBalance={canAdjustBalance}
       />
     </div>
   );

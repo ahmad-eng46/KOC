@@ -363,3 +363,162 @@ export async function correctPurchaseRate(
   revalidatePath('/stock');
   return { ok: true, syncedProductCost: synced };
 }
+
+/**
+ * Remove a recorded purchase, and take its stock back off the shelf.
+ *
+ * Until now stock_purchase was registered in the entity registry but sat in
+ * NO_DELETE_ACTION with no case in the apply switch, so a staff member could
+ * raise a deletion request that an admin was then told could not be approved.
+ * This is the missing half.
+ *
+ * The arithmetic lives in delete_stock_purchase (0073), not here: stock_movements
+ * is immutable by RLS, so removing a purchase cannot delete the movement it
+ * created — it posts an offsetting 'out' instead, and that has to happen in the
+ * same statement as the soft delete or the shelf is left overstated with nothing
+ * to detect it.
+ */
+export async function softDeleteStockPurchase(
+  purchaseId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Not signed in.' };
+  if (session.role !== 'admin') {
+    return {
+      ok: false,
+      error: 'Only admins can delete a stock purchase. Request approval instead.',
+    };
+  }
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const supabase = await createServerClient();
+  const { data, error } = await supabase.rpc('delete_stock_purchase', {
+    p_id: purchaseId,
+    p_business_id: businessId,
+  });
+
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') {
+      return {
+        ok: false,
+        error: 'Deleting a stock purchase needs migration 0073. Apply it and try again.',
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    { quantity_reversed?: number; product_id?: string } | null;
+  const reversed = Number(row?.quantity_reversed ?? 0);
+
+  await logActivity({
+    action: 'stock.adjusted',
+    entityType: 'stock_purchase',
+    entityId: purchaseId,
+    description:
+      `Deleted a stock purchase — ${reversed} unit${reversed === 1 ? '' : 's'} taken back off stock`,
+    metadata: {
+      purchase_id: purchaseId,
+      product_id: row?.product_id ?? null,
+      quantity_reversed: reversed,
+      purchase_deleted: true,
+    },
+  });
+
+  revalidatePath('/suppliers');
+  revalidatePath('/products');
+  revalidatePath('/stock');
+  return { ok: true };
+}
+
+/**
+ * Moves a supplier balance to a stated figure by posting a dated adjustment
+ * (0079). The twin of adjustCustomerBalance — same arguments, same checks,
+ * same result shape — because a correction that behaves differently depending
+ * on which party it is against is a correction nobody trusts.
+ */
+export async function adjustSupplierBalance(input: {
+  supplierId: string;
+  targetBalancePaisa: number;
+  reason: string;
+  entryDate?: string | null;
+}): Promise<
+  | { ok: true; oldBalancePaisa: number; newBalancePaisa: number; differencePaisa: number }
+  | { ok: false; error: string }
+> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Not signed in.' };
+
+  // Admin only, here as well as in the function — iron rule #7.
+  if (session.role !== 'admin') {
+    return { ok: false, error: 'Only an admin can adjust a balance.' };
+  }
+
+  if (!Number.isInteger(input.targetBalancePaisa)) {
+    return { ok: false, error: 'Enter a valid amount.' };
+  }
+  const reason = input.reason?.trim() ?? '';
+  if (reason.length < 3) {
+    return { ok: false, error: 'Say why the balance is being changed.' };
+  }
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const supabase = await createServerClient();
+  const { data, error } = await supabase.rpc('adjust_supplier_balance', {
+    p_supplier_id: input.supplierId,
+    p_business_id: businessId,
+    p_target_balance_paisa: input.targetBalancePaisa,
+    p_reason: reason,
+    p_entry_date: input.entryDate ?? null,
+  });
+
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') {
+      return {
+        ok: false,
+        error: 'Adjusting a supplier balance needs migration 0079. Apply it and try again.',
+      };
+    }
+    if (error.message.includes('already the balance')) {
+      return { ok: false, error: 'That is already the balance — nothing to change.' };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    old_balance_paisa?: number; new_balance_paisa?: number;
+    difference_paisa?: number; entry_id?: string;
+  } | null;
+
+  const oldBalance = Number(row?.old_balance_paisa ?? 0);
+  const newBalance = Number(row?.new_balance_paisa ?? input.targetBalancePaisa);
+  const difference = Number(row?.difference_paisa ?? 0);
+
+  await logActivity({
+    action: 'balance.adjusted',
+    entityType: 'supplier',
+    entityId: input.supplierId,
+    description:
+      `Adjusted a supplier balance from ${formatPKR(oldBalance)} to ${formatPKR(newBalance)}`
+      + ` (${difference > 0 ? '+' : ''}${formatPKR(difference)}) — ${reason}`,
+    metadata: {
+      party_type: 'supplier',
+      party_id: input.supplierId,
+      field: 'balance',
+      old_value_paisa: oldBalance,
+      new_value_paisa: newBalance,
+      difference_paisa: difference,
+      reason,
+      ledger_entry_id: row?.entry_id ?? null,
+      entry_date: input.entryDate ?? null,
+    },
+  });
+
+  revalidatePath('/suppliers');
+  revalidatePath(`/suppliers/${input.supplierId}`);
+  return { ok: true, oldBalancePaisa: oldBalance, newBalancePaisa: newBalance, differencePaisa: difference };
+}

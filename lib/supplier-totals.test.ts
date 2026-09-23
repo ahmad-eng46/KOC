@@ -111,3 +111,54 @@ describe('computeSupplierAccount', () => {
     expect(Number.isInteger(a!.balanceDuePaisa)).toBe(true);
   });
 });
+
+describe('computeSupplierAccount with a posted adjustment', () => {
+  it('prefers the balance the database computed over purchased − paid', () => {
+    // Bought 80,000, paid 50,000, then a 5,000 credit note was posted.
+    // Subtracting would say 30,000; the ledger says 25,000. The ledger wins.
+    const a = computeSupplierAccount({
+      totalPurchasedPaisa: 8_000_000,
+      totalPaidPaisa: 5_000_000,
+      balanceDuePaisa: 2_500_000,
+    });
+    expect(a?.balanceDuePaisa).toBe(2_500_000);
+    expect(a?.weOwe).toBe(true);
+  });
+
+  it('still subtracts when no balance is supplied', () => {
+    const a = computeSupplierAccount({
+      totalPurchasedPaisa: 8_000_000,
+      totalPaidPaisa: 5_000_000,
+    });
+    expect(a?.balanceDuePaisa).toBe(3_000_000);
+  });
+
+  it('treats a zero balance as settled rather than falling back', () => {
+    // The bug a `||` instead of `??` would cause: 0 is a real balance.
+    const a = computeSupplierAccount({
+      totalPurchasedPaisa: 8_000_000,
+      totalPaidPaisa: 5_000_000,
+      balanceDuePaisa: 0,
+    });
+    expect(a?.balanceDuePaisa).toBe(0);
+    expect(a?.settled).toBe(true);
+    expect(a?.weOwe).toBe(false);
+  });
+
+  it('carries an adjustment that puts us in credit', () => {
+    const a = computeSupplierAccount({
+      totalPurchasedPaisa: 8_000_000,
+      totalPaidPaisa: 5_000_000,
+      balanceDuePaisa: -200_000,
+    });
+    expect(a?.inCredit).toBe(true);
+  });
+
+  it('still hides everything from a role that may not see purchase prices', () => {
+    expect(computeSupplierAccount({
+      totalPurchasedPaisa: null,
+      totalPaidPaisa: null,
+      balanceDuePaisa: 2_500_000,
+    })).toBeNull();
+  });
+});

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
 import { deleteSupplier,
   correctPurchaseRate,
+  adjustSupplierBalance,
 } from '@/lib/actions/suppliers';
 import type { SupplierPaymentMethod } from '@/lib/validators/suppliers';
 
@@ -59,7 +60,8 @@ export type SupplierPaymentRow = {
 
 export type SupplierLedgerRow = {
   id: string;
-  ref_type: 'purchase' | 'payment';
+  // 'adjustment' and 'opening' arrive from supplier_ledger_entries (0079).
+  ref_type: 'purchase' | 'payment' | 'adjustment' | 'opening';
   ref_id: string;
   entry_date: string;
   created_at: string;
@@ -328,6 +330,31 @@ export function useCorrectPurchaseRate() {
       queryClient.invalidateQueries({ queryKey: ['stock-purchases'] });
       queryClient.invalidateQueries({ queryKey: ['supplier-balances', activeId] });
       queryClient.invalidateQueries({ queryKey: ['products', activeId] });
+    },
+  });
+}
+
+/**
+ * Posts a dated correction to a supplier balance (0079).
+ *
+ * Both balance queries are invalidated, not just the detail one: the card on
+ * this page and the supplier list read the same figure through different keys,
+ * and a list still showing the old balance is how the same correction gets
+ * applied a second time.
+ */
+export function useAdjustSupplierBalance(supplierId: string) {
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
+
+  return useMutation({
+    mutationFn: (input: { targetBalancePaisa: number; reason: string; entryDate?: string | null }) =>
+      adjustSupplierBalance({ supplierId, ...input }),
+    onSuccess: (result) => {
+      if (!result.ok) return;
+      queryClient.invalidateQueries({ queryKey: ['supplier-balances', activeId] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-ledger', activeId, supplierId] });
+      queryClient.invalidateQueries({ queryKey: ['activity-log', activeId] });
+      queryClient.invalidateQueries({ queryKey: ['audit-feed', activeId] });
     },
   });
 }

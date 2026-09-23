@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
+import { Scale } from 'lucide-react';
 import { formatPKR } from '@/lib/money';
+import { AdjustBalanceModal } from '@/components/balances/AdjustBalanceModal';
 import { computeSupplierAccount } from '@/lib/supplier-totals';
 import type { SupplierBalance } from '@/lib/queries/suppliers';
 
@@ -10,10 +13,23 @@ import type { SupplierBalance } from '@/lib/queries/suppliers';
  * Money is null for staff/viewer (the DB view NULLs it), so those roles see a
  * "hidden" note instead of zeros that would read as "nothing owed".
  */
-export function SupplierBalanceCard({ balance }: { balance: SupplierBalance | null }) {
+export function SupplierBalanceCard({
+  balance,
+  supplierId,
+  supplierName,
+  canAdjustBalance = false,
+}: {
+  balance: SupplierBalance | null;
+  supplierId: string;
+  supplierName: string;
+  /** Admin only. Enforced again in the action and in the RPC. */
+  canAdjustBalance?: boolean;
+}) {
+  const [adjusting, setAdjusting] = useState(false);
   const account = computeSupplierAccount({
     totalPurchasedPaisa: balance?.total_purchased_paisa ?? null,
     totalPaidPaisa: balance?.total_paid_paisa ?? null,
+    balanceDuePaisa: balance?.balance_due_paisa ?? null,
   });
 
   if (!account) {
@@ -30,6 +46,16 @@ export function SupplierBalanceCard({ balance }: { balance: SupplierBalance | nu
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 sm:divide-y-0">
+      {adjusting && (
+        <AdjustBalanceModal
+          party="supplier"
+          partyId={supplierId}
+          partyName={supplierName}
+          currentBalancePaisa={balanceDuePaisa}
+          onClose={() => setAdjusting(false)}
+        />
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 sm:divide-x divide-gray-100">
         <Stat label="Total Purchased" value={formatPKR(totalPurchasedPaisa)} />
         <Stat label="Total Paid" value={formatPKR(totalPaidPaisa)} />
@@ -52,6 +78,16 @@ export function SupplierBalanceCard({ balance }: { balance: SupplierBalance | nu
                 ? 'We paid more than we bought'
                 : 'Account settled'}
           </p>
+
+          {canAdjustBalance && (
+            <button
+              type="button"
+              onClick={() => setAdjusting(true)}
+              className="mt-2.5 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Scale size={13} /> Adjust Balance
+            </button>
+          )}
         </div>
       </div>
     </div>
