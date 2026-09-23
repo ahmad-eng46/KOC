@@ -217,7 +217,7 @@ export const ENTITY_CONFIG: Record<DeletableEntity, EntityConfig> = {
         { label: 'Quantity', value: String(num(r.quantity)) },
         { label: 'Date', value: str(r.purchase_date) },
       ],
-      warnings: ['Stock purchases have no delete action yet.'],
+      warnings: ['Deleting this puts the stock it brought in back off the shelf.'],
       metadata: { quantity: num(r.quantity), purchase_date: str(r.purchase_date) },
     }),
   },
@@ -313,7 +313,9 @@ export const ENTITY_CONFIG: Record<DeletableEntity, EntityConfig> = {
  * than silently marking the request done and leaving the row in place.
  */
 export const NO_DELETE_ACTION: readonly DeletableEntity[] = [
-  'return', 'stock_purchase', 'supplier_payment',
+  // stock_purchase left this list in 0073: softDeleteStockPurchase now applies
+  // the deletion and posts the offsetting stock movement.
+  'return', 'supplier_payment',
 ];
 
 /** Compares the snapshot with the row as it stands now. */

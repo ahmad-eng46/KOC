@@ -81,7 +81,14 @@ describe('describe()', () => {
 
 describe('NO_DELETE_ACTION', () => {
   it('names exactly the entities the app cannot yet delete', () => {
-    expect([...NO_DELETE_ACTION].sort()).toEqual(['return', 'stock_purchase', 'supplier_payment']);
+    // stock_purchase left this list in 0073: softDeleteStockPurchase applies
+    // the deletion and posts the offsetting stock movement, so an approved
+    // request for one can now actually be carried out.
+    expect([...NO_DELETE_ACTION].sort()).toEqual(['return', 'supplier_payment']);
+  });
+
+  it('does not list stock_purchase, which is now deletable', () => {
+    expect(NO_DELETE_ACTION).not.toContain('stock_purchase');
   });
 
   it('lists only entities that are otherwise describable', () => {

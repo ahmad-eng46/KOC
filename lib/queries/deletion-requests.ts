@@ -6,10 +6,12 @@ import {
   listDeletionRequests, getMyRequests, getPendingRequestCount,
   getPendingEntityIds, previewEntity,
   requestDeletion, resolveDeletionRequest, cancelDeletionRequest,
+  requestChange,
   type DeletionRequest,
 } from '@/lib/actions/deletion-requests';
 import type {
-  CreateDeletionRequestInput, ResolveDeletionRequestInput,
+  CreateDeletionRequestInput, CreateChangeRequestInput,
+  ResolveDeletionRequestInput,
   DeletableEntity, DeletionRequestStatus,
 } from '@/lib/validators/deletion-requests';
 
@@ -95,6 +97,23 @@ export function useRequestDeletion() {
   return useMutation({
     mutationFn: (input: CreateDeletionRequestInput) => requestDeletion(input),
     onSuccess: () => invalidate(),
+  });
+}
+
+/**
+ * A non-admin asking for a record to be CHANGED rather than removed.
+ *
+ * Invalidates the same keys as a deletion request: both land in one queue, and
+ * the pending-id map drives the indicator on whichever row was asked about.
+ */
+export function useRequestChange() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (input: CreateChangeRequestInput) => requestChange(input),
+    // The action reports failure by returning rather than throwing, so a
+    // refetch on a refusal would be wasted — and isError would stay false on a
+    // mutation that did nothing.
+    onSuccess: (result) => { if (result.ok) invalidate(); },
   });
 }
 

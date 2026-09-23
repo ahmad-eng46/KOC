@@ -16,6 +16,7 @@ import {
 } from '@/lib/validators/deletion-requests';
 import type { DeletionRequest } from '@/lib/actions/deletion-requests';
 import { useToast } from '@/components/ui/Toast';
+import { ChangeDiff } from '@/components/approvals/ChangeDiff';
 
 const ENTITY_ICONS: Record<DeletableEntity, React.ElementType> = {
   invoice: FileText, customer: User, product: Package, expense: Receipt,
@@ -121,6 +122,8 @@ function RequestCard({
   const href = entityHref(request.entity_type, request.entity_id);
   const isPending = request.status === 'pending';
   const isMine = request.requested_by === currentUserId;
+  // Absent on a database without 0072; every row was a deletion before it.
+  const isEdit = request.action === 'edit';
 
   async function approve(acknowledgeModified = false) {
     setError(null);
@@ -192,7 +195,22 @@ function RequestCard({
             </span>
           </div>
 
+          {isEdit && (
+            <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[11px] font-medium text-blue-700">
+              Change requested
+            </span>
+          )}
+
           <Metadata metadata={request.entity_metadata} />
+
+          {isEdit && (
+            <div className="mt-2">
+              <ChangeDiff
+                before={request.entity_snapshot}
+                proposed={request.proposed_changes}
+              />
+            </div>
+          )}
 
           <p className="mt-2 text-xs text-gray-500">
             Requested by <span className="font-medium text-gray-700">{request.requester_name}</span>

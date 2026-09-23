@@ -71,6 +71,7 @@ export default async function ProductDetailPage({ params }: Props) {
           canPurchase={canPurchase}
           canCreateSupplier={canCreateSupplier}
           canCorrectRate={canCorrectRate}
+          isAdmin={session?.role === 'admin'}
         />
       </div>
 

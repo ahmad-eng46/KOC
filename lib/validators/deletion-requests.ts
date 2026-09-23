@@ -99,3 +99,49 @@ export const STATUS_STYLES: Record<DeletionRequestStatus, string> = {
   rejected: 'bg-red-50 text-red-700 border-red-200',
   cancelled: 'bg-gray-100 text-gray-600 border-gray-200',
 };
+
+/**
+ * The fields a requester may propose changing on a stock purchase.
+ *
+ * Supplier and product are absent deliberately: changing either makes it a
+ * different purchase, and would strand the stock movement this one created.
+ * The same allow-list is enforced again inside file_deletion_request (0074),
+ * because a validator the client could skip is not a rule.
+ */
+export const stockPurchaseEditSchema = z
+  .object({
+    quantity: z
+      .number({ error: 'Quantity must be a number' })
+      .positive('Quantity must be greater than zero')
+      .max(1_000_000, 'Quantity is too large')
+      .optional(),
+    unit_price_paisa: z
+      .number({ error: 'Rate must be a number' })
+      .int('Rate must be a whole number of paisa')
+      .min(0, 'A rate cannot be negative')
+      .optional(),
+    purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a valid date').optional(),
+    notes: z.string().trim().max(500, 'Keep notes under 500 characters').optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'Change at least one field',
+  });
+
+export type StockPurchaseEdit = z.infer<typeof stockPurchaseEditSchema>;
+
+export const createChangeRequestSchema = z.object({
+  entity_type: z.enum(deletableEntities),
+  entity_id: uuidLike('Select an item to change'),
+  proposed_changes: stockPurchaseEditSchema,
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'Keep the reason under 500 characters')
+    .optional()
+    .or(z.literal('')),
+});
+
+export type CreateChangeRequestInput = z.infer<typeof createChangeRequestSchema>;
+
+/** Both kinds of request live in one queue; this is what tells them apart. */
+export type ChangeAction = 'edit' | 'delete';

@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
-import { History, Plus, Pencil } from 'lucide-react';
+import { History, Plus, Pencil, Clock } from 'lucide-react';
 import { useStockPurchases } from '@/lib/queries/suppliers';
 import { formatPKR } from '@/lib/money';
 import { AddPurchaseModal } from '@/components/suppliers/AddPurchaseModal';
 import { CorrectRateModal } from '@/components/suppliers/CorrectRateModal';
+import { RequestRateChangeModal } from '@/components/suppliers/RequestRateChangeModal';
+import { usePendingEntityIds } from '@/lib/queries/deletion-requests';
 
 type Props = {
   productId: string;
@@ -19,6 +21,12 @@ type Props = {
   canCreateSupplier?: boolean;
   /** purchases.update — shows the pencil that corrects a recorded rate. */
   canCorrectRate?: boolean;
+  /**
+   * False for a non-admin. They get the same pencil, but it files a request
+   * rather than writing — staff hold no UPDATE on stock_purchases, so the two
+   * paths are genuinely different and not a UI preference.
+   */
+  isAdmin?: boolean;
 };
 
 /**
@@ -33,12 +41,23 @@ export function ProductPurchaseHistory({
   canPurchase = false,
   canCreateSupplier = false,
   canCorrectRate = false,
+  isAdmin = false,
 }: Props) {
   const { data: purchases = [], isLoading } = useStockPurchases(undefined, productId);
   const [addOpen, setAddOpen] = useState(false);
   /** The purchase whose rate is being corrected, if any. */
   const [correcting, setCorrecting] = useState<string | null>(null);
   const target = purchases.find((p) => p.id === correcting) ?? null;
+
+  /**
+   * Which purchases already have a change waiting on an admin. Drives the
+   * indicator, and stops a second request being started only to be refused by
+   * the unique index (0072).
+   */
+  const { data: pendingIds = {} } = usePendingEntityIds('stock_purchase');
+
+  // Everyone who may ask gets the pencil; what it opens is what differs.
+  const mayAsk = canCorrectRate || !isAdmin;
 
   return (
     <div className="space-y-3">
@@ -108,16 +127,25 @@ export function ProductPurchaseHistory({
                         <td className="px-4 py-3 text-right font-mono text-gray-600">
                           <span className="inline-flex items-center justify-end gap-1.5">
                             {p.unit_price_paisa === null ? '—' : formatPKR(p.unit_price_paisa)}
-                            {canCorrectRate && p.unit_price_paisa !== null && (
-                              <button
-                                type="button"
-                                onClick={() => setCorrecting(p.id)}
-                                title="Change purchase rate"
-                                aria-label={`Change purchase rate for ${p.supplier_name}`}
-                                className="p-1 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                              >
-                                <Pencil size={13} />
-                              </button>
+                            {mayAsk && p.unit_price_paisa !== null && (
+                              pendingIds[p.id] ? (
+                                <span
+                                  title={`A change is already waiting for approval — asked by ${pendingIds[p.id].requester}`}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[11px] text-amber-700"
+                                >
+                                  <Clock size={11} /> Pending
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setCorrecting(p.id)}
+                                  title={isAdmin ? 'Change purchase rate' : 'Request a change'}
+                                  aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the rate for ${p.supplier_name}`}
+                                  className="p-1 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                              )
                             )}
                           </span>
                         </td>
@@ -156,15 +184,24 @@ export function ProductPurchaseHistory({
                     </p>
                   )}
                 </Link>
-                {canCorrectRate && p.unit_price_paisa !== null && (
-                  <button
-                    type="button"
-                    onClick={() => setCorrecting(p.id)}
-                    aria-label={`Change purchase rate for ${p.supplier_name}`}
-                    className="w-11 h-11 flex items-center justify-center rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 shrink-0"
-                  >
-                    <Pencil size={15} />
-                  </button>
+                {mayAsk && p.unit_price_paisa !== null && (
+                  pendingIds[p.id] ? (
+                    <span
+                      aria-label="A change is already waiting for approval"
+                      className="w-11 h-11 flex items-center justify-center text-amber-600 shrink-0"
+                    >
+                      <Clock size={15} />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setCorrecting(p.id)}
+                      aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the rate for ${p.supplier_name}`}
+                      className="w-11 h-11 flex items-center justify-center rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 shrink-0"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )
                 )}
               </div>
             ))}
@@ -180,7 +217,20 @@ export function ProductPurchaseHistory({
         />
       )}
 
-      {target && target.unit_price_paisa !== null && (
+      {target && target.unit_price_paisa !== null && !isAdmin && (
+        <RequestRateChangeModal
+          purchaseId={target.id}
+          productName={target.product_name}
+          supplierName={target.supplier_name}
+          purchaseDate={format(parseISO(target.purchase_date), 'dd MMM yyyy')}
+          quantity={target.quantity}
+          unit={target.product_unit}
+          currentRatePaisa={target.unit_price_paisa}
+          onClose={() => setCorrecting(null)}
+        />
+      )}
+
+      {target && target.unit_price_paisa !== null && isAdmin && (
         <CorrectRateModal
           purchaseId={target.id}
           productName={target.product_name}

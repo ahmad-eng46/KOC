@@ -17,9 +17,14 @@ import {
 import { softDeleteInvoice } from '@/lib/actions/invoice-detail';
 import { softDeletePayment } from '@/lib/actions/payment';
 import { softDeleteExpense } from '@/lib/actions/expense';
+import {
+  createChangeRequestSchema, type CreateChangeRequestInput,
+} from '@/lib/validators/deletion-requests';
 import { softDeleteCustomer } from '@/lib/actions/customer';
 import { softDeleteProduct } from '@/lib/actions/product';
-import { deleteSupplier } from '@/lib/actions/suppliers';
+import { deleteSupplier,
+  softDeleteStockPurchase,
+} from '@/lib/actions/suppliers';
 import { deleteBrand } from '@/lib/actions/brands';
 import { deleteLocation } from '@/lib/actions/locations';
 import { deleteCustomerCategory } from '@/lib/actions/customer-categories';
@@ -49,6 +54,10 @@ export type DeletionRequest = {
   resolved_at: string | null;
   review_note: string | null;
   entity_metadata: Record<string, unknown>;
+  /** 'edit' or 'delete'. Absent on a database without 0072; read as 'delete'. */
+  action?: 'edit' | 'delete' | null;
+  /** What an edit asks to change. Null for a deletion, and for roles the view withholds it from. */
+  proposed_changes?: Record<string, unknown> | null;
   /**
    * The whole row as it was when the request was filed. Null for anyone the
    * view withholds it from — a product snapshot carries its cost price.
@@ -89,6 +98,10 @@ export async function requestDeletion(
     .eq('entity_type', data.entity_type)
     .eq('entity_id', data.entity_id)
     .eq('status', 'pending')
+    // Scoped to deletions. A pending EDIT on the same record is allowed to
+    // coexist (0072), and reporting it here would refuse a deletion for the
+    // wrong reason.
+    .eq('action', 'delete')
     .maybeSingle();
 
   if (existing) {
@@ -119,6 +132,8 @@ export async function requestDeletion(
       ...snapshot.snapshot.metadata,
       __modified_at: snapshot.snapshot.modifiedAt,
     },
+    p_action: 'delete',
+    p_proposed_changes: null,
   });
 
   if (error || !created) {
@@ -138,6 +153,112 @@ export async function requestDeletion(
     entityId: data.entity_id,
     description: `Requested deletion of ${snapshot.snapshot.displayName}`,
     metadata: { reason: data.reason ?? null, request_id: requestId },
+  });
+
+  revalidateAll();
+  return { ok: true, id: requestId };
+}
+
+// ─────────────────────────────────────────────
+// 1b. requestChange — a non-admin asks to EDIT a record
+//
+// The deletion path and this one share a queue, a snapshot, a drift check and
+// an approvals screen. What differs is only that an edit carries the values it
+// wants applied, so this files through the same RPC with action = 'edit'.
+//
+// The original record is left completely untouched until an admin approves:
+// staff hold no UPDATE on stock_purchases at the database level, so there is
+// nothing for this to race with.
+// ─────────────────────────────────────────────
+export async function requestChange(
+  input: CreateChangeRequestInput,
+): Promise<RequestResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Not signed in.' };
+
+  if (session.role === 'admin') {
+    return { ok: false, error: 'Admins edit directly and do not file requests.' };
+  }
+
+  const parsed = createChangeRequestSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const data = parsed.data;
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const supabase = await createServerClient();
+
+  // Name who already asked, rather than letting the unique index answer with a
+  // constraint name. Scoped to edits: a pending deletion may coexist.
+  const { data: existing } = await supabase
+    .from(REQUEST_VIEW)
+    .select('requested_at, requester_name')
+    .eq('business_id', businessId)
+    .eq('entity_type', data.entity_type)
+    .eq('entity_id', data.entity_id)
+    .eq('status', 'pending')
+    .eq('action', 'edit')
+    .maybeSingle();
+
+  if (existing) {
+    const who = requesterName(existing);
+    const when = String((existing as { requested_at?: string }).requested_at ?? '').slice(0, 10);
+    return {
+      ok: false,
+      error: `A change request for this item is already pending${who ? `, from ${who}` : ''}${when ? ` on ${when}` : ''}. Duplicate requests are not merged — ask for that one to be decided first.`,
+    };
+  }
+
+  const snapshot = await snapshotEntity(supabase, businessId, data.entity_type, data.entity_id);
+  if (!snapshot.ok) return snapshot;
+
+  const { data: created, error } = await supabase.rpc('file_deletion_request', {
+    p_entity_type: data.entity_type,
+    p_entity_id: data.entity_id,
+    p_business_id: businessId,
+    p_display_name: snapshot.snapshot.displayName,
+    p_reason: data.reason?.trim() || null,
+    p_metadata: {
+      ...snapshot.snapshot.metadata,
+      __modified_at: snapshot.snapshot.modifiedAt,
+    },
+    p_action: 'edit',
+    p_proposed_changes: data.proposed_changes,
+  });
+
+  if (error || !created) {
+    // 0074 may not be applied; say which rather than surfacing PGRST202.
+    if (error?.code === 'PGRST202' || error?.code === '42883') {
+      return {
+        ok: false,
+        error: 'Change requests need migrations 0072 and 0074. Apply them and try again.',
+      };
+    }
+    if (error?.message.includes('already asked')) {
+      return { ok: false, error: 'A change request for this item is already pending.' };
+    }
+    if (error?.message.includes('already what the record says')) {
+      return { ok: false, error: 'Those values match the record already — nothing to change.' };
+    }
+    if (error?.message.includes('Record not found')) {
+      return { ok: false, error: 'That record no longer exists, or has already been deleted.' };
+    }
+    return { ok: false, error: error?.message ?? 'Could not file the request.' };
+  }
+
+  const requestId = created as unknown as string;
+
+  await logActivity({
+    action: 'change.requested',
+    entityType: data.entity_type,
+    entityId: data.entity_id,
+    description: `Requested a change to ${snapshot.snapshot.displayName}`,
+    metadata: {
+      reason: data.reason ?? null,
+      request_id: requestId,
+      proposed_changes: data.proposed_changes,
+    },
   });
 
   revalidateAll();
@@ -165,7 +286,7 @@ export async function resolveDeletionRequest(
   const supabase = await createServerClient();
   const { data: req } = await supabase
     .from('deletion_requests')
-    .select('id, entity_type, entity_id, entity_display_name, status, entity_metadata')
+    .select('id, entity_type, entity_id, entity_display_name, status, entity_metadata, action, proposed_changes')
     .eq('id', data.request_id)
     .eq('business_id', businessId)
     .maybeSingle();
@@ -175,7 +296,12 @@ export async function resolveDeletionRequest(
     entity_type: DeletableEntity; entity_id: string;
     entity_display_name: string; status: string;
     entity_metadata: Record<string, unknown>;
+    // Absent on a database without 0072; treated as a deletion, which is what
+    // every row was before that migration.
+    action?: 'edit' | 'delete' | null;
+    proposed_changes?: Record<string, unknown> | null;
   };
+  const isEdit = request.action === 'edit';
   if (request.status !== 'pending') {
     return { ok: false, error: `This request was already ${request.status}.` };
   }
@@ -193,10 +319,12 @@ export async function resolveDeletionRequest(
     if (error) return { ok: false, error: error.message };
 
     await logActivity({
-      action: 'deletion.rejected',
+      action: isEdit ? 'change.rejected' : 'deletion.rejected',
       entityType: request.entity_type,
       entityId: request.entity_id,
-      description: `Rejected the deletion of ${request.entity_display_name}`,
+      description: isEdit
+        ? `Rejected a change to ${request.entity_display_name}`
+        : `Rejected the deletion of ${request.entity_display_name}`,
       metadata: { reason: data.review_note ?? null },
     });
 
@@ -205,7 +333,8 @@ export async function resolveDeletionRequest(
   }
 
   // ── approve ──
-  if (NO_DELETE_ACTION.includes(request.entity_type)) {
+  // NO_DELETE_ACTION is about deleting. An edit request is unaffected by it.
+  if (!isEdit && NO_DELETE_ACTION.includes(request.entity_type)) {
     return {
       ok: false,
       error: `${request.entity_display_name} cannot be deleted from the app yet, so this request cannot be approved. Reject it instead.`,
@@ -219,30 +348,45 @@ export async function resolveDeletionRequest(
     if (drift.length > 0) {
       return {
         ok: false,
-        error: `${request.entity_display_name} changed after this deletion was requested. Review the changes and approve again to confirm.`,
+        error: isEdit
+          ? `${request.entity_display_name} changed after this edit was requested. Review the differences and approve again to confirm.`
+          : `${request.entity_display_name} changed after this deletion was requested. Review the changes and approve again to confirm.`,
         drift,
       };
     }
   }
 
-  const deleted = await performDelete(request.entity_type, request.entity_id, request.entity_display_name);
-  if (!deleted.ok) return deleted;
+  const applied = isEdit
+    ? await performEdit(
+        supabase, businessId, request.entity_type, request.entity_id,
+        request.proposed_changes ?? {},
+      )
+    : await performDelete(request.entity_type, request.entity_id, request.entity_display_name);
+  if (!applied.ok) return applied;
 
   const { error } = await supabase
     .from('deletion_requests')
     .update({ status: 'approved', resolved_by: session.id, resolved_at: now })
     .eq('id', data.request_id);
   if (error) {
-    // The row is already gone; saying the approval failed would be worse than
-    // saying the record could not be updated.
-    return { ok: false, error: `Deleted, but the request could not be marked approved: ${error.message}` };
+    // The change has already landed; saying the approval failed would be worse
+    // than saying the request could not be marked.
+    return {
+      ok: false,
+      error: `${isEdit ? 'Applied' : 'Deleted'}, but the request could not be marked approved: ${error.message}`,
+    };
   }
 
   await logActivity({
-    action: 'deletion.approved',
+    action: isEdit ? 'change.approved' : 'deletion.approved',
     entityType: request.entity_type,
     entityId: request.entity_id,
-    description: `Approved the deletion of ${request.entity_display_name}`,
+    description: isEdit
+      ? `Approved a change to ${request.entity_display_name}`
+      : `Approved the deletion of ${request.entity_display_name}`,
+    metadata: isEdit
+      ? { applied_changes: request.proposed_changes ?? null }
+      : undefined,
   });
 
   revalidateAll();
@@ -313,7 +457,7 @@ const REQUEST_VIEW = 'deletion_requests_for_role';
 const REQUEST_COLUMNS =
   'id, entity_type, entity_id, entity_display_name, reason, status, requested_by, requested_at, ' +
   'resolved_by, resolved_at, review_note, entity_metadata, entity_snapshot, ' +
-  'requester_name, resolver_name';
+  'action, proposed_changes, requester_name, resolver_name';
 
 export async function listDeletionRequests(
   status?: DeletionRequestStatus | 'all',
@@ -504,6 +648,52 @@ async function snapshotEntity(
   };
 }
 
+/**
+ * Apply the values an approved edit asked for.
+ *
+ * Routed through apply_stock_purchase_edit (0073) rather than an UPDATE from
+ * here, for three reasons the function's own comment sets out: total_paisa is
+ * CHECKed against quantity x rate, stock_movements is immutable so a quantity
+ * change has to post a signed adjustment instead of editing the original row,
+ * and the two must land together or the shelf is left overstated.
+ *
+ * Only stock_purchase is supported. 0074 refuses to file an edit request for
+ * anything else, so reaching here with another type would mean the two drifted
+ * — better to say so than to silently do nothing.
+ */
+async function performEdit(
+  supabase: Client,
+  businessId: string,
+  entityType: DeletableEntity,
+  entityId: string,
+  changes: Record<string, unknown>,
+): Promise<SimpleResult> {
+  if (entityType !== 'stock_purchase') {
+    return { ok: false, error: `Edit requests are not supported for ${entityType} yet.` };
+  }
+  if (!changes || Object.keys(changes).length === 0) {
+    return { ok: false, error: 'This request carries no changes to apply.' };
+  }
+
+  const { error } = await supabase.rpc('apply_stock_purchase_edit', {
+    p_id: entityId,
+    p_business_id: businessId,
+    p_changes: changes,
+  });
+
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') {
+      return {
+        ok: false,
+        error: 'Applying an edit needs migration 0073. Apply it and try again.',
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
 async function driftSince(
   supabase: Client,
   businessId: string,
@@ -555,6 +745,7 @@ async function performDelete(
     case 'customer_category': return toSimple(await deleteCustomerCategory(entityId));
     case 'expense_asset': return toSimple(await deleteExpenseAsset(entityId));
     case 'expense_sub_type': return toSimple(await deleteExpenseSubType(entityId));
+    case 'stock_purchase': return toSimple(await softDeleteStockPurchase(entityId));
     default:
       return { ok: false, error: `${displayName} cannot be deleted from the app yet.` };
   }
