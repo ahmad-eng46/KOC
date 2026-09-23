@@ -2,8 +2,8 @@
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
-  listActivity, listActivityActors,
-  type ActivityEntry, type ActivityFilters,
+  listActivity, listActivityActors, listAuditFeed,
+  type ActivityEntry, type ActivityFilters, type AuditFilters,
 } from '@/lib/actions/activity-log';
 import { useBusinessStore } from '@/lib/store/business';
 
@@ -61,5 +61,27 @@ export function useActivityActors() {
       if (!r.ok) throw new Error(r.error);
       return r.data;
     },
+  });
+}
+
+/**
+ * The admin audit feed (0076). Kept beside the activity hooks because it reads
+ * the same rows through a different view — separate cache keys, so filtering
+ * one screen never disturbs the other.
+ */
+export function useAuditFeed(filters: Omit<AuditFilters, 'limit' | 'offset'> = {}) {
+  const activeId = useBusinessStore((s) => s.activeId);
+
+  return useInfiniteQuery({
+    queryKey: ['audit-feed', activeId, filters],
+    initialPageParam: 0,
+    enabled: !!activeId,
+    queryFn: async ({ pageParam }) => {
+      const r = await listAuditFeed({ ...filters, limit: PAGE_SIZE, offset: pageParam });
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    },
+    getNextPageParam: (last, all) =>
+      last.length < PAGE_SIZE ? undefined : all.length * PAGE_SIZE,
   });
 }

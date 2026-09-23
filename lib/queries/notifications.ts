@@ -37,6 +37,10 @@ export function useMarkNotificationsSeen() {
     onSuccess: (result) => {
       if (!result.ok) return;
       queryClient.invalidateQueries({ queryKey: [FEED_KEY, activeId] });
+      // One marker serves both the bell and the audit screen (0076), so
+      // clearing it in one place has to clear it in the other — otherwise the
+      // screen still shows dots against rows the admin has just marked seen.
+      queryClient.invalidateQueries({ queryKey: ['audit-feed', activeId] });
     },
   });
 }

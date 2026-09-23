@@ -1,5 +1,6 @@
 import { requireRole } from '@/lib/auth/guards';
-import { ActivityLogView } from '@/components/settings/ActivityLogView';
+import { ActivityLogTabs } from '@/components/settings/ActivityLogTabs';
+import { getSession } from '@/lib/auth/session';
 
 export const metadata = { title: 'Activity Log — KOC' };
 
@@ -9,6 +10,8 @@ export default async function ActivityLogPage({
   searchParams: Promise<{ userId?: string }>;
 }) {
   await requireRole('admin', 'accountant', 'staff');
+  const session = await getSession();
+  const isAdmin = session?.role === 'admin';
   const { userId } = await searchParams;
 
   return (
@@ -16,11 +19,15 @@ export default async function ActivityLogPage({
       <div className="flex items-center gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Activity Log</h1>
-          <p className="text-sm text-gray-500 mt-0.5">See what everyone did in the system</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {isAdmin
+              ? 'See what everyone did in the system, yourself included'
+              : 'See what everyone did in the system'}
+          </p>
         </div>
       </div>
 
-      <ActivityLogView initialUserId={userId ?? ''} />
+      <ActivityLogTabs isAdmin={isAdmin} initialUserId={userId ?? ''} />
     </div>
   );
 }

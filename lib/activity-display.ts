@@ -71,6 +71,17 @@ export const ACTION_GROUPS = [
   { value: 'backup', label: 'Backups' },
 ] as const;
 
+/** What the audit feed can be narrowed to, by the thing that was changed. */
+export const AUDIT_ENTITY_TYPES = [
+  { value: '', label: 'Everything' },
+  { value: 'customer', label: 'Customers' },
+  { value: 'product', label: 'Products' },
+  { value: 'invoice', label: 'Invoices' },
+  { value: 'stock_purchase', label: 'Stock purchases' },
+  { value: 'payment', label: 'Payments' },
+  { value: 'supplier', label: 'Suppliers' },
+] as const;
+
 export const DATE_RANGES = [
   { value: '1', label: 'Last 24 hours' },
   { value: '7', label: 'Last 7 days' },

@@ -18,7 +18,9 @@ export type ActivityAction =
   | 'backup.downloaded'
   | 'user.login' | 'user.password_changed'
   | 'permission.changed'
-  | 'deletion.requested' | 'deletion.approved' | 'deletion.rejected' | 'deletion.cancelled';
+  | 'deletion.requested' | 'deletion.approved' | 'deletion.rejected' | 'deletion.cancelled'
+  | 'change.requested' | 'change.approved' | 'change.rejected'
+  | 'balance.adjusted';
 
 export type LogActivityParams = {
   action: ActivityAction;
@@ -149,4 +151,109 @@ export async function listActivityActors(): Promise<Result<Array<{ id: string; n
   const seen = new Map<string, string>();
   for (const e of r.data) if (!seen.has(e.user_id)) seen.set(e.user_id, e.user_name);
   return { ok: true, data: [...seen].map(([id, name]) => ({ id, name })) };
+}
+
+// ─────────────────────────────────────────────
+// The admin audit feed (0076)
+//
+// A different question from listActivity() above, over the same rows: not
+// "what did people do?" but "what happened here, my own actions included" —
+// with the before and after values lifted out, and an unread marker.
+//
+// admin_audit_feed is admin-only in the view itself, so a non-admin reading it
+// gets nothing rather than a filtered something.
+// ─────────────────────────────────────────────
+export type AuditEntry = {
+  id: string;
+  actor_id: string;
+  actor_name: string;
+  actor_role: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  description: string;
+  created_at: string;
+  old_value_paisa: number | null;
+  new_value_paisa: number | null;
+  difference_paisa: number | null;
+  reason: string | null;
+  is_unread: boolean;
+};
+
+export type AuditFilters = {
+  userId?: string;
+  /** Prefix match on the action, e.g. 'stock' matches stock.adjusted. */
+  actionGroup?: string;
+  action?: string;
+  entityType?: string;
+  since?: string;
+  /** Only rows this admin has not seen yet. */
+  unreadOnly?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+export async function listAuditFeed(
+  filters: AuditFilters = {},
+): Promise<Result<AuditEntry[]>> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: 'Not signed in.' };
+  if (session.role !== 'admin') return { ok: false, error: 'Admins only.' };
+
+  const businessId = await getActiveBusinessId().catch(() => null);
+  if (!businessId) return { ok: false, error: 'No active business.' };
+
+  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+  const offset = Math.max(filters.offset ?? 0, 0);
+
+  const supabase = await createServerClient();
+  let q = supabase
+    .from('admin_audit_feed')
+    .select(
+      'id, actor_id, actor_name, actor_role, action, entity_type, entity_id,'
+      + ' description, created_at, old_value_paisa, new_value_paisa,'
+      + ' difference_paisa, reason, is_unread',
+    )
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (filters.userId) q = q.eq('actor_id', filters.userId);
+  if (filters.action) q = q.eq('action', filters.action);
+  if (filters.actionGroup) q = q.like('action', `${filters.actionGroup}.%`);
+  if (filters.entityType) q = q.eq('entity_type', filters.entityType);
+  if (filters.since) q = q.gte('created_at', filters.since);
+  if (filters.unreadOnly) q = q.eq('is_unread', true);
+
+  const { data, error } = await q;
+  if (error) {
+    // The one failure worth naming: the view is what 0076 adds, and until it
+    // is applied the screen would otherwise show a Postgres error code.
+    if (error.code === '42P01') {
+      return { ok: false, error: 'The audit feed needs migration 0076. Apply it and reload.' };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  type Raw = Omit<AuditEntry, 'old_value_paisa' | 'new_value_paisa' | 'difference_paisa'> & {
+    old_value_paisa: number | string | null;
+    new_value_paisa: number | string | null;
+    difference_paisa: number | string | null;
+  };
+
+  // BIGINT arrives as a string over PostgREST when it is large enough, and a
+  // string subtracted from a string is how a correction gets misreported.
+  const num = (v: number | string | null): number | null =>
+    v === null || v === undefined ? null : Number(v);
+
+  const rows: AuditEntry[] = (data as unknown as Raw[]).map((r) => ({
+    ...r,
+    actor_name: r.actor_name ?? 'Unknown user',
+    old_value_paisa: num(r.old_value_paisa),
+    new_value_paisa: num(r.new_value_paisa),
+    difference_paisa: num(r.difference_paisa),
+    is_unread: Boolean(r.is_unread),
+  }));
+
+  return { ok: true, data: rows };
 }
