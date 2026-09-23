@@ -6,7 +6,10 @@ import { getActiveBusinessId } from '@/lib/business';
 import { requireAuth } from '@/lib/auth/guards';
 import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
-import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
+import {
+  customerSchema, customerUpdateSchema,
+  type CustomerInput,
+} from '@/lib/validators/customer';
 import { logActivity } from '@/lib/actions/activity-log';
 import { todayKarachiISO } from '@/lib/date';
 import { softDeleteEntity } from '@/lib/actions/soft-delete';
@@ -91,7 +94,10 @@ export async function updateCustomer(
     throw new Error('Permission denied: customers.update');
   }
 
-  const parsed = customerSchema.safeParse(input);
+  // Not customerSchema: that one carries opening_balance_paisa, and whatever
+  // it parsed went straight into .update(). An edit must not be able to reach
+  // the balance column at all.
+  const parsed = customerUpdateSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
