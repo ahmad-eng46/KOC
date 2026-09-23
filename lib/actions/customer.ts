@@ -8,7 +8,7 @@ import { getSession } from '@/lib/auth/session';
 import { currentUserCan } from '@/lib/auth/can-user';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { logActivity } from '@/lib/actions/activity-log';
-import { formatPKR } from '@/lib/money';
+import { todayKarachiISO } from '@/lib/date';
 import { softDeleteEntity } from '@/lib/actions/soft-delete';
 
 type ActionResult =
@@ -154,6 +154,8 @@ export async function adjustCustomerBalance(input: {
   targetBalancePaisa: number;
   reason: string;
   entryDate?: string | null;
+  /** Which balance is being corrected. Defaults to where the account stands now. */
+  field?: 'outstanding' | 'opening';
 }): Promise<
   | { ok: true; oldBalancePaisa: number; newBalancePaisa: number; differencePaisa: number }
   | { ok: false; error: string }
@@ -175,6 +177,12 @@ export async function adjustCustomerBalance(input: {
     return { ok: false, error: 'Say why the balance is being changed.' };
   }
 
+  // An entry dated in the future misstates every report drawn before it
+  // arrives. Refused here and again in the function.
+  if (input.entryDate && input.entryDate > todayKarachiISO()) {
+    return { ok: false, error: 'An adjustment cannot be dated in the future.' };
+  }
+
   const businessId = await getActiveBusinessId().catch(() => null);
   if (!businessId) return { ok: false, error: 'No active business.' };
 
@@ -185,14 +193,18 @@ export async function adjustCustomerBalance(input: {
     p_target_balance_paisa: input.targetBalancePaisa,
     p_reason: reason,
     p_entry_date: input.entryDate ?? null,
+    p_field: input.field ?? 'outstanding',
   });
 
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883') {
       return {
         ok: false,
-        error: 'Adjusting a balance needs migration 0075. Apply it and try again.',
+        error: 'Adjusting a balance needs migrations 0075 and 0080. Apply them and try again.',
       };
+    }
+    if (error.message.includes('future')) {
+      return { ok: false, error: 'An adjustment cannot be dated in the future.' };
     }
     if (error.message.includes('already the balance')) {
       return { ok: false, error: 'That is already the balance — nothing to change.' };
@@ -209,27 +221,9 @@ export async function adjustCustomerBalance(input: {
   const newBalance = Number(row?.new_balance_paisa ?? input.targetBalancePaisa);
   const difference = Number(row?.difference_paisa ?? 0);
 
-  // Everything Part B asks to be recorded: which party, which field, what it
-  // was, what it became, the difference, who, when, and why.
-  await logActivity({
-    action: 'balance.adjusted',
-    entityType: 'customer',
-    entityId: input.customerId,
-    description:
-      `Adjusted a customer balance from ${formatPKR(oldBalance)} to ${formatPKR(newBalance)}`
-      + ` (${difference > 0 ? '+' : ''}${formatPKR(difference)}) — ${reason}`,
-    metadata: {
-      party_type: 'customer',
-      party_id: input.customerId,
-      field: 'balance',
-      old_value_paisa: oldBalance,
-      new_value_paisa: newBalance,
-      difference_paisa: difference,
-      reason,
-      ledger_entry_id: row?.entry_id ?? null,
-      entry_date: input.entryDate ?? null,
-    },
-  });
+  // No logActivity() here: 0080 writes the audit row inside the function,
+  // in the same transaction as the ledger entry, so a correction can never
+  // exist without its record. Logging again would double it.
 
   revalidatePath('/customers');
   revalidatePath(`/customers/${input.customerId}`);
