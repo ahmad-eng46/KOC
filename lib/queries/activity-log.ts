@@ -85,3 +85,15 @@ export function useAuditFeed(filters: Omit<AuditFilters, 'limit' | 'offset'> = {
       last.length < PAGE_SIZE ? undefined : all.length * PAGE_SIZE,
   });
 }
+
+/**
+ * The balance corrections made against one party.
+ *
+ * Read from activity_log rather than from the ledger, because the ledger entry
+ * says what changed while the audit row says who changed it and why — and the
+ * point of showing this on the party's own page is that anyone looking at the
+ * account can see it was corrected by hand, by whom.
+ */
+export function usePartyAdjustments(entityType: 'customer' | 'supplier', entityId: string) {
+  return useRecentActivity(50, { entityType, entityId, action: 'balance.adjusted' });
+}

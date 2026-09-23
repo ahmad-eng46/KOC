@@ -46,6 +46,20 @@ type Props = {
   closingBalance: number;
 };
 
+/**
+ * How a row identifies itself on the printed statement.
+ *
+ * A manual correction is named as one. Printing the raw 'adjustment' — or
+ * worse, leaving it to look like any other line — is how a hand-made
+ * correction gets mistaken for a transaction the customer made.
+ */
+function refLabel(r: LedgerRow): string {
+  if (r.id === 'brought-forward') return '—';
+  if (r.ref_type === 'adjustment') return 'ADJUSTMENT';
+  if (r.ref_type === 'opening') return 'Opening';
+  return r.ref_type;
+}
+
 export function CustomerStatementPDF({
   businessName, customerName, customerPhone,
   rangeFrom, rangeTo, rows, closingBalance,
@@ -92,7 +106,7 @@ export function CustomerStatementPDF({
                 {r.id === 'brought-forward' ? '—' : format(parseISO(r.entry_date), 'dd MMM yyyy')}
               </Text>
               <Text style={[styles.td, styles.cellRef, { fontSize: 9 }]}>
-                {r.ref_type === 'opening' ? '—' : r.ref_type}
+                {refLabel(r)}
               </Text>
               <Text style={[styles.td, styles.cellDesc]}>{r.description}</Text>
               <Text style={[styles.td, styles.cellDebit]}>

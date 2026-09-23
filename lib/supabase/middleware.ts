@@ -56,16 +56,44 @@ export async function updateSession(request: NextRequest) {
   if (user && !isChangePassword && !isServerAsset(path)) {
     const { data: profile } = await supabase
       .from('users')
-      .select('must_change_password')
+      .select('must_change_password, role')
       .eq('id', user.id)
       .single();
 
     if (profile?.must_change_password) {
       return NextResponse.redirect(new URL('/change-password', request.url));
     }
+
+    // Admin-only areas turned away at the request, before any page or action
+    // runs. This is a third lock, not the lock: the pages already call
+    // requireRole and the database has its own policies. It exists so that a
+    // route added without a guard is still not reachable by the wrong role.
+    if (isAdminOnly(path) && profile?.role !== 'admin') {
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
+    }
   }
 
   return response;
+}
+
+/**
+ * Areas no non-admin has business in, matched by prefix.
+ *
+ * Deliberately not the balance-correction action: a server action POSTs to the
+ * page it sits on, and staff legitimately open a customer or supplier page. No
+ * path test can tell "viewing this customer" from "correcting their balance",
+ * so that one is enforced where the call can actually be seen — in the server
+ * action, and again in the SECURITY DEFINER function, which refuses any role
+ * but admin whatever the caller does.
+ */
+const ADMIN_ONLY_PREFIXES = [
+  '/settings/users',
+  '/settings/backup',
+  '/reports/audit',
+] as const;
+
+function isAdminOnly(path: string): boolean {
+  return ADMIN_ONLY_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
 // Next's own endpoints and the auth callback must stay reachable, or the

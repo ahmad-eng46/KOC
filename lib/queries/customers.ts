@@ -99,7 +99,10 @@ export function useAdjustCustomerBalance(customerId: string) {
   const activeId = useBusinessStore((s) => s.activeId);
 
   return useMutation({
-    mutationFn: (input: { targetBalancePaisa: number; reason: string; entryDate?: string | null }) =>
+    mutationFn: (input: {
+      targetBalancePaisa: number; reason: string;
+      entryDate?: string | null; field?: 'outstanding' | 'opening';
+    }) =>
       adjustCustomerBalance({ customerId, ...input }),
     onSuccess: (result) => {
       if (!result.ok) return;

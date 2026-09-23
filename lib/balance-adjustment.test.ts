@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { describeAdjustment, reasonIsAdequate } from './balance-adjustment';
+import { formatPKR, parseMoneyInput } from './money';
+import {
+  describeAdjustment, reasonIsAdequate, describeDirection,
+  adjustmentLooksLarge, isFutureDate,
+} from './balance-adjustment';
 
 describe('describeAdjustment', () => {
   it('posts the difference between what is owed and what should be', () => {
@@ -71,5 +75,70 @@ describe('reasonIsAdequate', () => {
 
   it('accepts a stated reason', () => {
     expect(reasonIsAdequate('cash payment missed')).toBe(true);
+  });
+});
+
+describe('describeDirection', () => {
+  it('says whose money it is, per party', () => {
+    expect(describeDirection('customer', 500)).toMatch(/customer owes you/);
+    expect(describeDirection('customer', -500)).toMatch(/Reduces what this customer owes/);
+    expect(describeDirection('supplier', 500)).toMatch(/you owe this supplier/);
+    expect(describeDirection('supplier', -500)).toMatch(/Reduces what you owe/);
+  });
+
+  it('does not claim a direction when nothing moves', () => {
+    expect(describeDirection('customer', 0)).toBe('No change.');
+  });
+});
+
+describe('adjustmentLooksLarge', () => {
+  it('warns when the correction dwarfs the biggest transaction', () => {
+    expect(adjustmentLooksLarge(1_000_000, 100_000)).toBe(true);
+  });
+
+  it('stays quiet for a correction in the ordinary range', () => {
+    expect(adjustmentLooksLarge(50_000, 100_000)).toBe(false);
+  });
+
+  it('stays quiet at exactly twice, warning only beyond it', () => {
+    expect(adjustmentLooksLarge(200_000, 100_000)).toBe(false);
+    expect(adjustmentLooksLarge(200_001, 100_000)).toBe(true);
+  });
+
+  it('says nothing about a party with no history to judge against', () => {
+    expect(adjustmentLooksLarge(1_000_000, 0)).toBe(false);
+  });
+
+  it('judges a credit by its size, not its sign', () => {
+    expect(adjustmentLooksLarge(-1_000_000, 100_000)).toBe(true);
+  });
+});
+
+describe('isFutureDate', () => {
+  it('rejects tomorrow', () => {
+    expect(isFutureDate('2026-09-24', '2026-09-23')).toBe(true);
+  });
+
+  it('allows today and the past', () => {
+    expect(isFutureDate('2026-09-23', '2026-09-23')).toBe(false);
+    expect(isFutureDate('2020-01-01', '2026-09-23')).toBe(false);
+  });
+});
+
+describe('the dialog seeds its input from formatPKR, so it must read back', () => {
+  // The target field opens showing the current balance, formatted. If the
+  // parser could not read its own formatter's output, opening the dialog and
+  // pressing Review would post a different number than the one displayed.
+  for (const paisa of [500_000, -500_000, 0, -1, 123_456, -98_765_432]) {
+    it(`round-trips ${paisa} paisa`, () => {
+      const shown = formatPKR(paisa, { showSymbol: false });
+      expect(parseMoneyInput(shown)).toBe(paisa);
+    });
+  }
+
+  it('lets a party in credit be corrected from a negative seed', () => {
+    const a = describeAdjustment(-250_000, formatPKR(-250_000, { showSymbol: false }));
+    expect(a.valid).toBe(true);
+    expect(a.postable).toBe(false);
   });
 });

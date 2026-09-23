@@ -2,6 +2,7 @@
 
 import { format, parseISO } from 'date-fns';
 import { useSupplierLedger, type SupplierLedgerRow } from '@/lib/queries/suppliers';
+import { AdjustmentHistory } from '@/components/balances/AdjustmentHistory';
 import { formatPKR } from '@/lib/money';
 
 type Props = {
@@ -62,6 +63,8 @@ export function SupplierLedger({ supplierId, canSeeMoney }: Props) {
 
   return (
     <div className="space-y-3">
+      <AdjustmentHistory party="supplier" partyId={supplierId} />
+
       {/* Desktop */}
       <div className="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">

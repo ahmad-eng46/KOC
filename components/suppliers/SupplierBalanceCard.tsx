@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Scale } from 'lucide-react';
 import { formatPKR } from '@/lib/money';
 import { AdjustBalanceModal } from '@/components/balances/AdjustBalanceModal';
+import { useSupplierLedger } from '@/lib/queries/suppliers';
 import { computeSupplierAccount } from '@/lib/supplier-totals';
 import type { SupplierBalance } from '@/lib/queries/suppliers';
 
@@ -26,6 +27,19 @@ export function SupplierBalanceCard({
   canAdjustBalance?: boolean;
 }) {
   const [adjusting, setAdjusting] = useState(false);
+
+  // Only for the dialog: what the account opened at, and its biggest single
+  // movement — the yardstick for flagging an unusually large correction. The
+  // card itself needs neither, so this is fetched only where it can be used.
+  const { data: ledgerRows = [] } = useSupplierLedger(supplierId, canAdjustBalance);
+  const openingPaisa = ledgerRows
+    .filter((r) => r.ref_type === 'opening')
+    .reduce((sum, r) => sum + r.debit_paisa - r.credit_paisa, 0);
+  const largestTransaction = ledgerRows.reduce(
+    (max, r) => Math.max(max, r.debit_paisa, r.credit_paisa),
+    0,
+  );
+
   const account = computeSupplierAccount({
     totalPurchasedPaisa: balance?.total_purchased_paisa ?? null,
     totalPaidPaisa: balance?.total_paid_paisa ?? null,
@@ -52,6 +66,8 @@ export function SupplierBalanceCard({
           partyId={supplierId}
           partyName={supplierName}
           currentBalancePaisa={balanceDuePaisa}
+          currentOpeningPaisa={openingPaisa}
+          largestTransactionPaisa={largestTransaction}
           onClose={() => setAdjusting(false)}
         />
       )}

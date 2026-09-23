@@ -347,7 +347,10 @@ export function useAdjustSupplierBalance(supplierId: string) {
   const activeId = useBusinessStore((s) => s.activeId);
 
   return useMutation({
-    mutationFn: (input: { targetBalancePaisa: number; reason: string; entryDate?: string | null }) =>
+    mutationFn: (input: {
+      targetBalancePaisa: number; reason: string;
+      entryDate?: string | null; field?: 'outstanding' | 'opening';
+    }) =>
       adjustSupplierBalance({ supplierId, ...input }),
     onSuccess: (result) => {
       if (!result.ok) return;

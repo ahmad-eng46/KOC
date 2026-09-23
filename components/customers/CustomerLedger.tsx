@@ -9,6 +9,7 @@ import { useCustomerLedger, type LedgerRow } from '@/lib/queries/customer-ledger
 import { formatPKR } from '@/lib/money';
 import { CustomerStatementPDF } from './CustomerStatementPDF';
 import { AdjustBalanceModal } from '@/components/balances/AdjustBalanceModal';
+import { AdjustmentHistory } from '@/components/balances/AdjustmentHistory';
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -57,6 +58,18 @@ export function CustomerLedger({
   // to what the customer owes now, not to what the visible window happens to
   // end at.
   const currentBalance = allRows.length > 0 ? allRows[allRows.length - 1].running_balance : 0;
+
+  // What the account opened at, and the biggest single movement on it. The
+  // second is only a yardstick for "is this correction unusually large?", so
+  // an approximate answer is the right kind of answer.
+  const openingBalance = allRows
+    .filter((r) => r.ref_type === 'opening')
+    .reduce((sum, r) => sum + r.debit_paisa - r.credit_paisa, 0);
+
+  const largestTransaction = allRows.reduce(
+    (max, r) => Math.max(max, r.debit_paisa, r.credit_paisa),
+    0,
+  );
 
   // Filter to date range; the opening row (ref_type='opening') is special:
   // - if user's "from" is the customer's lifetime start, include it as the first row
@@ -128,6 +141,8 @@ export function CustomerLedger({
           partyId={customerId}
           partyName={customerName}
           currentBalancePaisa={currentBalance}
+          currentOpeningPaisa={openingBalance}
+          largestTransactionPaisa={largestTransaction}
           onClose={() => setAdjusting(false)}
         />
       )}
@@ -176,6 +191,8 @@ export function CustomerLedger({
           }}
         </PDFDownloadLink>
       </div>
+
+      <AdjustmentHistory party="customer" partyId={customerId} />
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
