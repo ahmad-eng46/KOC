@@ -13,7 +13,13 @@ type Props = {
   purchaseDate: string;
   quantity: number;
   unit: string;
-  currentRatePaisa: number;
+  /**
+   * NULL for a staff member: the database withholds cost prices from them
+   * (iron rule #3). The rate field is then not shown at all, rather than shown
+   * empty — you cannot sensibly ask someone to correct a number they are not
+   * allowed to read.
+   */
+  currentRatePaisa: number | null;
   onClose: () => void;
   onDone?: () => void;
 };
@@ -35,7 +41,10 @@ export function RequestRateChangeModal({
   purchaseId, productName, supplierName, purchaseDate, quantity, unit,
   currentRatePaisa, onClose, onDone,
 }: Props) {
-  const [rateText, setRateText] = useState(formatPKR(currentRatePaisa, { showSymbol: false }));
+  const canSeeRate = currentRatePaisa !== null;
+  const [rateText, setRateText] = useState(
+    canSeeRate ? formatPKR(currentRatePaisa, { showSymbol: false }) : '',
+  );
   const [qtyText, setQtyText] = useState(String(quantity));
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -49,17 +58,20 @@ export function RequestRateChangeModal({
 
   const ratePaisa = parseMoneyInput(rateText);
   const qty = Number(qtyText);
-  const rateValid = Number.isFinite(ratePaisa) && ratePaisa >= 0;
+  const rateValid = !canSeeRate || (Number.isFinite(ratePaisa) && ratePaisa >= 0);
   const qtyValid = Number.isFinite(qty) && qty > 0;
 
-  const rateChanged = rateValid && ratePaisa !== currentRatePaisa;
+  const rateChanged = canSeeRate && rateValid && ratePaisa !== currentRatePaisa;
   const qtyChanged = qtyValid && qty !== quantity;
   const anythingChanged = rateChanged || qtyChanged;
 
   async function submit() {
     if (!rateValid) { setError('Enter a valid rate.'); return; }
     if (!qtyValid) { setError('Enter a quantity greater than zero.'); return; }
-    if (!anythingChanged) { setError('Change the rate or the quantity first.'); return; }
+    if (!anythingChanged) {
+      setError(canSeeRate ? 'Change the rate or the quantity first.' : 'Change the quantity first.');
+      return;
+    }
 
     setError(null);
     const result = await mutation.mutateAsync({
@@ -108,7 +120,7 @@ export function RequestRateChangeModal({
             <Row label="Date" value={purchaseDate} />
           </dl>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={canSeeRate ? 'grid grid-cols-2 gap-3' : ''}>
             <div>
               <label htmlFor="req-qty" className="block text-sm font-medium text-gray-700 mb-1.5">
                 Quantity ({unit})
@@ -124,6 +136,7 @@ export function RequestRateChangeModal({
                 <p className="mt-1 text-xs text-blue-700">was {quantity}</p>
               )}
             </div>
+            {canSeeRate && (
             <div>
               <label htmlFor="req-rate" className="block text-sm font-medium text-gray-700 mb-1.5">
                 Rate (Rs.)
@@ -137,10 +150,11 @@ export function RequestRateChangeModal({
               />
               {rateChanged && (
                 <p className="mt-1 text-xs text-blue-700">
-                  was {formatPKR(currentRatePaisa, { showSymbol: false })}
+                  was {formatPKR(currentRatePaisa ?? 0, { showSymbol: false })}
                 </p>
               )}
             </div>
+            )}
           </div>
 
           <div>

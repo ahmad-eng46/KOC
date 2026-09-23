@@ -103,6 +103,7 @@ export function ProductPurchaseHistory({
                       <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
                     </>
                   )}
+                  {mayAsk && <th className="w-12 px-2 py-3" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -127,32 +128,40 @@ export function ProductPurchaseHistory({
                         <td className="px-4 py-3 text-right font-mono text-gray-600">
                           <span className="inline-flex items-center justify-end gap-1.5">
                             {p.unit_price_paisa === null ? '—' : formatPKR(p.unit_price_paisa)}
-                            {mayAsk && p.unit_price_paisa !== null && (
-                              pendingIds[p.id] ? (
-                                <span
-                                  title={`A change is already waiting for approval — asked by ${pendingIds[p.id].requester}`}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[11px] text-amber-700"
-                                >
-                                  <Clock size={11} /> Pending
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setCorrecting(p.id)}
-                                  title={isAdmin ? 'Change purchase rate' : 'Request a change'}
-                                  aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the rate for ${p.supplier_name}`}
-                                  className="p-1 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                                >
-                                  <Pencil size={13} />
-                                </button>
-                              )
-                            )}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-medium">
                           {p.total_paisa === null ? '—' : formatPKR(p.total_paisa)}
                         </td>
                       </>
+                    )}
+                    {/*
+                      Its own column, not tucked inside the price cell as it
+                      was: that put it behind canSeeMoney, so the one role the
+                      request flow exists for — staff, who cannot see a cost
+                      price — never got the button at all.
+                    */}
+                    {mayAsk && (
+                      <td className="px-2 py-3 text-right">
+                        {pendingIds[p.id] ? (
+                          <span
+                            title={`A change is already waiting for approval — asked by ${pendingIds[p.id].requester}`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[11px] text-amber-700"
+                          >
+                            <Clock size={11} /> Pending
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setCorrecting(p.id)}
+                            title={isAdmin ? 'Change this purchase' : 'Request a change'}
+                            aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the purchase from ${p.supplier_name}`}
+                            className="p-1 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </td>
                     )}
                   </tr>
                 ))}
@@ -184,7 +193,7 @@ export function ProductPurchaseHistory({
                     </p>
                   )}
                 </Link>
-                {mayAsk && p.unit_price_paisa !== null && (
+                {mayAsk && (
                   pendingIds[p.id] ? (
                     <span
                       aria-label="A change is already waiting for approval"
@@ -196,7 +205,7 @@ export function ProductPurchaseHistory({
                     <button
                       type="button"
                       onClick={() => setCorrecting(p.id)}
-                      aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the rate for ${p.supplier_name}`}
+                      aria-label={`${isAdmin ? 'Change' : 'Request a change to'} the purchase from ${p.supplier_name}`}
                       className="w-11 h-11 flex items-center justify-center rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 shrink-0"
                     >
                       <Pencil size={15} />
@@ -217,7 +226,12 @@ export function ProductPurchaseHistory({
         />
       )}
 
-      {target && target.unit_price_paisa !== null && !isAdmin && (
+      {/*
+        No unit_price_paisa check here: it is ALWAYS null for staff, so that
+        condition kept the request dialog shut for exactly the people it was
+        written for. The dialog handles a null rate by not offering the field.
+      */}
+      {target && !isAdmin && (
         <RequestRateChangeModal
           purchaseId={target.id}
           productName={target.product_name}
