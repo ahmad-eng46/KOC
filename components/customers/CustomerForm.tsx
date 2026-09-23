@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { customerSchema, type CustomerInput } from '@/lib/validators/customer';
 import { createCustomer, updateCustomer } from '@/lib/actions/customer';
-import { formatPKR, rupeesToPaisa } from '@/lib/money';
+import { parseMoneyInput } from '@/lib/money';
 import { type Customer } from '@/lib/queries/customers';
 import { useUnsavedChanges } from '@/lib/store/unsaved';
 import { useBusinessStore } from '@/lib/store/business';
@@ -129,21 +129,33 @@ export function CustomerForm({ customer, canCreateCategory = false }: Props) {
         />
       </Field>
 
-      {/* Opening Balance */}
-      <Field label="Opening Balance (Rs.)" error={errors.opening_balance_paisa?.message}>
-        <input
-          className={inputCls(!!errors.opening_balance_paisa)}
-          placeholder="0.00"
-          inputMode="decimal"
-          defaultValue={
-            customer ? formatPKR(customer.opening_balance_paisa, { showSymbol: false }) : '0.00'
-          }
-          {...register('opening_balance_paisa', {
-            setValueAs: (v: unknown) =>
-              typeof v === 'string' ? rupeesToPaisa(parseFloat(v) || 0) : (v as number),
-          })}
-        />
-      </Field>
+      {/*
+        Opening balance, on a NEW customer only.
+
+        It is stored as a ledger entry rather than a column (0075/0077), so on
+        an existing customer this field would read 0.00 whatever they actually
+        owe — and typing into it would add to the balance rather than restate
+        it. Offering it on edit would be offering a lie. Changing a balance
+        afterwards is an adjustment, which is admin-only and asks for a reason.
+      */}
+      {!customer && (
+        <Field label="Opening Balance (Rs.)" error={errors.opening_balance_paisa?.message}>
+          <input
+            className={inputCls(!!errors.opening_balance_paisa)}
+            placeholder="0.00"
+            inputMode="decimal"
+            defaultValue="0.00"
+            {...register('opening_balance_paisa', {
+              setValueAs: (v: unknown) =>
+                typeof v === 'string' ? parseMoneyInput(v) : (v as number),
+            })}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            What this customer already owes you before their first invoice. Recorded
+            as the first entry in their ledger.
+          </p>
+        </Field>
+      )}
 
       {/* Notes */}
       <Field label="Notes" error={errors.notes?.message}>

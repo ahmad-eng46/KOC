@@ -4,10 +4,11 @@ import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { format, parseISO, startOfMonth } from 'date-fns';
-import { Calendar, Printer, Plus, Download } from 'lucide-react';
+import { Calendar, Printer, Plus, Download, Scale } from 'lucide-react';
 import { useCustomerLedger, type LedgerRow } from '@/lib/queries/customer-ledger';
 import { formatPKR } from '@/lib/money';
 import { CustomerStatementPDF } from './CustomerStatementPDF';
+import { AdjustBalanceModal } from '@/components/balances/AdjustBalanceModal';
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -22,6 +23,8 @@ type Props = {
   /** Opening date range. Defaults to the current month. */
   initialFrom?: string;
   initialTo?: string;
+  /** Admin only: offers the balance correction. Enforced again server-side. */
+  canAdjustBalance?: boolean;
 };
 
 function todayISO() { return format(new Date(), 'yyyy-MM-dd'); }
@@ -42,11 +45,18 @@ export function CustomerLedger({
   businessName,
   initialFrom,
   initialTo,
+  canAdjustBalance = false,
 }: Props) {
   const [from, setFrom] = useState(initialFrom ?? monthStartISO());
   const [to, setTo] = useState(initialTo ?? todayISO());
+  const [adjusting, setAdjusting] = useState(false);
 
   const { data: allRows = [], isLoading } = useCustomerLedger(customerId);
+
+  // The balance as it stands, regardless of the date filter — a correction is
+  // to what the customer owes now, not to what the visible window happens to
+  // end at.
+  const currentBalance = allRows.length > 0 ? allRows[allRows.length - 1].running_balance : 0;
 
   // Filter to date range; the opening row (ref_type='opening') is special:
   // - if user's "from" is the customer's lifetime start, include it as the first row
@@ -112,12 +122,32 @@ export function CustomerLedger({
 
   return (
     <div className="space-y-4">
+      {adjusting && (
+        <AdjustBalanceModal
+          party="customer"
+          partyId={customerId}
+          partyName={customerName}
+          currentBalancePaisa={currentBalance}
+          onClose={() => setAdjusting(false)}
+        />
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-end gap-3">
         <DateInput label="From" value={from} onChange={setFrom} />
         <DateInput label="To" value={to} onChange={setTo} />
 
         <div className="flex-1" />
+
+        {canAdjustBalance && (
+          <button
+            type="button"
+            onClick={() => setAdjusting(true)}
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Scale size={14} /> Adjust Balance
+          </button>
+        )}
 
         <Link
           href={`/payments/new?customer=${customerId}`}
@@ -190,7 +220,7 @@ export function CustomerLedger({
                 {visibleRows.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 tabular-nums text-gray-700">
-                      {r.ref_type === 'opening' ? '—' : format(parseISO(r.entry_date), 'dd MMM yyyy')}
+                      {r.id === 'brought-forward' ? '—' : format(parseISO(r.entry_date), 'dd MMM yyyy')}
                     </td>
                     <td className="px-4 py-2.5">
                       <RefBadge type={r.ref_type} />

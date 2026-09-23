@@ -89,7 +89,7 @@ export function CustomerStatementPDF({
           {rows.map((r) => (
             <View key={r.id} style={styles.tdRow}>
               <Text style={[styles.td, styles.cellDate]}>
-                {r.ref_type === 'opening' ? '—' : format(parseISO(r.entry_date), 'dd MMM yyyy')}
+                {r.id === 'brought-forward' ? '—' : format(parseISO(r.entry_date), 'dd MMM yyyy')}
               </Text>
               <Text style={[styles.td, styles.cellRef, { fontSize: 9 }]}>
                 {r.ref_type === 'opening' ? '—' : r.ref_type}

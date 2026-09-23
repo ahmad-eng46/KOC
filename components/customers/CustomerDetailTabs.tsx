@@ -12,9 +12,12 @@ type Props = {
   customer: Customer;
   businessName: string;
   canCreateCategory?: boolean;
+  canAdjustBalance?: boolean;
 };
 
-export function CustomerDetailTabs({ customer, businessName, canCreateCategory = false }: Props) {
+export function CustomerDetailTabs({
+  customer, businessName, canCreateCategory = false, canAdjustBalance = false,
+}: Props) {
   const [tab, setTab] = useState<Tab>('details');
 
   return (
@@ -39,6 +42,7 @@ export function CustomerDetailTabs({ customer, businessName, canCreateCategory =
           customerName={customer.name}
           customerPhone={customer.phone}
           businessName={businessName}
+          canAdjustBalance={canAdjustBalance}
         />
       )}
     </div>

@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { useBusinessStore } from '@/lib/store/business';
-import { softDeleteCustomer } from '@/lib/actions/customer';
+import { softDeleteCustomer, adjustCustomerBalance } from '@/lib/actions/customer';
 
 export type Customer = {
   id: string;
@@ -82,6 +82,31 @@ export function useDeleteCustomer() {
     mutationFn: (id: string) => softDeleteCustomer(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers', activeId] });
+    },
+  });
+}
+
+/**
+ * Moves a customer's balance to a stated figure by posting a dated adjustment
+ * (0075). Every screen that shows a balance is invalidated, not just the one
+ * the admin happened to be looking at — the ledger, the customer list, and the
+ * receivables report all read the same number from different queries, and one
+ * of them holding yesterday's figure is how a corrected balance gets corrected
+ * twice.
+ */
+export function useAdjustCustomerBalance(customerId: string) {
+  const queryClient = useQueryClient();
+  const activeId = useBusinessStore((s) => s.activeId);
+
+  return useMutation({
+    mutationFn: (input: { targetBalancePaisa: number; reason: string; entryDate?: string | null }) =>
+      adjustCustomerBalance({ customerId, ...input }),
+    onSuccess: (result) => {
+      if (!result.ok) return;
+      queryClient.invalidateQueries({ queryKey: ['customer-ledger', activeId, customerId] });
+      queryClient.invalidateQueries({ queryKey: ['customers', activeId] });
+      queryClient.invalidateQueries({ queryKey: ['activity-log', activeId] });
+      queryClient.invalidateQueries({ queryKey: ['audit-feed', activeId] });
     },
   });
 }
