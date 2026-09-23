@@ -338,26 +338,11 @@ export async function correctPurchaseRate(
     product_cost_synced?: boolean;
   };
 
-  const oldRate = Number(result.old_unit_price_paisa ?? 0);
-  const newRate = Number(result.new_unit_price_paisa ?? unitPricePaisa);
   const synced = result.product_cost_synced === true;
 
-  await logActivity({
-    action: 'purchase.rate_corrected',
-    entityType: 'stock_purchase',
-    entityId: purchaseId,
-    description:
-      `Corrected a purchase rate from ${formatPKR(oldRate)} to ${formatPKR(newRate)}`
-      + (synced ? ' — the product’s cost price now matches' : ''),
-    metadata: {
-      purchase_id: purchaseId,
-      old_unit_price_paisa: oldRate,
-      new_unit_price_paisa: newRate,
-      old_total_paisa: Number(result.old_total_paisa ?? 0),
-      new_total_paisa: Number(result.new_total_paisa ?? 0),
-      product_cost_synced: synced,
-    },
-  });
+  // No logActivity() here: 0081 writes this row inside
+  // correct_stock_purchase_rate, in the same transaction as the rate change,
+  // so the correction and the record of it cannot come apart.
 
   revalidatePath('/suppliers');
   revalidatePath('/products');
@@ -395,7 +380,7 @@ export async function softDeleteStockPurchase(
   if (!businessId) return { ok: false, error: 'No active business.' };
 
   const supabase = await createServerClient();
-  const { data, error } = await supabase.rpc('delete_stock_purchase', {
+  const { error } = await supabase.rpc('delete_stock_purchase', {
     p_id: purchaseId,
     p_business_id: businessId,
   });
@@ -410,23 +395,9 @@ export async function softDeleteStockPurchase(
     return { ok: false, error: error.message };
   }
 
-  const row = (Array.isArray(data) ? data[0] : data) as
-    { quantity_reversed?: number; product_id?: string } | null;
-  const reversed = Number(row?.quantity_reversed ?? 0);
-
-  await logActivity({
-    action: 'stock.adjusted',
-    entityType: 'stock_purchase',
-    entityId: purchaseId,
-    description:
-      `Deleted a stock purchase — ${reversed} unit${reversed === 1 ? '' : 's'} taken back off stock`,
-    metadata: {
-      purchase_id: purchaseId,
-      product_id: row?.product_id ?? null,
-      quantity_reversed: reversed,
-      purchase_deleted: true,
-    },
-  });
+  // No logActivity() here either — 0081 writes it inside
+  // delete_stock_purchase, alongside the reversing stock movement, so the
+  // function's return value is no longer read for anything.
 
   revalidatePath('/suppliers');
   revalidatePath('/products');
